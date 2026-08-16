@@ -4,6 +4,19 @@
 
 用户目标：在 PyCharm 中编写 `.sage` 文件时，获得与 `.py` 文件**完全一致**的代码提示体验——语法糖（`R.<x> = GF(2)[]`）不报错、`F.`/`e.` 补全带彩色图标（红 m 方法标志）+ 类型文本 + 形参列表 + Ctrl+Q 中文文档，右键运行用 `sage` 命令（非 Python）。**保持独立的 Sage 文件类型（不是把 .sage 识别成 Python）。**
 
+## 当前状态（v1.3.0，2026-08-16 晚）
+
+四项目整合完成，类型知识全部住在数据层：
+
+| 项目 | 路径 | 本次动作 | 状态 |
+|---|---|---|---|
+| ① stubgen（最早的地基） | `C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen` | curated 表补 `FiniteField.from_integer/gen/multiplicative_generator/random_element` → 三元素类 union（+imports）；`FiniteFieldElement_pari_ffelt.log` → Integer；26/26 测试过；**WSL 已重新生成 stubs 并验证**（finite_field_base.pyi:294 起带 union 注解，580 文件安装成功） | commit 4b58048 |
+| ② 插件 | 本仓库 | v1.3.0 **删除 SageTypeProvider.getReturnType 硬编码补丁**（stub 已自足），插件回归纯机制（糖目标定型 + 隐式命名空间）；zip 已构建 | commit 47cab45 |
+| ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | **摘掉 `.sage→PythonFileType` 提交**（与插件文件类型注册冲突 + 糖行报错）→ rebase 为 2 commits → force-push → PR 描述重写（联动四项目） | OPEN |
+| ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 维护者 nit（__call__ 只用于 typing 的注释）已补 → push（390bdb9）；reviewer 已 LGTM，等 sagemath/core CI | OPEN |
+
+**待用户验证**：装插件 v1.3.0 zip + PyCharm File → Invalidate Caches（重索引新 stubs）→ 打开 test.sage 确认 e. 补全仍彩色（现在来自 stub 注解而非插件补丁）。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
@@ -62,7 +75,7 @@ v1.2.0 组件：
 | SageFileType | `sugar/SageFileType.kt` | 继承 PythonFileType（protected ctor），name "Sage" |
 | SageParser | `com/jetbrains/python/parsing/SageParser.kt` | **必须在该包**（parseSimpleStatement 是 protected 包可见）；覆盖 parseRoot，`IDENT DOT LT` 前瞻拦截糖语句 → 构建 tuple-unpack 赋值树（targets=[R,x]，EQ 留作 token 叶子——calcTargets 依赖） |
 | SageParserDefinition | `parser/SageParserDefinition.kt` | 继承 PythonParserDefinition，覆盖 createParser + getFileNodeType（SageFileElementType） |
-| SageTypeProvider | `type/SageTypeProvider.kt` | PyTypeProviderBase.getReferenceType：工厂目标 F ← context.getType(call)；生成元 a/x ← `_first_ngens` 元素类型。**v1.2.0 新增 getReturnType**：补 stub 缺失返回注解。**注册 order="first"**（EP 循环 Ref-非空即短路，last 会被前置 provider 的 Ref(null) 遮蔽）；**类名匹配必须用简单类名**（qname 的 `sage.` 前缀有无不定，v1.2.1 实测 `rings.finite_rings...`） |
+| SageTypeProvider | `type/SageTypeProvider.kt` | PyTypeProviderBase.getReferenceType：工厂目标 F ← context.getType(call)；生成元 a/x ← `_first_ngens` 元素类型。**v1.3.0 起无 getReturnType 补丁**——stub 层已带注解。**注册 order="first"**（EP 循环 Ref-非空即短路，last 会被前置 provider 的 Ref(null) 遮蔽） |
 | SageSugarAnalyzer | `sugar/SageSugarAnalyzer.kt` | 糖语句判定 = statement 直接子节点含 PyTokenTypes.LT 叶子 |
 | **隐式命名空间（v1.2.0）** | `sugar/SageReferenceResolveProvider.kt` + `sugar/SageStubIndex.kt` | **Pythonid.pyReferenceResolveProvider**。教训（血泪）：**PsiReferenceContributor 对 Python 引用无效**——检查/类型推断只看主引用，绝不再走 contributor 路线；provider 里不要调 reference.resolve()（递归）；不缓存 null |
 | 运行配置 | `run/*` | WSL 直接调用（无 bash 包装）；Windows 路径 → /mnt/c 转换；Detect 按钮自动检测 |
@@ -96,7 +109,17 @@ cd G:\Projects\sage-ide-support
 
 在正式 PyCharm（WSL sage SDK 已配）打开 test.sage：
 1. ✅ `GF` 无红色未解析标注（v1.2.0 起，用户确认）
-2. ✅ `e.` 补全项带红色 m 图标 + 类型文本 + 形参列表（v1.2.2 起，用户确认 + 日志 `from_integer -> PyUnionType`）
+2. ✅ `e.` 补全项带红色 m 图标 + 类型文本 + 形参列表（v1.2.2 起，用户确认；v1.3.0 起类型来自 stub 注解 `FiniteField_givaroElement | ...` 而非插件补丁——装 v1.3.0 + Invalidate Caches 后需复验）
 3. `F.characteristic` Ctrl+Q 显示中文文档（F 已定型 FiniteField，待最终确认）
 4. ✅ 右键 Run 通过 sage 命令执行成功（用户确认）
 5. ✅ 语法糖行无波浪线（用户确认）
+
+## stub 重新生成命令（WSL，勿用 pip 0.6.1 的 --install）
+
+```bash
+cd /mnt/c/Users/星记/Documents/CTF练习/sage-pycharm-stubgen
+PYTHONPATH=/mnt/c/Users/星记/Documents/CTF练习/sage-pycharm-stubgen/src \
+  ~/miniconda3/envs/sage/bin/python -m sage_pycharm_stubgen --install
+# 576/576 生成、580 安装；manifest: site-packages/sage/.sage-pycharm-stubgen-in-place.json
+# 生成后 PyCharm 需 Invalidate Caches 重索引
+```
