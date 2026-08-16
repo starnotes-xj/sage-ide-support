@@ -5,6 +5,8 @@
 > Writing crypto Sage scripts? Stop switching to the source for every method
 > name — completion and docs are right in the IDE.
 
+![Sage IDE demo](docs/demo.gif)
+
 First-class `.sage` file support in PyCharm — the same code-insight experience
 as `.py` files, while keeping `.sage` as its **own file type** (not "Python
 with a different extension"):
