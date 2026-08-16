@@ -38,8 +38,9 @@ dependencies {
     intellijPlatform {
         if (onCi) {
             // Downloaded on the runner; the bundled Python plugin jars are on
-            // the compile classpath automatically.
-            pycharmCommunity("2026.1.4")
+            // the compile classpath automatically.  (PyCharm Community is no
+            // longer published since 2025.3, hence the unified accessor.)
+            pycharm("2026.1.4")
         }
         else {
             // Local PyCharm 2026.1.4 installation as the plugin SDK.
