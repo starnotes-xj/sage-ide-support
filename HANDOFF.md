@@ -4,17 +4,24 @@
 
 用户目标：在 PyCharm 中编写 `.sage` 文件时，获得与 `.py` 文件**完全一致**的代码提示体验——语法糖（`R.<x> = GF(2)[]`）不报错、`F.`/`e.` 补全带彩色图标（红 m 方法标志）+ 类型文本 + 形参列表 + Ctrl+Q 中文文档，右键运行用 `sage` 命令（非 Python）。**保持独立的 Sage 文件类型（不是把 .sage 识别成 Python）。**
 
-## 当前状态（v1.3.2，2026-08-16 深夜）
+## 当前状态（v1.4.0 / stubgen 0.7.1，2026-08-17 凌晨）
 
 四项目整合完成，类型知识全部住在数据层；另有三样「stubgen → Sage PR」贡献已推进（2026-08-17 凌晨）：
 
 | 项目 | 路径 | 状态 |
 |---|---|---|
-| ① stubgen | `C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen` | curated 域元素条目（4b58048）；**收敛**：`infer_factory_returns` 优先源码声明注解、探测降级为兜底（tests 3/3）；**安装保护**：manifest 记 `generator_version` + 旧工具降级安装拒绝（--force 绕过）+ curated 中文文档随安装落盘 `.sage-pycharm-stubgen-curated-docs.json`（tests 4/4）——0.6.1 抹文档的坑从此关闭 |
-| ② 插件 | 本仓库 | v1.3.2：SageFile PSI 覆写修项目树图标（用户确认）；v1.3.1/1.3.0 历史见图标血泪史 |
+| ① stubgen | `C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen` | **0.7.1 已发 PyPI**：`FiniteField._first_ngens -> tuple[元素union,...]`（a/x 定型为元素）、三元素类 `__pow__`/`multiplicative_order` 注解、enrich 支持引用本文件声明名 + 内联体保留；降级安装保护 + curated 落盘（0.7.0 起）；工厂声明类型优先收敛；CI 3.11-3.13 + 可信发布全自动 |
+| ② 插件 | 本仓库 | **v1.4.0**：idea-version 放宽 **261–263.***（2026.1–2026.3 全年）；**GitHub Actions CI**（push 构建 zip 上传 artifact，v* tag 自动挂 Release）；SDK 双模式（CI 下载 `pycharm("2026.1.4")` + `bundledPlugin("PythonCore")`，本地用 D:\JetBrains\PyCharm）；CI 已绿 |
 | ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | 2 commits（EP + preparse action），PR 描述已重写，OPEN |
-| ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 加了回归 doctest（a10665b 已推）；reviewer LGTM + 等 CI；**PR 留言已发**（issuecomment-5308283739）说明三样贡献 |
-| ⑤ Sage 上游 PR #42672（新 draft） | `G:\Projects\sage-fork` 分支 `annotate-finite-field-element-returns` | FiniteField 四个元素返回方法 `-> FinitePolyExtElement`（运行时三后端验证共同基类）；draft：https://github.com/sagemath/sage/pull/42672 |
+| ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 回归 doctest（a10665b）+ typing-info 注释；reviewer LGTM + 等 CI |
+| ⑤ Sage 上游 PR #42672（draft） | `G:\Projects\sage-fork` 分支 `annotate-finite-field-element-returns` | FiniteField 四元素方法 `-> FinitePolyExtElement`；https://github.com/sagemath/sage/pull/42672 |
+
+**四个已知边角的状态（0.7.1 后）**：
+- ✅ a/x 生成元 → 元素类 union（`_first_ngens` declare，数据层修复）
+- ✅ `e^(-1)`/`e^254` → 元素类型（三元素类 `__pow__` 注解）
+- ✅ `multiplicative_order` → Integer（三元素类注解）
+- ✅ 插件版本范围 → 2026 全年（261–263.*）
+- 仍待上游：`F.characteristic` Ctrl+Q 中文文档的最终点检
 
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
