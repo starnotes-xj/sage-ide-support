@@ -2,7 +2,7 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.3.0</version>
+  <version>1.3.1</version>
 
   <description><![CDATA[
   First-class Sage file support in PyCharm: <code>.sage</code> files are recognized
@@ -45,6 +45,13 @@
     <!-- Defensive: if a sugar statement ever falls back to the error-recovered
          Python tree, suppress the parser-error squiggles on exactly that statement. -->
     <highlightErrorFilter implementation="com.starnotesxj.sageide.highlight.SageSugarErrorFilter"/>
+
+    <!-- Project view icon: the tree resolves file icons through the
+         fileIconProvider chain, where a Python presentation can win for
+         Python-dialect files (Sage is a dialect of Python).  Answer first
+         with the Sage icon for .sage files; other files are untouched. -->
+    <fileIconProvider implementation="com.starnotesxj.sageide.sugar.SageFileIconProvider" order="first"/>
+    <iconProvider implementation="com.starnotesxj.sageide.sugar.SageElementIconProvider" order="first"/>
 
     <!-- Sage run configurations: execute through the `sage` command (native or WSL),
          with a gutter run icon, instead of a Python interpreter. -->
