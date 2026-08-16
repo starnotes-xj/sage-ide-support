@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+> 以后写密码学 sage 脚本，不用再边写边查源码了。
+
 在 PyCharm 中获得一等公民级别的 `.sage` 文件支持——与 `.py` 文件完全一致的
 代码提示体验，同时保持 `.sage` 是**独立的文件类型**（不是"换了扩展名的
 Python"）：
