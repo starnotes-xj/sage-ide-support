@@ -146,3 +146,30 @@ PYTHONPATH=/mnt/c/Users/星记/Documents/CTF练习/sage-pycharm-stubgen/src \
 # 576/576 生成、580 安装；manifest: site-packages/sage/.sage-pycharm-stubgen-in-place.json
 # 生成后 PyCharm 需 Invalidate Caches 重索引
 ```
+
+## 全量中文翻译批处理（translate-docs，0.8.0 里程碑）
+
+状态：代码 `37e2d7c` 已推；批处理在 WSL 内跑（Windows 直连 \\wsl.localhost 扫描 12K 文件极慢——每 open 一次 SMB 往返，8 分钟扫不完）。缓存 `C:\Users\星记\.sage-pycharm-stubgen\translations.json`，每 200 条落盘一次、可随时中断续跑。
+
+```bash
+# WSL 内运行（本地文件系统 + 百度直连）：
+wsl.exe -d Ubuntu bash -lc "unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy; \
+  export BAIDU_APPID=...; export BAIDU_API_KEY=...; \
+  export PYTHONPATH=/mnt/c/Users/星记/Documents/CTF练习/sage-pycharm-stubgen/src; \
+  ~/miniconda3/envs/sage/bin/python -m sage_pycharm_stubgen translate-docs \
+  --stubs ~/miniconda3/envs/sage/lib/python3.13/site-packages/sage \
+  --cache /mnt/c/Users/星记/.sage-pycharm-stubgen/translations.json \
+  --backend baidu --workers 4 2>&1 | tee /mnt/c/Users/星记/.sage-pycharm-stubgen/translate-batch.log"
+```
+
+**本批的血泪教训（0.8.0 调试记录）**：
+
+1. **harness 会设置 `HTTP_PROXY/HTTPS_PROXY=127.0.0.1:7897`**（本地 Clash）。Windows 侧 urllib 走代理正常；但该变量泄漏进 WSL 后 NAT 模式连不上 localhost 代理 → 连接被拒。WSL 内跑网络任务必须 `unset` 全部代理变量（百度国内主机直连即可）。
+2. **百度 LLM 端点 (aiTextTranslate) 会逐行返回 `trans_result` 条目**（src/dst 对齐输入行）——和标准 MT API 结构一致。
+3. **`<<<SPLIT>>>` 标记被 LLM 当文本翻译成 `<<<拆分>>>`** → `joined.split(标记)` 永远 count=0 → 每包都降级成单文本请求，批处理看起来"卡死"（10 分钟零 Progress，实为慢速推进）。修复：改用不透明标记 `QXZ73M` + 按 src 行检测边界分组（`_group_entries_by_marker`）。
+4. **标准 MT API**（fanyi-api.baidu.com/api/trans/vip/translate，同 appid+secret 签名）：0.4s/请求但**不严格按行切分**（67 行 → 50 条目）、不保留标记、**会把代码 token 译坏**（`Matrix` → `矩阵`，91% 文档含 doctest）→ 质量不可用，弃用。
+5. `model_type='mt'` 在 aiTextTranslate 端点报 58004 不支持；仅 `llm`。
+6. **并发可用**：4 并发 LLM 请求无 54003。吞吐实测：5000 字符包 13.5s；~2,000 包 × 14s / 4 workers ≈ 2 小时（比串行 8 小时好）。`--workers` 默认 4。
+7. urllib timeout 是**每 socket 操作**的：响应慢慢滴流时超时不触发（这就是"卡死"假象的另一半）。
+
+**完成后**：缓存拷入 `src/sage_pycharm_stubgen/translations.json`（pyproject 已配 package-data），发 0.8.0；用户侧 `translate-docs --apply-only` 或重新 `--install` 后 Invalidate Caches。
