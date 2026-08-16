@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.starnotesxj"
-version = "1.3.1"
+version = "1.3.2"
 
 repositories {
     mavenCentral()
@@ -41,7 +41,7 @@ kotlin {
 
 intellijPlatform {
     pluginConfiguration {
-        version = "1.3.1"
+        version = "1.3.2"
         ideaVersion {
             sinceBuild = "261"
             untilBuild = "262.*"
