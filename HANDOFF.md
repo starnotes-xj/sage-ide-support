@@ -27,21 +27,24 @@ v1.2.0 组件：
 | 组件 | 文件 | 作用 |
 |---|---|---|
 | SageReferenceResolveProvider | `sugar/SageReferenceResolveProvider.kt` | 主引用兜底解析：.sage 文件 + 无显式 sage.all import + 普通解析失败 → stub 索引查声明；同时处理糖语句 RHS 内生成元引用 |
-| SageStubIndex | `sugar/SageStubIndex.kt` | PyFunctionNameIndex + PyClassNameIndex 全局查名 → 路径过滤 `site-packages` + `sage` + `.pyi`（WSL 路径 `\\wsl.localhost\Ubuntu\...` 已验证包含这些子串）；新增 `findClass` + `isSageStubFile` |
+| SageStubIndex | `sugar/SageStubIndex.kt` | PyFunctionNameIndex + PyClassNameIndex 全局查名 → 路径过滤**精确匹配 `site-packages/sage/` 段**（`/` 和 `\` 都试；**绝不能用 `contains("sage")`——conda 环境名 `envs/sage` 会污染匹配**，v1.2.1 实测 print 被误判为 sage stub）；新增 `findClass` + `isSageStubFile` |
 | SageTypeProvider.getReturnType | `type/SageTypeProvider.kt` | 补 stub 缺的返回注解：`from_integer`/`random_element`/`multiplicative_generator` → 三个具体元素类 union（givaro/ntl_gf2e/pari_ffelt，各自都有 to_integer/polynomial/log/multiplicative_order）；`multiplicative_order`/`log` → Integer。`PyFunctionImpl.getReturnType` 与 `PyFunctionTypeImpl.getCallType` 都先咨询本 EP（first-non-null-wins） |
 
 **stub 现状**（用户 WSL sage env，已确认）：`all.pyi:3892 def GF(*args, **kwargs) -> _FactoryReturn_GF`（= `from sage.rings.finite_rings.finite_field_base import FiniteField as _FactoryReturn_GF`）→ F 类型链 OK；`finite_field_base.pyi:291 from_integer` 无注解（docstring "返回: 域元素" stubgen 未映射）→ 需要 getReturnType 补；`element_base.pyi:622 to_integer -> int` 已注解；`_first_ngens -> tuple[Any, ...]` 已注解（a/x 得 Any）。
 
-## 验证/继续调试步骤（v1.2.0 起）
+## 验证/继续调试步骤（v1.2.2 起）
 
-1. 用户装 `build/distributions/sage-ide-support-1.2.0.zip`（Settings → Plugins → ⚙ → Install Plugin from Disk，或覆盖 `%APPDATA%\JetBrains\PyCharm2026.1\plugins\sage-ide-support` 后重启）→ 打开 test.sage → Help → Show Log in Explorer → 搜 `Sage stub`：
-   - **预期新行为**：搜到 `Sage stub index hit: 'GF' -> ...site-packages\sage\all.pyi`（warn 级）。同时 `Sage: resolved implicit name 'GF' to all.pyi`。
-   - **若仍无日志** → provider 未被调用。检查：`pyReferenceResolveProvider` 是否真的注册成功（插件加载日志无 EP 报错即可）、文件是否真的按 Sage 解析（`StubVersion(Language: Sage...)`）、`SageFileUtils.isSageFile` 是否命中（extension == "sage"）。
-   - **有日志但 miss（candidates: 0）** → stub 未被索引：确认 WSL SDK 已配置、`site-packages/sage/*.pyi` 已编入索引（File → Invalidate Caches 后重开）；检查路径过滤对 WSL 路径的匹配。
-   - **有 hit 但仍报红** → 检查结果 rate 问题（ResolveResultList.to 用 RATE_NORMAL；`filterTopPriorityElements` 取 maxRate，普通解析失败时 provider 结果是唯一结果，理论上必过）。此时看 `PyReferenceImpl` 是否被别的早期 return 短路。
-2. 验证 e. 补全：`e.` 应出现红色 m 图标 + 类型 + 形参（e 类型 = 元素类 union，成员含 to_integer/polynomial/log/multiplicative_order）。若仍无类型，断点 = `SageTypeProvider.getReturnType` 是否被调用（可临时加 LOG.warn）。
-3. 若 F 类型仍断：`SageTypeProvider.getReferenceType`（factoryType 取 `context.getType(call)`）→ 检查 `_FactoryReturn_GF` 别名解析。
-4. 后续可选：修 stubgen 的"返回: 域元素"→ 元素类映射（`C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen\src\sage_pycharm_stubgen\docstring_enrich.py` 的 curated 返回类型表），从源头给 from_integer 等加注解，可删掉插件侧 getReturnType 补丁。
+**v1.2.2 已在真实 IDE 验证通过**（idea.log 交叉验证）：GF 无红线、`F.`/`a.`/`e.` 补全带红色 m 图标 + 类型 + 形参、`from_integer -> PyUnionType`（元素类 union）、右键运行正常。git 仓库已初始化（提交 8c48cc5 v1.2.0 / 5b12b2a v1.2.1 / e222af4 v1.2.2）。
+
+安装：`build/distributions/sage-ide-support-1.2.2.zip`（Settings → Plugins → ⚙ → Install Plugin from Disk → 重启）→ 打开 test.sage → 搜 idea.log 中 `Sage:`。
+
+诊断分支（v1.2.2 实测沉淀）：
+- `sugar target 'F' factoryType=FiniteField` → F 链 OK；为 null → `context.getType(call)` 断（查 GF 解析/别名）
+- `getReturnType ...from_integer -> PyUnionType` → e 链 OK；为 null 且无 class index 日志 → 类名匹配没命中（**qname 的 `sage.` 前缀有无随项目/索引状态变化，已实测两种形态**——必须用简单类名匹配）；有 `class index miss (candidates: 0)` → 元素类未进索引
+- `resolved implicit name 'GF' to all.pyi` → 隐式命名空间 OK；`miss for 'print' (candidates: 23...)` 是严格路径过滤的正常拒绝（勿再放宽为 `contains("sage")`——会匹配 conda 环境名 `envs/sage`）
+- 无 `Sage:` 日志 → 插件未加载/未装当前版本（查 `Loaded custom plugins ... Sage IDE Support (x.y.z)`）
+
+遗留可选：修 stubgen 的"返回: 域元素"→ 元素类映射（`C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen\src\sage_pycharm_stubgen\docstring_enrich.py` 的 curated 返回类型表），从源头给 from_integer 等加注解，可删掉插件侧 getReturnType 补丁。生成元 a/x 目前是 Any 或回退 FiniteField（`_first_ngens -> tuple[Any, ...]` 无元素类型信息），如需 `a.` 完整类型可后续精化。
 
 ## 项目全景（5 条线）
 
@@ -59,7 +62,7 @@ v1.2.0 组件：
 | SageFileType | `sugar/SageFileType.kt` | 继承 PythonFileType（protected ctor），name "Sage" |
 | SageParser | `com/jetbrains/python/parsing/SageParser.kt` | **必须在该包**（parseSimpleStatement 是 protected 包可见）；覆盖 parseRoot，`IDENT DOT LT` 前瞻拦截糖语句 → 构建 tuple-unpack 赋值树（targets=[R,x]，EQ 留作 token 叶子——calcTargets 依赖） |
 | SageParserDefinition | `parser/SageParserDefinition.kt` | 继承 PythonParserDefinition，覆盖 createParser + getFileNodeType（SageFileElementType） |
-| SageTypeProvider | `type/SageTypeProvider.kt` | PyTypeProviderBase.getReferenceType：工厂目标 F ← context.getType(call)；生成元 a/x ← `_first_ngens` 元素类型。**v1.2.0 新增 getReturnType**：补 stub 缺失返回注解 |
+| SageTypeProvider | `type/SageTypeProvider.kt` | PyTypeProviderBase.getReferenceType：工厂目标 F ← context.getType(call)；生成元 a/x ← `_first_ngens` 元素类型。**v1.2.0 新增 getReturnType**：补 stub 缺失返回注解。**注册 order="first"**（EP 循环 Ref-非空即短路，last 会被前置 provider 的 Ref(null) 遮蔽）；**类名匹配必须用简单类名**（qname 的 `sage.` 前缀有无不定，v1.2.1 实测 `rings.finite_rings...`） |
 | SageSugarAnalyzer | `sugar/SageSugarAnalyzer.kt` | 糖语句判定 = statement 直接子节点含 PyTokenTypes.LT 叶子 |
 | **隐式命名空间（v1.2.0）** | `sugar/SageReferenceResolveProvider.kt` + `sugar/SageStubIndex.kt` | **Pythonid.pyReferenceResolveProvider**。教训（血泪）：**PsiReferenceContributor 对 Python 引用无效**——检查/类型推断只看主引用，绝不再走 contributor 路线；provider 里不要调 reference.resolve()（递归）；不缓存 null |
 | 运行配置 | `run/*` | WSL 直接调用（无 bash 包装）；Windows 路径 → /mnt/c 转换；Detect 按钮自动检测 |
@@ -92,8 +95,8 @@ cd G:\Projects\sage-ide-support
 ## 验证成功标准
 
 在正式 PyCharm（WSL sage SDK 已配）打开 test.sage：
-1. `GF` 无红色未解析标注
-2. `e.` 补全项带红色 m 图标 + 类型文本 + 形参列表（与 .py 一致）
-3. `F.characteristic` Ctrl+Q 显示中文文档
-4. 右键 Run 通过 sage 命令执行成功
-5. 语法糖行无波浪线
+1. ✅ `GF` 无红色未解析标注（v1.2.0 起，用户确认）
+2. ✅ `e.` 补全项带红色 m 图标 + 类型文本 + 形参列表（v1.2.2 起，用户确认 + 日志 `from_integer -> PyUnionType`）
+3. `F.characteristic` Ctrl+Q 显示中文文档（F 已定型 FiniteField，待最终确认）
+4. ✅ 右键 Run 通过 sage 命令执行成功（用户确认）
+5. ✅ 语法糖行无波浪线（用户确认）
