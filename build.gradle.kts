@@ -20,32 +20,22 @@ repositories {
 }
 
 dependencies {
-    if (!onCi) {
-        // The Python plugin jars of the local PyCharm installation (the plugin is
-        // bundled with PyCharm at runtime, so nothing needs to be packaged —
-        // compile-time only).  PyCharm 2026.1 splits the plugin across
-        // plugins/python and plugins/python-ce
-        // (psi/psi-impl/parser jars live in python-ce/lib/modules/).
-        val pythonJars = files(
-            fileTree("D:/JetBrains/PyCharm/plugins/python/lib") { include("**/*.jar") },
-            fileTree("D:/JetBrains/PyCharm/plugins/python-ce/lib") { include("**/*.jar") },
-        )
-        compileOnly(pythonJars)
-        testCompileOnly(pythonJars)
-    }
     testImplementation("junit:junit:4.13.2")
 
     intellijPlatform {
         if (onCi) {
-            // Downloaded on the runner; the bundled Python plugin jars are on
-            // the compile classpath automatically.  (PyCharm Community is no
-            // longer published since 2025.3, hence the unified accessor.)
+            // Downloaded on the runner.  (PyCharm Community is no longer
+            // published since 2025.3, hence the unified accessor.)
             pycharm("2026.1.4")
         }
         else {
             // Local PyCharm 2026.1.4 installation as the plugin SDK.
             local("D:/JetBrains/PyCharm")
         }
+        // The Python PSI/parser classes: with the 2026.1 split layout they
+        // live in the bundled python-ce plugin (lib + lib/modules), which is
+        // not on the default product classpath.
+        bundledPlugin("PythonCore")
         testFramework(TestFrameworkType.Platform)
     }
 }
