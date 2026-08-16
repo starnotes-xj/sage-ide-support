@@ -15,7 +15,7 @@
 | ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | **摘掉 `.sage→PythonFileType` 提交**（与插件文件类型注册冲突 + 糖行报错）→ rebase 为 2 commits → force-push → PR 描述重写（联动四项目） | OPEN |
 | ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 维护者 nit（__call__ 只用于 typing 的注释）已补 → push（390bdb9）；reviewer 已 LGTM，等 sagemath/core CI | OPEN |
 
-**待用户验证**：装插件 v1.3.0 zip + PyCharm File → Invalidate Caches（重索引新 stubs）→ 打开 test.sage 确认 e. 补全仍彩色（现在来自 stub 注解而非插件补丁）。
+**待用户验证**：装插件 v1.3.0 zip + PyCharm File → Invalidate Caches（重索引新 stubs）→ 打开 test.sage 确认 e. 补全仍彩色（现在来自 stub 注解而非插件补丁）。**已完成**：用户确认 e. 补全仍彩色，日志证实 v1.3.0 会话无 getReturnType 行（22:49 后消失，v1.3.0 于 22:59 加载）。
 
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
@@ -109,7 +109,7 @@ cd G:\Projects\sage-ide-support
 
 在正式 PyCharm（WSL sage SDK 已配）打开 test.sage：
 1. ✅ `GF` 无红色未解析标注（v1.2.0 起，用户确认）
-2. ✅ `e.` 补全项带红色 m 图标 + 类型文本 + 形参列表（v1.2.2 起，用户确认；v1.3.0 起类型来自 stub 注解 `FiniteField_givaroElement | ...` 而非插件补丁——装 v1.3.0 + Invalidate Caches 后需复验）
+2. ✅ `e.` 补全项带红色 m 图标 + 类型文本 + 形参列表（v1.2.2 起；**v1.3.0 数据层路径已复验**：用户确认 + 日志证实 v1.3.0 会话零 getReturnType 行，类型来自 stub union 注解）
 3. `F.characteristic` Ctrl+Q 显示中文文档（F 已定型 FiniteField，待最终确认）
 4. ✅ 右键 Run 通过 sage 命令执行成功（用户确认）
 5. ✅ 语法糖行无波浪线（用户确认）
