@@ -1,66 +1,43 @@
 package com.starnotesxj.sageide.type
 
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.RecursionManager
 import com.intellij.openapi.util.Ref
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyAssignmentStatement
-import com.jetbrains.python.psi.PyCallable
-import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.types.PyCallableType
 import com.jetbrains.python.psi.types.PyClassType
-import com.jetbrains.python.psi.types.PyClassTypeImpl
 import com.jetbrains.python.psi.types.PyTupleType
 import com.jetbrains.python.psi.types.PyType
 import com.jetbrains.python.psi.types.PyTypeProviderBase
-import com.jetbrains.python.psi.types.PyUnionType
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sageide.sugar.SageFileUtils
-import com.starnotesxj.sageide.sugar.SageStubIndex
 import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
 import com.starnotesxj.sageide.sugar.SageSugarInfo
 
 /**
- * Types the targets of Sage preparse-sugar statements and patches the return
- * types of sage stub methods whose generated stubs lack an annotation.
+ * Types the targets of Sage preparse-sugar statements.
  *
- * Sugar statements:
+ * `F.<a> = GF(2^8, ...)` is built by [com.jetbrains.python.parsing.SageParser]
+ * as a real multi-target assignment, and this provider gives:
  *
- * `F.<a> = GF(2^8, ...)` parses with error recovery into an assignment whose
- * left-hand side is a comparison expression, so the Python inference never treats
- * `F` as a real assignment target.  This provider recognizes the sugar shape and
- * gives:
- *
- * - the factory target `F` the return type of the constructor call `GF(...)`, resolved
- *   through the installed sage stubs (so `F.` completion works);
+ * - the factory target `F` the return type of the constructor call `GF(...)`,
+ *   resolved through the installed sage stubs (so `F.` completion works);
  * - each generator target (`a`) the element type of `F._first_ngens(...)`.
  *
  * The right-hand side references the generator targets (e.g. `modulus=x^8 + ...`
  * uses `x`), so `context.getType(call)` can re-enter this provider; the recursion
  * guard and the per-statement cache break the cycle.
  *
- * Missing stub return types:
- *
- * The stubgen-generated stubs annotate return types only where the docstring
- * maps to a known type name ("整数" -> Integer, "多项式" -> Polynomial, ...).
- * The finite-field docstrings say "域元素" (field element), which the stubgen
- * does not map, so `from_integer`, `random_element`, `multiplicative_generator`
- * and friends come out untyped and `e = F.from_integer(0x57)` would be Unknown.
- * This provider supplies the missing types by resolving the concrete finite-field
- * element classes from the stubs themselves:
- *
- * - element-returning methods of finite-field classes -> the union of
- *   FiniteField_givaroElement / FiniteField_ntl_gf2eElement /
- *   FiniteFieldElement_pari_ffelt (each of which carries `to_integer`,
- *   `polynomial`, `log`, `multiplicative_order`);
- * - `multiplicative_order` / `log` of finite-field element classes -> Integer.
- *
- * Both `PyFunctionImpl.getReturnType` and `PyFunctionTypeImpl.getCallType`
- * consult this extension point first (first non-null wins), so a single
- * [getReturnType] override covers direct return-type queries and call typing.
+ * NOTE (v1.3.0): the return-type patches for unannotated sage stub methods
+ * (`from_integer` and friends) were REMOVED — the stubgen curated table now
+ * annotates them directly (`FiniteField_givaroElement | ...`), so the type
+ * knowledge lives in the stubs, not in the IDE.  Registered `order="first"`
+ * because the type-provider EP loops stop at the first non-null Ref (even a
+ * null-content one), and this provider answers only for sugar targets in
+ * `.sage` files.
  */
 class SageTypeProvider : PyTypeProviderBase() {
 
@@ -91,58 +68,8 @@ class SageTypeProvider : PyTypeProviderBase() {
         }
     }
 
-    override fun getReturnType(callable: PyCallable, context: TypeEvalContext): Ref<PyType>? {
-        val function = callable as? PyFunction ?: return null
-        // Only patch declarations inside the installed sage stub tree; everything
-        // else keeps its own (possibly absent) typing.
-        if (!SageStubIndex.isSageStubFile(function.containingFile)) return null
-        val className = function.containingClass?.qualifiedName ?: return null
-        val methodName = function.name ?: return null
-        // Do NOT assume a `sage.` package prefix: with the WSL SDK, PyCharm treats
-        // site-packages/sage itself as a source root, so qualified names come out
-        // as `rings.finite_rings.finite_field_base.FiniteField` (observed in idea.log).
-        // Match on the simple class name instead, guarded by the finite_rings package.
-        val simpleClassName = className.substringAfterLast('.')
-        val inFiniteRings = className.contains("finite_rings")
-
-        val type: PyType? = when {
-            methodName in ELEMENT_RETURNING_METHODS && inFiniteRings && simpleClassName == "FiniteField" ->
-                finiteFieldElementType(function.project)
-            methodName in INTEGER_RETURNING_METHODS && inFiniteRings && simpleClassName in ELEMENT_CLASS_NAMES ->
-                sageIntegerType(function.project)
-            else -> null
-        }
-        LOG.warn("Sage: getReturnType $className.$methodName -> ${type?.renderTypeName() ?: "null"}")
-        return type?.let { Ref.create(it) }
-    }
-
     private fun PyType.renderTypeName(): String =
         (this as? PyClassType)?.name ?: this.javaClass.simpleName
-
-    /** Union of the concrete finite-field element classes from the stubs. */
-    private fun finiteFieldElementType(project: Project): PyType? {
-        elementTypeCache[project]?.let { return it }
-        val types = ELEMENT_CLASS_NAMES.mapNotNull { SageStubIndex.findClass(project, it) }
-            .map { PyClassTypeImpl(it, false) }
-        if (types.isEmpty()) return null
-        val result: PyType = if (types.size == 1) {
-            types.first()
-        }
-        else {
-            PyUnionType.union(types) ?: return null
-        }
-        elementTypeCache[project] = result
-        return result
-    }
-
-    private fun sageIntegerType(project: Project): PyType? {
-        integerTypeCache[project]?.let { return it }
-        val result = SageStubIndex.findClass(project, "Integer")?.let { PyClassTypeImpl(it, false) }
-        if (result != null) {
-            integerTypeCache[project] = result
-        }
-        return result
-    }
 
     private fun factoryType(
         statement: PyAssignmentStatement,
@@ -168,25 +95,5 @@ class SageTypeProvider : PyTypeProviderBase() {
     companion object {
         private val FACTORY_TYPE_KEY = Key.create<PyType>("sageide.sugar.factoryType")
         private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(SageTypeProvider::class.java)
-
-        /** Methods on finite-field classes whose stub docstring says "域元素" but carries no annotation. */
-        private val ELEMENT_RETURNING_METHODS = setOf(
-            "from_integer", "random_element", "multiplicative_generator",
-        )
-
-        /** Methods on finite-field element classes whose stub docstring says "整数" but carries no annotation. */
-        private val INTEGER_RETURNING_METHODS = setOf(
-            "multiplicative_order", "log",
-        )
-
-        private val ELEMENT_CLASS_NAMES = listOf(
-            "FiniteField_givaroElement",
-            "FiniteField_ntl_gf2eElement",
-            "FiniteFieldElement_pari_ffelt",
-        )
-
-        /** Positive-only caches: a miss may just mean the SDK is not indexed yet. */
-        private val elementTypeCache = java.util.concurrent.ConcurrentHashMap<Project, PyType>()
-        private val integerTypeCache = java.util.concurrent.ConcurrentHashMap<Project, PyType>()
     }
 }
