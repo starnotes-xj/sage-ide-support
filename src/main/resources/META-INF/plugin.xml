@@ -1,0 +1,89 @@
+<idea-plugin>
+  <id>com.starnotesxj.sageide</id>
+  <name>Sage IDE Support</name>
+  <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
+  <version>1.2.0</version>
+
+  <description><![CDATA[
+  First-class Sage file support in PyCharm: <code>.sage</code> files are recognized
+  as their own "Sage" file type (Python language intelligence underneath) with full
+  Sage preparse-sugar semantics.
+  <ul>
+    <li>Registers a dedicated <code>Sage</code> file type for <code>*.sage</code> with all
+        Python indexing, inspections and completion.</li>
+    <li>Types Sage generator statements (<code>F.&lt;a&gt; = GF(2^8, ...)</code>,
+        <code>R.&lt;x&gt; = GF(2)[]</code>): <code>F</code> receives the constructor's stub return
+        type, <code>a</code>/<code>x</code> receive the element type from
+        <code>_first_ngens</code>.</li>
+    <li>Resolves generator references inside sugar statements (e.g. <code>x</code> in
+        <code>modulus=x^8 + ...</code> navigates to its declaration).</li>
+    <li>Suppresses parser-error squiggles on sugar statements only, keeping genuine errors red.</li>
+  </ul>
+  Requires the Python Community Edition plugin and the Sage type stubs installed by
+  <code>sage-pycharm-stubgen --install</code> in the WSL Sage environment (configured as the project SDK).
+  If <code>.sage</code> was manually associated with another type in Settings | Editor | File Types,
+  remove that association so this plugin's Sage file type applies.
+  ]]></description>
+
+  <depends>com.intellij.modules.python</depends>
+
+  <idea-version since-build="262" until-build="262.*"/>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Dedicated Sage file type with its own dialect language: the Sage parser
+         understands generator sugar statements, everything else is Python. -->
+    <fileType name="Sage"
+              language="Sage"
+              extensions="sage"
+              implementationClass="com.starnotesxj.sageide.sugar.SageFileType"
+              fieldName="INSTANCE"/>
+
+    <!-- The Sage dialect parser: a Python parser extended with generator sugar. -->
+    <lang.parserDefinition language="Sage"
+                           implementationClass="com.starnotesxj.sageide.parser.SageParserDefinition"/>
+
+    <!-- Defensive: if a sugar statement ever falls back to the error-recovered
+         Python tree, suppress the parser-error squiggles on exactly that statement. -->
+    <highlightErrorFilter implementation="com.starnotesxj.sageide.highlight.SageSugarErrorFilter"/>
+
+    <!-- Sage run configurations: execute through the `sage` command (native or WSL),
+         with a gutter run icon, instead of a Python interpreter. -->
+    <configurationType implementation="com.starnotesxj.sageide.run.SageRunConfigurationType"/>
+    <runConfigurationProducer implementation="com.starnotesxj.sageide.run.SageRunConfigurationProducer"/>
+    <runLineMarkerContributor language="Sage"
+                              implementationClass="com.starnotesxj.sageide.run.SageRunLineMarkerContributor"/>
+
+    <!-- Shared Sage execution settings (Settings | Tools | SageMath). -->
+    <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRunSettings"/>
+    <applicationConfigurable parentId="tools"
+                             id="com.starnotesxj.sageide.run.SageRunSettingsConfigurable"
+                             displayName="SageMath"
+                             instance="com.starnotesxj.sageide.run.SageRunSettingsConfigurable"/>
+
+    <!-- Common Sage constructs as live templates (polynomial ring, number field, ...). -->
+    <defaultLiveTemplates file="liveTemplates/Sage.xml"/>
+  </extensions>
+
+  <extensions defaultExtensionNs="Pythonid">
+    <!-- Types the null-named factory target (F) and the generator targets (a/x) of
+         F.<a> = Constructor(...) statements, and supplies return types for sage stub
+         methods the generated stubs leave unannotated (from_integer, random_element,
+         multiplicative_order, ...). order="last": PyStdlibTypeProvider is order="first"
+         and computeSafeIfAny is first-non-null-wins, so the Sage provider must be asked
+         last and still win on sugar shapes (which no other provider claims). -->
+    <typeProvider implementation="com.starnotesxj.sageide.type.SageTypeProvider" order="last"/>
+    <!-- The implicit sage.all namespace (.sage files get it injected at runtime)
+         plus generator references inside sugar statements: consulted by PyReferenceImpl
+         whenever ordinary Python resolution fails.  (Replaces the PsiReferenceContributor
+         of <=1.1.x, which the inspection and type inference never consulted.) -->
+    <pyReferenceResolveProvider implementation="com.starnotesxj.sageide.sugar.SageReferenceResolveProvider"/>
+  </extensions>
+</idea-plugin>
+
+
+
+
+
+
+
+

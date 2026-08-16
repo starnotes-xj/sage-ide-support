@@ -1,0 +1,189 @@
+<templateSet group="SageMath">
+
+    <template name="def" value="def $NAME$($PARAMS$):&#10;    $BODY$"
+              description="Function" toReformat="false" toShortenFQNames="false">
+        <variable name="NAME" expression="" defaultValue="&quot;f&quot;" alwaysStopAt="true"/>
+        <variable name="PARAMS" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="BODY" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="cls" value="class $NAME$($BASE$):&#10;    def __init__(self, $PARAMS$):&#10;        $BODY$"
+              description="Class" toReformat="false" toShortenFQNames="false">
+        <variable name="NAME" expression="" defaultValue="&quot;Foo&quot;" alwaysStopAt="true"/>
+        <variable name="BASE" expression="" defaultValue="&quot;object&quot;" alwaysStopAt="true"/>
+        <variable name="PARAMS" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="BODY" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="for" value="for $X$ in $ITER$:&#10;    $BODY$"
+              description="For loop" toReformat="false" toShortenFQNames="false">
+        <variable name="X" expression="" defaultValue="&quot;i&quot;" alwaysStopAt="true"/>
+        <variable name="ITER" expression="" defaultValue="&quot;range(10)&quot;" alwaysStopAt="true"/>
+        <variable name="BODY" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="if" value="if $COND$:&#10;    $BODY$"
+              description="If statement" toReformat="false" toShortenFQNames="false">
+        <variable name="COND" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="BODY" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="ife" value="if $COND$:&#10;    $THEN$&#10;else:&#10;    $ELSE$"
+              description="If-Else" toReformat="false" toShortenFQNames="false">
+        <variable name="COND" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="THEN" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <variable name="ELSE" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="while" value="while $COND$:&#10;    $BODY$"
+              description="While loop" toReformat="false" toShortenFQNames="false">
+        <variable name="COND" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="BODY" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="try" value="try:&#10;    $BODY$&#10;except $EXC$ as e:&#10;    $HANDLER$"
+              description="Try-Except" toReformat="false" toShortenFQNames="false">
+        <variable name="BODY" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <variable name="EXC" expression="" defaultValue="&quot;Exception&quot;" alwaysStopAt="true"/>
+        <variable name="HANDLER" expression="" defaultValue="&quot;raise&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="from" value="from $MOD$ import $NAMES$"
+              description="From-import" toReformat="false" toShortenFQNames="false">
+        <variable name="MOD" expression="" defaultValue="&quot;sage.all&quot;" alwaysStopAt="true"/>
+        <variable name="NAMES" expression="" defaultValue="&quot;*&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="pr" value="print($EXPR$)"
+              description="Print" toReformat="false" toShortenFQNames="false">
+        <variable name="EXPR" expression="" defaultValue="" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="as" value="assert $COND$"
+              description="Assert" toReformat="false" toShortenFQNames="false">
+        <variable name="COND" expression="" defaultValue="" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="poly" value="$R$.&lt;$GENS$&gt; = PolynomialRing($BASE$)"
+              description="Polynomial ring" toReformat="false" toShortenFQNames="false">
+        <variable name="R" expression="" defaultValue="&quot;R&quot;" alwaysStopAt="true"/>
+        <variable name="GENS" expression="" defaultValue="&quot;x&quot;" alwaysStopAt="true"/>
+        <variable name="BASE" expression="" defaultValue="&quot;QQ&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="nf" value="$K$.&lt;$GEN$&gt; = NumberField($POLY$)"
+              description="Number field" toReformat="false" toShortenFQNames="false">
+        <variable name="K" expression="" defaultValue="&quot;K&quot;" alwaysStopAt="true"/>
+        <variable name="GEN" expression="" defaultValue="&quot;a&quot;" alwaysStopAt="true"/>
+        <variable name="POLY" expression="" defaultValue="&quot;x^2 - 2&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="gf" value="$K$.&lt;$GEN$&gt; = GF($Q$)"
+              description="Finite field" toReformat="false" toShortenFQNames="false">
+        <variable name="K" expression="" defaultValue="&quot;F&quot;" alwaysStopAt="true"/>
+        <variable name="GEN" expression="" defaultValue="&quot;a&quot;" alwaysStopAt="true"/>
+        <variable name="Q" expression="" defaultValue="&quot;2^8&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="ec" value="$E$ = EllipticCurve($AINVS$)"
+              description="Elliptic curve" toReformat="false" toShortenFQNames="false">
+        <variable name="E" expression="" defaultValue="&quot;E&quot;" alwaysStopAt="true"/>
+        <variable name="AINVS" expression="" defaultValue="&quot;[0, 0, 0, -1, 0]&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="mat" value="$M$ = matrix($RING$, $ROWS$, $COLS$, $ENTRIES$)"
+              description="Matrix" toReformat="false" toShortenFQNames="false">
+        <variable name="M" expression="" defaultValue="&quot;M&quot;" alwaysStopAt="true"/>
+        <variable name="RING" expression="" defaultValue="&quot;QQ&quot;" alwaysStopAt="true"/>
+        <variable name="ROWS" expression="" defaultValue="&quot;2&quot;" alwaysStopAt="true"/>
+        <variable name="COLS" expression="" defaultValue="&quot;2&quot;" alwaysStopAt="true"/>
+        <variable name="ENTRIES" expression="" defaultValue="&quot;[1, 0, 0, 1]&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="vec" value="$V$ = vector($RING$, $ENTRIES$)"
+              description="Vector" toReformat="false" toShortenFQNames="false">
+        <variable name="V" expression="" defaultValue="&quot;v&quot;" alwaysStopAt="true"/>
+        <variable name="RING" expression="" defaultValue="&quot;QQ&quot;" alwaysStopAt="true"/>
+        <variable name="ENTRIES" expression="" defaultValue="&quot;[]&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="var" value="$NAMES$ = var('$NAMES$')"
+              description="Symbolic variable(s)" toReformat="false" toShortenFQNames="false">
+        <variable name="NAMES" expression="" defaultValue="&quot;x&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="solv" value="solve($EQ$, $X$)"
+              description="Solve" toReformat="false" toShortenFQNames="false">
+        <variable name="EQ" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="X" expression="" defaultValue="&quot;x&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="ig" value="integral($F$, $X$)"
+              description="Integral" toReformat="false" toShortenFQNames="false">
+        <variable name="F" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="X" expression="" defaultValue="&quot;x&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="dr" value="diff($F$, $X$)"
+              description="Derivative" toReformat="false" toShortenFQNames="false">
+        <variable name="F" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="X" expression="" defaultValue="&quot;x&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="lim" value="limit($F$, $X$=$A$)"
+              description="Limit" toReformat="false" toShortenFQNames="false">
+        <variable name="F" expression="" defaultValue="" alwaysStopAt="true"/>
+        <variable name="X" expression="" defaultValue="&quot;x&quot;" alwaysStopAt="true"/>
+        <variable name="A" expression="" defaultValue="&quot;0&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="pl" value="plot($F$, ($X$, $A$, $B$))"
+              description="Plot" toReformat="false" toShortenFQNames="false">
+        <variable name="F" expression="" defaultValue="&quot;sin(x)&quot;" alwaysStopAt="true"/>
+        <variable name="X" expression="" defaultValue="&quot;x&quot;" alwaysStopAt="true"/>
+        <variable name="A" expression="" defaultValue="&quot;-pi&quot;" alwaysStopAt="true"/>
+        <variable name="B" expression="" defaultValue="&quot;pi&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="fa" value="factor($N$)"
+              description="Factor" toReformat="false" toShortenFQNames="false">
+        <variable name="N" expression="" defaultValue="" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="ip" value="is_prime($N$)"
+              description="Is prime" toReformat="false" toShortenFQNames="false">
+        <variable name="N" expression="" defaultValue="" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+    <template name="main" value="if __name__ == '__main__':&#10;    $BODY$"
+              description="Main guard" toReformat="false" toShortenFQNames="false">
+        <variable name="BODY" expression="" defaultValue="&quot;pass&quot;" alwaysStopAt="true"/>
+        <context><option name="PYTHON_CODE" value="true"/></context>
+    </template>
+
+</templateSet>
+

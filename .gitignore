@@ -1,0 +1,14 @@
+# Gradle / build outputs
+build/
+.gradle/
+.kotlin/
+.intellijPlatform/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
