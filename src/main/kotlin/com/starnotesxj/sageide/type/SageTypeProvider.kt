@@ -75,7 +75,12 @@ class SageTypeProvider : PyTypeProviderBase() {
 
         return RecursionManager.doPreventingRecursion(target, true) {
             val info = SageSugarAnalyzer.analyze(statement) ?: return@doPreventingRecursion null
-            val factoryType = factoryType(statement, info, context) ?: return@doPreventingRecursion null
+            val factoryType = factoryType(statement, info, context)
+            LOG.warn(
+                "Sage: sugar target '${target.name}' factoryTarget='${info.factoryTarget.name}' " +
+                    "factoryType=${factoryType?.renderTypeName() ?: "null"} call=${info.call?.text?.take(60)}",
+            )
+            if (factoryType == null) return@doPreventingRecursion null
 
             val type: PyType? = when {
                 target === info.factoryTarget -> factoryType
@@ -101,8 +106,12 @@ class SageTypeProvider : PyTypeProviderBase() {
                 sageIntegerType(function.project)
             else -> null
         }
+        LOG.warn("Sage: getReturnType $className.$methodName -> ${type?.renderTypeName() ?: "null"}")
         return type?.let { Ref.create(it) }
     }
+
+    private fun PyType.renderTypeName(): String =
+        (this as? PyClassType)?.name ?: this.javaClass.simpleName
 
     /** Union of the concrete finite-field element classes from the stubs. */
     private fun finiteFieldElementType(project: Project): PyType? {
@@ -155,6 +164,7 @@ class SageTypeProvider : PyTypeProviderBase() {
 
     companion object {
         private val FACTORY_TYPE_KEY = Key.create<PyType>("sageide.sugar.factoryType")
+        private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(SageTypeProvider::class.java)
 
         /** Methods on finite-field classes whose stub docstring says "域元素" but carries no annotation. */
         private val ELEMENT_RETURNING_METHODS = setOf(

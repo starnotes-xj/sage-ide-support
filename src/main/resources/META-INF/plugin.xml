@@ -2,7 +2,7 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.2.0</version>
+  <version>1.2.1</version>
 
   <description><![CDATA[
   First-class Sage file support in PyCharm: <code>.sage</code> files are recognized
@@ -68,10 +68,15 @@
     <!-- Types the null-named factory target (F) and the generator targets (a/x) of
          F.<a> = Constructor(...) statements, and supplies return types for sage stub
          methods the generated stubs leave unannotated (from_integer, random_element,
-         multiplicative_order, ...). order="last": PyStdlibTypeProvider is order="first"
-         and computeSafeIfAny is first-non-null-wins, so the Sage provider must be asked
-         last and still win on sugar shapes (which no other provider claims). -->
-    <typeProvider implementation="com.starnotesxj.sageide.type.SageTypeProvider" order="last"/>
+         multiplicative_order, ...).
+         order="first": the type-provider EP loops (getReferenceType / getReturnType /
+         getCallType) stop at the FIRST provider returning a non-null Ref — even when
+         the Ref's content is null — so a later-registered provider can be shadowed by
+         an earlier one.  This provider answers only for sugar targets in .sage files
+         and for a handful of unannotated sage stub methods (null everywhere else), so
+         being consulted first never disturbs other providers while making our results
+         immune to their Ref-shadows. -->
+    <typeProvider implementation="com.starnotesxj.sageide.type.SageTypeProvider" order="first"/>
     <!-- The implicit sage.all namespace (.sage files get it injected at runtime)
          plus generator references inside sugar statements: consulted by PyReferenceImpl
          whenever ordinary Python resolution fails.  (Replaces the PsiReferenceContributor

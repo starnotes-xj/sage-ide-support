@@ -61,10 +61,14 @@ object SageStubIndex {
      */
     fun findClass(project: Project, name: String): PyClass? {
         (classCache[name])?.let { return it }
-        val result = PyClassNameIndex.find(name, project, GlobalSearchScope.allScope(project))
-            .firstOrNull { isSageStubFile(it.containingFile) }
+        val candidates = PyClassNameIndex.find(name, project, GlobalSearchScope.allScope(project))
+        val result = candidates.firstOrNull { isSageStubFile(it.containingFile) }
         if (result != null) {
             classCache[name] = result
+            LOG.warn("Sage stub class index hit: '$name' -> ${result.containingFile?.virtualFile?.path}")
+        }
+        else {
+            LOG.warn("Sage stub class index miss for '$name' (candidates: ${candidates.size})")
         }
         return result
     }
