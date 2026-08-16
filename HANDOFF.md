@@ -4,18 +4,17 @@
 
 用户目标：在 PyCharm 中编写 `.sage` 文件时，获得与 `.py` 文件**完全一致**的代码提示体验——语法糖（`R.<x> = GF(2)[]`）不报错、`F.`/`e.` 补全带彩色图标（红 m 方法标志）+ 类型文本 + 形参列表 + Ctrl+Q 中文文档，右键运行用 `sage` 命令（非 Python）。**保持独立的 Sage 文件类型（不是把 .sage 识别成 Python）。**
 
-## 当前状态（v1.3.0，2026-08-16 晚）
+## 当前状态（v1.3.2，2026-08-16 深夜）
 
-四项目整合完成，类型知识全部住在数据层：
+四项目整合完成，类型知识全部住在数据层；另有三样「stubgen → Sage PR」贡献已推进（2026-08-17 凌晨）：
 
-| 项目 | 路径 | 本次动作 | 状态 |
-|---|---|---|---|
-| ① stubgen（最早的地基） | `C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen` | curated 表补 `FiniteField.from_integer/gen/multiplicative_generator/random_element` → 三元素类 union（+imports）；`FiniteFieldElement_pari_ffelt.log` → Integer；26/26 测试过；**WSL 已重新生成 stubs 并验证**（finite_field_base.pyi:294 起带 union 注解，580 文件安装成功） | commit 4b58048 |
-| ② 插件 | 本仓库 | v1.3.0 **删除 SageTypeProvider.getReturnType 硬编码补丁**（stub 已自足），插件回归纯机制（糖目标定型 + 隐式命名空间）；zip 已构建 | commit 47cab45 |
-| ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | **摘掉 `.sage→PythonFileType` 提交**（与插件文件类型注册冲突 + 糖行报错）→ rebase 为 2 commits → force-push → PR 描述重写（联动四项目） | OPEN |
-| ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 维护者 nit（__call__ 只用于 typing 的注释）已补 → push（390bdb9）；reviewer 已 LGTM，等 sagemath/core CI | OPEN |
-
-**待用户验证**：装插件 v1.3.0 zip + PyCharm File → Invalidate Caches（重索引新 stubs）→ 打开 test.sage 确认 e. 补全仍彩色（现在来自 stub 注解而非插件补丁）。**已完成**：用户确认 e. 补全仍彩色，日志证实 v1.3.0 会话无 getReturnType 行（22:49 后消失，v1.3.0 于 22:59 加载）。
+| 项目 | 路径 | 状态 |
+|---|---|---|
+| ① stubgen | `C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen` | curated 域元素条目（4b58048）；**收敛**：`infer_factory_returns` 优先源码声明注解、探测降级为兜底（tests 3/3，`tests/test_factory_inference.py`） |
+| ② 插件 | 本仓库 | v1.3.2：SageFile PSI 覆写修项目树图标（用户确认）；v1.3.1/1.3.0 历史见图标血泪史 |
+| ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | 2 commits（EP + preparse action），PR 描述已重写，OPEN |
+| ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 加了回归 doctest（a10665b 已推）；reviewer LGTM + 等 CI；**PR 留言已发**（issuecomment-5308283739）说明三样贡献 |
+| ⑤ Sage 上游 PR #42672（新 draft） | `G:\Projects\sage-fork` 分支 `annotate-finite-field-element-returns` | FiniteField 四个元素返回方法 `-> FinitePolyExtElement`（运行时三后端验证共同基类）；draft：https://github.com/sagemath/sage/pull/42672 |
 
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
