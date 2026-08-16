@@ -36,8 +36,13 @@ object SageStubIndex {
             positiveCache[name] = result
             LOG.warn("Sage stub index hit: '$name' -> ${result.containingFile?.virtualFile?.path}")
         }
-        else {
-            LOG.warn("Sage stub index miss for '$name' (candidates: ${candidates.size})")
+        else if (candidates.isNotEmpty()) {
+            // Candidates exist but the path filter rejected them all — worth a
+            // warn.  Zero candidates is the normal case for user identifiers.
+            LOG.warn(
+                "Sage stub index miss for '$name' (candidates: ${candidates.size}, " +
+                    "first: ${candidates.first().containingFile?.virtualFile?.path})",
+            )
         }
         return result
     }
@@ -49,10 +54,12 @@ object SageStubIndex {
     @JvmStatic
     fun isSageStubFile(file: PsiFile?): Boolean {
         val path = file?.virtualFile?.path ?: return false
-        return file.name.endsWith(".pyi") &&
-            path.contains("site-packages") &&
-            path.contains("sage") &&
-            path.endsWith(".pyi")
+        if (!file.name.endsWith(".pyi") || !path.endsWith(".pyi")) return false
+        // Match the `site-packages/sage/...` path segment EXACTLY.  A loose
+        // `path.contains("sage")` also matches a conda env named `envs/sage`
+        // (the user's real layout!), which would admit every .pyi under that
+        // env's site-packages — e.g. builtins.pyi — as a "sage stub".
+        return path.contains("/site-packages/sage/") || path.contains("\\site-packages\\sage\\")
     }
 
     /**

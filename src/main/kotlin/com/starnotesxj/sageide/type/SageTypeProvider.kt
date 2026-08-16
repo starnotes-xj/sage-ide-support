@@ -98,11 +98,17 @@ class SageTypeProvider : PyTypeProviderBase() {
         if (!SageStubIndex.isSageStubFile(function.containingFile)) return null
         val className = function.containingClass?.qualifiedName ?: return null
         val methodName = function.name ?: return null
+        // Do NOT assume a `sage.` package prefix: with the WSL SDK, PyCharm treats
+        // site-packages/sage itself as a source root, so qualified names come out
+        // as `rings.finite_rings.finite_field_base.FiniteField` (observed in idea.log).
+        // Match on the simple class name instead, guarded by the finite_rings package.
+        val simpleClassName = className.substringAfterLast('.')
+        val inFiniteRings = className.contains("finite_rings")
 
         val type: PyType? = when {
-            methodName in ELEMENT_RETURNING_METHODS && className.startsWith("sage.rings.finite_rings.finite_field") ->
+            methodName in ELEMENT_RETURNING_METHODS && inFiniteRings && simpleClassName == "FiniteField" ->
                 finiteFieldElementType(function.project)
-            methodName in INTEGER_RETURNING_METHODS && isFiniteFieldElementClass(className) ->
+            methodName in INTEGER_RETURNING_METHODS && inFiniteRings && simpleClassName in ELEMENT_CLASS_NAMES ->
                 sageIntegerType(function.project)
             else -> null
         }
@@ -137,9 +143,6 @@ class SageTypeProvider : PyTypeProviderBase() {
         }
         return result
     }
-
-    private fun isFiniteFieldElementClass(className: String): Boolean =
-        className.startsWith("sage.rings.finite_rings.element_")
 
     private fun factoryType(
         statement: PyAssignmentStatement,

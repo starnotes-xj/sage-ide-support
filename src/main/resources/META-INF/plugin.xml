@@ -2,7 +2,7 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.2.1</version>
+  <version>1.2.2</version>
 
   <description><![CDATA[
   First-class Sage file support in PyCharm: <code>.sage</code> files are recognized
