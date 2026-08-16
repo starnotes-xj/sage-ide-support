@@ -6,7 +6,11 @@ plugins {
 }
 
 group = "com.starnotesxj"
-version = "1.3.2"
+version = "1.4.0"
+
+// GitHub Actions sets CI=true; there is no local PyCharm on the runner, so the
+// SDK is downloaded there.  Locally the existing PyCharm installation is used.
+val onCi = System.getenv("CI") == "true"
 
 repositories {
     mavenCentral()
@@ -16,21 +20,31 @@ repositories {
 }
 
 dependencies {
-    // The Python plugin jars of the local PyCharm installation (the plugin is bundled
-    // with PyCharm at runtime, so nothing needs to be packaged — compile-time only).
-    // PyCharm 2026.1 splits the plugin across plugins/python and plugins/python-ce
-    // (psi/psi-impl/parser jars live in python-ce/lib/modules/).
-    val pythonJars = files(
-        fileTree("D:/JetBrains/PyCharm/plugins/python/lib") { include("**/*.jar") },
-        fileTree("D:/JetBrains/PyCharm/plugins/python-ce/lib") { include("**/*.jar") },
-    )
-    compileOnly(pythonJars)
-    testCompileOnly(pythonJars)
+    if (!onCi) {
+        // The Python plugin jars of the local PyCharm installation (the plugin is
+        // bundled with PyCharm at runtime, so nothing needs to be packaged —
+        // compile-time only).  PyCharm 2026.1 splits the plugin across
+        // plugins/python and plugins/python-ce
+        // (psi/psi-impl/parser jars live in python-ce/lib/modules/).
+        val pythonJars = files(
+            fileTree("D:/JetBrains/PyCharm/plugins/python/lib") { include("**/*.jar") },
+            fileTree("D:/JetBrains/PyCharm/plugins/python-ce/lib") { include("**/*.jar") },
+        )
+        compileOnly(pythonJars)
+        testCompileOnly(pythonJars)
+    }
     testImplementation("junit:junit:4.13.2")
 
     intellijPlatform {
-        // Local PyCharm 2026.1.4 installation as the plugin SDK (no IDE download).
-        local("D:/JetBrains/PyCharm")
+        if (onCi) {
+            // Downloaded on the runner; the bundled Python plugin jars are on
+            // the compile classpath automatically.
+            pycharmCommunity("2026.1.4")
+        }
+        else {
+            // Local PyCharm 2026.1.4 installation as the plugin SDK.
+            local("D:/JetBrains/PyCharm")
+        }
         testFramework(TestFrameworkType.Platform)
     }
 }
@@ -41,10 +55,13 @@ kotlin {
 
 intellijPlatform {
     pluginConfiguration {
-        version = "1.3.2"
+        version = "1.4.0"
         ideaVersion {
+            // The whole PyCharm 2026 release year: 2026.1 (261) .. 2026.3 (263).
+            // The plugin only uses stable, long-standing extension points, so a
+            // single build covers the full year.
             sinceBuild = "261"
-            untilBuild = "262.*"
+            untilBuild = "263.*"
         }
     }
     // The settings search index needs an IDE lock that conflicts with the
@@ -59,12 +76,3 @@ tasks.test {
     // conflict is resolved; the test sources stay compiled by `compileTestKotlin`.
     enabled = false
 }
-
-
-
-
-
-
-
-
-

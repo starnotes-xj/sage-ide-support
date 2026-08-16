@@ -2,7 +2,7 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.3.2</version>
+  <version>1.4.0</version>
 
   <description><![CDATA[
   First-class Sage file support in PyCharm: <code>.sage</code> files are recognized
@@ -27,7 +27,7 @@
 
   <depends>com.intellij.modules.python</depends>
 
-  <idea-version since-build="262" until-build="262.*"/>
+  <idea-version since-build="261" until-build="263.*"/>
 
   <extensions defaultExtensionNs="com.intellij">
     <!-- Dedicated Sage file type with its own dialect language: the Sage parser

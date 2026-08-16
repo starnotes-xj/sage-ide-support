@@ -45,9 +45,11 @@ once so PyCharm re-indexes the updated stubs.
 
 ## Installation
 
-1. Download the plugin zip from
-   [Releases](https://github.com/starnotes-xj/sage-ide-support/releases)
-   (built with `gradle buildPlugin`).
+1. Get the plugin zip:
+   - [Releases](https://github.com/starnotes-xj/sage-ide-support/releases)
+     (a tagged release attaches the CI-built zip), or
+   - any push's CI artifacts: **Actions → the latest `build` run →
+     Artifacts → `sage-ide-support`**.
 2. PyCharm → **Settings → Plugins → ⚙ → Install Plugin from Disk** → select
    the zip → restart.
 3. Open a `.sage` file (e.g. with `R.<x> = GF(2)[]` and

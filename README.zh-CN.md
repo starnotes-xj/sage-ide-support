@@ -39,8 +39,11 @@ Python"）：
 
 ## 安装
 
-1. 从 [Releases](https://github.com/starnotes-xj/sage-ide-support/releases)
-   下载插件 zip（由 `gradle buildPlugin` 构建）。
+1. 获取插件 zip：
+   - [Releases](https://github.com/starnotes-xj/sage-ide-support/releases)
+     （打了 tag 的发布会自动附带 CI 构建的 zip），或
+   - 任意一次 push 的 CI 产物：**Actions → 最新的 `build` 运行 →
+     Artifacts → `sage-ide-support`**。
 2. PyCharm → **设置 → 插件 → ⚙ → 从磁盘安装插件** → 选择 zip → 重启。
 3. 打开 `.sage` 文件（如含 `R.<x> = GF(2)[]` 与 `e = F.from_integer(0x57)`）：
    `GF` 无未解析引用波浪线，`F.` / `e.` 补全带彩色方法图标 + 类型文本 +
