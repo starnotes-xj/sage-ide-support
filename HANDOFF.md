@@ -113,6 +113,20 @@ cd G:\Projects\sage-ide-support
 3. `F.characteristic` Ctrl+Q 显示中文文档（F 已定型 FiniteField，待最终确认）
 4. ✅ 右键 Run 通过 sage 命令执行成功（用户确认）
 5. ✅ 语法糖行无波浪线（用户确认）
+6. ✅ 项目树 `.sage` 文件显示 Sage 图标（v1.3.2 起，用户确认）
+
+## 图标血泪史（v1.3.1 → v1.3.2，必读）
+
+症状：编辑器标签 = Sage 图标，项目树 = Python 图标。排查历程：
+
+- v1.3.1 加 `fileIconProvider` + `iconProvider`（order="first"）→ **无效**。
+- 真正根因（反编译 **发行版** `plugins/python-ce/lib/modules/intellij.python.psi.impl.jar` 的 `PyFileImpl.class` 才找到，**fork master 源码里没有这个覆写**）：
+  ```java
+  public Icon getIcon(int flags) { return PythonFileType.INSTANCE.getIcon(); }  // 无条件 Python 图标
+  ```
+  项目树 `PsiFileNode.computeIcon → value.getIcon()` 是虚方法直调，**完全绕过 IconProvider/FileIconProvider 链**；而 Sage 文件的 PSI 就是 PyFileImpl（SageFileType 继承 PythonFileType）。
+- 修复：`SageParserDefinition.createFile`（Python 官方创建文件 PSI 的钩子，原实现 `new PyFileImpl(viewProvider)`）改返回 `SageFile`（`sugar/SageFile.kt`），覆写 `getIcon()` → Sage 图标。
+- 教训：**查插件行为差异时，发行版 jar 反编译（javap -p -c）优先于 fork 源码**——发行版可能有源码里没有的覆写。对照参考：renpe 插件树图标正常是因为其文件 PSI 不是 PyFile（独立语言，非 Python 方言）。
 
 ## stub 重新生成命令（WSL，勿用 pip 0.6.1 的 --install）
 
