@@ -10,7 +10,7 @@
 
 | 项目 | 路径 | 状态 |
 |---|---|---|
-| ① stubgen | `C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen` | curated 域元素条目（4b58048）；**收敛**：`infer_factory_returns` 优先源码声明注解、探测降级为兜底（tests 3/3，`tests/test_factory_inference.py`） |
+| ① stubgen | `C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen` | curated 域元素条目（4b58048）；**收敛**：`infer_factory_returns` 优先源码声明注解、探测降级为兜底（tests 3/3）；**安装保护**：manifest 记 `generator_version` + 旧工具降级安装拒绝（--force 绕过）+ curated 中文文档随安装落盘 `.sage-pycharm-stubgen-curated-docs.json`（tests 4/4）——0.6.1 抹文档的坑从此关闭 |
 | ② 插件 | 本仓库 | v1.3.2：SageFile PSI 覆写修项目树图标（用户确认）；v1.3.1/1.3.0 历史见图标血泪史 |
 | ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | 2 commits（EP + preparse action），PR 描述已重写，OPEN |
 | ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 加了回归 doctest（a10665b 已推）；reviewer LGTM + 等 CI；**PR 留言已发**（issuecomment-5308283739）说明三样贡献 |
