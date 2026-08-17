@@ -92,6 +92,21 @@ If `.sage` was manually associated with another type in
 **Settings → Editor → File Types**, remove that association so this plugin's
 Sage file type applies.
 
+### Mixing Sage and Python in one `.sage` file
+
+`.sage` files are plain Python plus the injected `sage.all` namespace and
+Sage's text **preparser** — `requests`, `bytes`, generators and all other
+Python code run unchanged.  The one operator to watch is `^`:
+
+| you write | Sage meaning | Python meaning |
+|---|---|---|
+| `e^254` | 254th power (preparsed to `**`) | bitwise XOR |
+| `e^(-1)` | inverse (power −1) | bitwise XOR |
+| `x ^^ y` | **bitwise XOR** (preparsed back to `^`) | syntax error |
+
+So in Sage code use `^` for powers, and in Python-style code use `^^`
+for XOR (`bytes(x ^^ y for x, y in zip(a, b))`).
+
 ## Building
 
 ```powershell

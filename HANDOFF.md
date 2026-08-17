@@ -129,6 +129,10 @@ cd G:\Projects\sage-ide-support
 
 **v1.5.0（2026-08-17）**：新增 **Sage 后缀补全**（`SagePostfixTemplateProvider`）——`.ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix` 展开为对应 sage.all 调用。要点：① postfix 模板只能由插件提供（设置界面不能新增）；② EP 是 `LanguageExtensionPoint`（每语言单 provider、方言回退基语言）——Sage 注册自己的 provider 会**遮蔽** Python 自带模板，所以 `getTemplates()` 必须返回 `PyPostfixTemplateProvider().getTemplates() + sage 模板`；③ 模板类用 `PyCallWrapPostfixTemplate(name, provider)`（key=函数名，展开为 `name($EXPR$)`）。
 
+## .sage 混写 Python 的 `^`/`^^` 坑（2026-08-17 实测）
+
+`.sage` = 纯 Python + sage.all 注入 + preparser；`requests`/bytes 等 Python 代码原样可跑。唯一坑：**`^` 在 .sage 里是幂（预解析为 `**`）**——Python 的异或必须写 `^^`（预解析回 `^`）。实测案例：`bytes(x ^ y for x, y in zip(a, b))` → `x ** y` → `ValueError: bytes must be in range(0, 256)`；改成 `^^` 后整份 test.sage（GF(2^8) AES 域 + CryptoHack ECB CBC WTF 网络题）一次跑通。已写入插件 README（EN/zh）。
+
 ## 2026.2.1 失效 PSI 事故（v1.4.0 → v1.4.1，必读）症状：PyCharm 升到 2026.2.1 后，高亮/类型提示阶段抛 `PsiInvalidElementAccessException: Invalid PSI Element: PyFunctionImpl`，栈顶在我们 `SageReferenceResolveProvider.resolveName` 第 66 行——**对 stub 索引返回的元素调用 `containingFile`（触发 getNode → InvalidRef）**。
 
 根因：2026.2 的 **impatient-reader** 高亮在读锁不完整持有的窗口里跑，PSI AST 会被更激进地丢弃——索引元素（`PyFunctionImpl` 等）持有的 AST 节点变成悬空引用，而我们的 LOG 行 `declaration.containingFile?.name` 和 `SageStubIndex` 里的路径过滤/日志都在解引用它。
