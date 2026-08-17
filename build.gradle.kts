@@ -58,6 +58,13 @@ intellijPlatform {
     // The settings search index needs an IDE lock that conflicts with the
     // interactive runIde instance; the plugin has no searchable settings.
     buildSearchableOptions = false
+
+    // JetBrains Marketplace publishing (https://plugins.jetbrains.com):
+    // `gradle publishPlugin` uploads with the token from the PUBLISH_TOKEN
+    // environment variable (created on the JetBrains Marketplace site).
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
+    }
 }
 
 tasks.test {

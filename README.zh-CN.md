@@ -29,11 +29,26 @@ Python"）：
 `site-packages/sage/*.pyi` 存根中的声明，所有方法类型与中文快速文档都来自
 存根。
 
+## 快速开始
+
+1. **生成存根**（在 Sage 环境内，WSL / 本机 / Docker 均可）：
+   ```bash
+   python -m pip install sage-pycharm-stubgen
+   sage-pycharm-stubgen --install
+   ```
+2. **安装插件**：设置 → 插件 → ⚙ → 从磁盘安装插件 → 选
+   [Releases](https://github.com/starnotes-xj/sage-ide-support/releases) 里的 zip → 重启。
+3. **打开任意 `.sage` 文件**（例如含 `R.<x> = GF(2)[]` 与
+   `e = F.from_integer(0x57)`）：`GF` 无红线、`F.`/`e.` 补全带彩色图标 +
+   类型文本 + 形参列表，Ctrl+Q 显示中文文档，右键运行走 `sage` 命令。
+4. （重）生成存根后执行一次 **文件 → 使缓存失效/重新启动**。
+5. 可选全量中文文档：`sage-pycharm-stubgen translate-docs --apply-only`。
+
 ## 依赖条件
 
 | 依赖 | 版本 / 条件 |
 |---|---|
-| PyCharm | **2026.1.x**（build 262；`since-build="262"` / `until-build="262.*"`） |
+| PyCharm | **2026.1 – 2026.3**（build 261–263；`since-build="261"` / `until-build="263.*"`） |
 | Python 插件 | PyCharm 自带（`com.intellij.modules.python`） |
 | SageMath | 较新版本，WSL / 本机 / Docker 均可，并配置为项目 SDK |
 | sage-pycharm-stubgen | **≥ 0.8.0**：在 Sage 环境内执行 `sage-pycharm-stubgen --install` 生成并安装存根；中文 curated 文档与有限域元素类返回注解自 0.7.0 起提供，0.8.0 新增**可选机器翻译层**——`sage-pycharm-stubgen translate-docs --apply-only` 用随包共享缓存把其余英文 Quick-Doc 补成中文 |

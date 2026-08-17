@@ -36,11 +36,27 @@ The plugin deliberately carries **zero Sage domain knowledge**: it resolves
 `GF` to the declaration inside the installed `site-packages/sage/*.pyi`
 stubs, and every method type / Chinese Quick-Doc comes from those stubs.
 
+## Quick start
+
+1. **Generate the stubs** inside your Sage environment (WSL / native / Docker):
+   ```bash
+   python -m pip install sage-pycharm-stubgen
+   sage-pycharm-stubgen --install
+   ```
+2. **Install this plugin**: Settings → Plugins → ⚙ → Install Plugin from Disk →
+   the zip from [Releases](https://github.com/starnotes-xj/sage-ide-support/releases) → restart.
+3. **Open any `.sage` file** (e.g. with `R.<x> = GF(2)[]` and `e = F.from_integer(0x57)`):
+   `GF` has no unresolved-reference squiggle, `F.`/`e.` complete with colored method
+   icons + type text + parameter lists, Ctrl+Q shows Chinese docs, and Run uses the
+   `sage` command.
+4. After (re)generating stubs, run **File → Invalidate Caches / Restart** once.
+5. Optional full-Chinese docs: `sage-pycharm-stubgen translate-docs --apply-only`.
+
 ## Requirements
 
 | Dependency | Version / condition |
 |---|---|
-| PyCharm | **2026.1.x** (build 262; `since-build="262"` / `until-build="262.*"`) |
+| PyCharm | **2026.1 – 2026.3** (builds 261–263; `since-build="261"` / `until-build="263.*"`) |
 | Python plugin | bundled with PyCharm (`com.intellij.modules.python`) |
 | SageMath | any recent version in WSL, native or Docker, configured as the project SDK |
 | sage-pycharm-stubgen | **≥ 0.8.0**: generate and install the stubs with `sage-pycharm-stubgen --install` inside the Sage environment; the Chinese curated docs and the finite-field element-class return annotations ship since 0.7.0, and 0.8.0 adds an **opt-in machine-translation layer** — `sage-pycharm-stubgen translate-docs --apply-only` fills the remaining English Quick-Docs with Chinese from a bundled shared cache |
