@@ -4,7 +4,9 @@
 
 用户目标：在 PyCharm 中编写 `.sage` 文件时，获得与 `.py` 文件**完全一致**的代码提示体验——语法糖（`R.<x> = GF(2)[]`）不报错、`F.`/`e.` 补全带彩色图标（红 m 方法标志）+ 类型文本 + 形参列表 + Ctrl+Q 中文文档，右键运行用 `sage` 命令（非 Python）。**保持独立的 Sage 文件类型（不是把 .sage 识别成 Python）。**
 
-## 当前状态（v1.6.0 / stubgen 0.8.1，2026-08-17 晚）
+## 当前状态（v1.7.4 / stubgen 0.8.2，2026-08-18）
+
+（历史标题：v1.6.0 / stubgen 0.8.1，2026-08-17 晚。**stubgen 0.8.2 已发 PyPI**（2026-08-18）：RealField_class Parent 桥接（RR 可调用）+ `FiniteField.__iter__ -> Iterator[元素union]`（for 循环类型化）；commit `0b82efd`/`1e1daf1`/`01b1cc2`，tag v0.8.2，CI tests+publish 双绿。插件最新发布 v1.7.4。）
 
 四项目整合完成，类型知识全部住在数据层；另有三样「stubgen → Sage PR」贡献已推进（2026-08-17 凌晨）：
 
