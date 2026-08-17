@@ -22,16 +22,19 @@ import com.intellij.ide.fileTemplates.FileTemplateGroupDescriptorFactory
 class SageFileTemplatesFactory : FileTemplateGroupDescriptorFactory {
 
     override fun getFileTemplatesDescriptor(): FileTemplateGroupDescriptor {
-        val group = FileTemplateGroupDescriptor(SageBundle.message("sage.new.file.group"), SageIcons.SAGE)
+        val group = FileTemplateGroupDescriptor(SageUiText.sageGroupName(), SageIcons.SAGE)
         group.addTemplate(object : FileTemplateDescriptor(SAGE_FILE_TEMPLATE, SageIcons.SAGE) {
             /**
-             * The New menu shows this text; the file name stays the plain
-             * template name so `FileTemplateManager.getTemplate(...)` finds the
-             * `fileTemplates/Sage File.sage.ft` resource.  Localized through
-             * [SageBundle]: "Sage 文件" on a zh-CN IDE, "Sage File" otherwise
-             * (the DevKit plugin localizes its template entries the same way).
+             * Localized entry text for the settings tree / any consumer of
+             * the descriptor ("Sage 文件" on a zh-CN IDE, "Sage File"
+             * otherwise); the file name stays the plain template name so
+             * `FileTemplateManager.getTemplate(...)` finds the
+             * `fileTemplates/Sage File.sage.ft` resource.  The New-menu
+             * pipeline itself is covered by
+             * [SageCreateFromTemplateActionReplacer] (it shows the template
+             * name, not this display name).
              */
-            override fun getDisplayName(): String = SageBundle.message("sage.new.file.display")
+            override fun getDisplayName(): String = SageUiText.sageFileEntry()
         })
         return group
     }

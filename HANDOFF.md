@@ -299,10 +299,20 @@ cd G:\Projects\sage-ide-support
 - 资源 `src/main/resources/fileTemplates/Sage File.sage.ft`——`FileTemplatesLoader`（platform lang-impl）扫描各插件 classpath 的 `fileTemplates/` 目录，`<名>.<扩展>.ft` 自动成为默认文件模板（name="Sage File"、extension="sage"，经 velocity 渲染），建出的文件天然是 SageFileType 的 .sage 文件。
 - `SageFileTemplatesFactory`（`com.intellij.fileTemplateGroup` EP，Maven/DevKit 插件同款机制）：`FileTemplateGroupDescriptor("SageMath", SageIcons.SAGE)` + `FileTemplateDescriptor("Sage File")`——New 菜单出现 "SageMath" 组内 "Sage File" 条目。
 - 模板内容：两行注释提示（`^` 是幂 / `^^` 是异或 / sage.all 隐式注入）。
-- **条目名本地化（用户要求：中文界面显示「Sage 文件」）**：`SageBundle`（`com.intellij.DynamicBundle`）+ `messages/SageBundle.properties`（EN）与 `SageBundle_zh_CN.properties`（zh）——IDE locale 自动选文件；descriptor 覆写 `getDisplayName()` 返回 bundle 消息（**getFileName() 保持模板名 "Sage File" 不变**，`FileTemplateManager.getTemplate` 才能找到资源；DevKit 插件同款模式：`new FileTemplateDescriptor(name, icon) { override getDisplayName() = DevKitBundle.message(...) }`）。
+- **条目名本地化（用户要求：中文界面显示「Sage 文件」）**：`SageBundle`（`com.intellij.DynamicBundle`）+ `messages/SageBundle.properties`（EN）与 `SageBundle_zh_CN.properties`（zh）——IDE locale 自动选文件；descriptor 覆写 `getDisplayName()` 返回 bundle 消息（**getFileName() 保持模板名 "Sage File" 不变**，`FileTemplateManager.getTemplate` 才能找到资源；DevKit 插件同款模式：`new FileTemplateDescriptor(name, icon) { override getDisplayName() = DevKitBundle.message(...) }`）。**v1.7.1 推翻**：用户实测（IDE locale=zh-CN、localization-zh 语言包）条目仍英文——见 v1.7.1 节，此方案的 bundle 文件已删除。
 - 版本升 **1.7.0**（新功能，非 bugfix）。
 
-**验证**：jar 内 `fileTemplates/Sage File.sage.ft` + plugin.xml `<fileTemplateGroup>` EP ✓（解包核验）；五测试全绿；verifyPlugin 双版本 Compatible。**用户侧待测（1.7.0）**：右键目录 → New → SageMath → Sage File → 输入文件名 → 生成带注释提示的 .sage 文件（Sage 图标、补全/糖解析正常）。
+**验证**：jar 内 `fileTemplates/Sage File.sage.ft` + plugin.xml `<fileTemplateGroup>` EP ✓（解包核验）；五测试全绿；verifyPlugin 双版本 Compatible。**用户实测（1.7.0）**：右键 New 出现条目，但**显示英文 "Sage File"**（中文界面应为「Sage 文件」）→ v1.7.1 修复。
+
+### v1.7.1（2026-08-18）——New 菜单条目名本地化（replacer 路径）
+
+**症状（用户 1.7.0 实测）**：New 菜单条目显示英文 "Sage File"，中文界面（localization-zh，i18n.locale=zh-CN 已从用户 options 确认）未显示「Sage 文件」。
+
+**根因（2026.2 平台行为定论，发行版 jar 字符串扫描实证）**：`com.intellij.fileTemplateGroup` EP 的 **New 菜单消费端在 2026.2 已不存在**——全 lib jar 扫描 `FileTemplateGroupDescriptor` 的引用只有 Settings 页（`AllFileTemplatesConfigurable`/`FileTemplateTabAsTree`）；用户看到的条目来自 `CreateFromTemplateGroup`（New → 从模板，`NewGroup` 组里的 `NewFromTemplate` 引用），其 `getChildren` 遍历 `FileTemplateManager.getAllTemplates()`（插件 jar 的 `fileTemplates/Sage File.sage.ft` 自动成为 default 模板），action 文本 = **`FileTemplate.getName()`（资源文件名 "Sage File"，无法本地化）**——descriptor 的 `getDisplayName()` 覆写与 properties bundle 都**不被这条链路调用**。
+
+**修复（1.7.1，官方钩子）**：`com.intellij.createFromTemplateActionReplacer` EP（`CreateFromTemplateGroup.getChildren` 对每个模板先咨询它，Python/官方插件同款钩子）——`SageCreateFromTemplateActionReplacer` 对 "Sage File" 模板返回 `fileTemplates.actions.CreateFromTemplateAction(本地化文本, SageIcons, { template })`（**注意包**：`com.intellij.ide.fileTemplates.actions.CreateFromTemplateAction` 是具体类；`com.intellij.ide.actions.CreateFromTemplateAction` 是抽象泛型类，import 错包编译即炸）。文本来源 `SageUiText.sageFileEntry()`：**直接读 `DynamicBundle.getLocale()`（public static，i18n.locale 服务值）判断 language=="zh" → 「Sage 文件」**——因为这条链路完全不经过插件 properties bundle，bundle 方案无效；`SageBundle` + 两个 properties 文件删除。descriptor 的 displayName 覆写保留同款判断（Settings 树路径仍走 descriptor）。**教训（补入已知坑）**：fileTemplateGroup 的 New 菜单消费 2026.2 已移除，方言/小插件要本地化 New 菜单模板条目名必须走 createFromTemplateActionReplacer + 运行时 locale 判断，不要指望 properties bundle。
+
+**验证**：jar 内 replacer/SageUiText/EP 就位；五测试全绿；verifyPlugin 双版本 Compatible。**用户侧待测（1.7.1）**：右键目录 → 新建 → 条目显示**「Sage 文件」**（中文界面）；点击建文件正常（两行注释提示 + Sage 图标 + 补全）。通过后 tag v1.7.1 + push 双发布（v1.7.0 跳过不发布）。
 
 ### 待 IDE 实测（用户侧）
 
