@@ -81,6 +81,14 @@ gradle buildPlugin --no-daemon   # 产出 build/distributions/*.zip
 需要 JDK 21、Kotlin 2.3.0 与 IntelliJ Platform Gradle 插件（以本机 PyCharm
 安装作为插件 SDK）。
 
+## 发布
+
+推送 `v*` tag：CI 会构建插件并**同时**发布到
+[JetBrains 插件商城](https://plugins.jetbrains.com)（通过 `PUBLISH_TOKEN`
+仓库 secret）和 [GitHub Release](https://github.com/starnotes-xj/sage-ide-support/releases)
+（附带 zip 附件）。每次发布前先在 `build.gradle.kts` 里升版本号——商城会拒绝
+重复版本。
+
 ## 相关项目
 
 - [sage-pycharm-stubgen](https://github.com/starnotes-xj/sage-pycharm-stubgen) ——

@@ -92,6 +92,15 @@ gradle buildPlugin --no-daemon   # produces build/distributions/*.zip
 Requires JDK 21, Kotlin 2.3.0 and the IntelliJ Platform Gradle Plugin
 (configured against the local PyCharm installation as the plugin SDK).
 
+## Releasing
+
+Push a `v*` tag: the CI builds the plugin and publishes it to **both**
+the [JetBrains Marketplace](https://plugins.jetbrains.com) (via the
+`PUBLISH_TOKEN` repository secret) and a
+[GitHub Release](https://github.com/starnotes-xj/sage-ide-support/releases)
+with the zip attached.  Bump the version in `build.gradle.kts` for every
+release — the Marketplace rejects duplicate versions.
+
 ## Related projects
 
 - [sage-pycharm-stubgen](https://github.com/starnotes-xj/sage-pycharm-stubgen) —

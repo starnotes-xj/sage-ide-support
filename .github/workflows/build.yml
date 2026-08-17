@@ -57,14 +57,11 @@ jobs:
           gradle-version: "8.14"
 
       # Upload the same zip to the JetBrains Marketplace.  The token comes
-      # from the PUBLISH_TOKEN repository secret (created on
-      # plugins.jetbrains.com; it only updates plugins that already exist
-      # there — the very first upload must be done once manually on the
-      # website, see README).  continue-on-error keeps GitHub releases
-      # working until that first manual upload has happened; flip the step
-      # to strict once the plugin page is live.
+      # from the PUBLISH_TOKEN repository secret.  The plugin page already
+      # exists (first upload done manually on plugins.jetbrains.com), so a
+      # duplicate-version tag fails the job loudly — bump the version in
+      # build.gradle.kts for every release.
       - name: Publish to JetBrains Marketplace
-        continue-on-error: true
         env:
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
         run: gradle publishPlugin --no-daemon
