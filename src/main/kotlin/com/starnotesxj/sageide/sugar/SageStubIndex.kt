@@ -7,8 +7,11 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiInvalidElementAccessException
 import com.intellij.psi.search.GlobalSearchScope
 import com.jetbrains.python.psi.PyClass
+import com.jetbrains.python.psi.PyFile
+import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.stubs.PyClassNameIndex
 import com.jetbrains.python.psi.stubs.PyFunctionNameIndex
+import com.jetbrains.python.psi.stubs.PyModuleNameIndex
 
 /**
  * Looks up declarations of Sage built-in names in the SDK's generated stubs.
@@ -43,7 +46,7 @@ object SageStubIndex {
         val candidates = mutableListOf<PsiElement>()
         PyFunctionNameIndex.find(name, project, GlobalSearchScope.allScope(project)).forEach { candidates += it }
         PyClassNameIndex.find(name, project, GlobalSearchScope.allScope(project)).forEach { candidates += it }
-        val result = candidates.firstOrNull { isSageStubDeclaration(it) }
+        val result = candidates.firstOrNull { isSageStubDeclaration(it) } ?: findSageAllAttribute(project, name)
         if (result != null) {
             positiveCache[name] = result
             LOG.warn("Sage stub index hit: '$name' -> ${safeContainingFilePath(result)}")
@@ -56,6 +59,25 @@ object SageStubIndex {
             )
         }
         return result
+    }
+
+    /**
+     * Resolves a name to a top-level attribute of the `sage.all` stub module.
+     *
+     * `ZZ`/`QQ`/`RR`/`CC`/`SR` (and other `sage.all` names) are module-level
+     * INSTANCES — the generated `all.pyi` declares them as annotated
+     * variables (`ZZ: _Type_ZZ`), which neither PyFunctionNameIndex nor
+     * PyClassNameIndex covers.  The declaration carries the annotation, so
+     * returning the target restores the whole type chain (`ZZ` -> the
+     * integer-ring type).
+     */
+    private fun findSageAllAttribute(project: Project, name: String): PyTargetExpression? {
+        val allModule = PyModuleNameIndex.findByShortName("all", project, GlobalSearchScope.allScope(project))
+            .firstOrNull { isSageStubFile(it) } as? PyFile ?: return null
+        val attribute = allModule.findTopLevelAttribute(name) ?: return null
+        if (!attribute.isValid) return null
+        LOG.warn("Sage stub sage.all attribute hit: '$name' in ${safeContainingFilePath(attribute)}")
+        return attribute
     }
 
     private fun isSageStubDeclaration(element: PsiElement): Boolean =

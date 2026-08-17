@@ -316,6 +316,16 @@ cd G:\Projects\sage-ide-support
 
 **CI 事故记录（2026-08-18）**：v1.7.1 tag 的 release job 中 `publishPlugin` 步骤成功，但 `action-gh-release` 附件步骤撞 GitHub API 503（连续重试后 Too many retries，job 红、Release 未创建）。处理：① **没有 rerun 失败 job**——rerun 会重跑 publishPlugin，商城已有 1.7.1 → 严格模式撞「already contains version 1.7.1」必红（已手动取消一次误发的 rerun）；② 本地 `gh release create v1.7.1 --notes ... build/distributions/sage-ide-support-1.7.1.zip` 手动创建 Release + 附件（一次 503 重试后成功）。**教训**：tag 发布的「商城发布」与「GitHub Release」在同一 job 的两个步骤，任一步骤失败后**不可整体 rerun**（会重复发布撞版本）；正确姿势是按步骤补——gh-release 失败用本地 `gh release create` 补，publishPlugin 失败则需先确认商城侧是否已入库再决定。
 
+### v1.7.2（2026-08-18）——隐式命名空间两处修复：注释 import 门控 + sage.all 变量（ZZ 等）
+
+**用户实测（1.7.1）报告**：① 把 `from sage.all import *` **注释**掉后 GF/ZZ 报未解析（运行正常）；② **删除**该行后 GF 恢复、**ZZ 仍报未解析**。
+
+**根因一（注释行门控误判）**：`SageReferenceResolveProvider` 的显式 import 门控是文本扫描 `file.text.contains("from sage.all import")`——注释掉的行文本仍在文件里 → 被误判为「用户有显式 import」→ 隐式解析整体禁用 → GF/ZZ 全红。**修复**：门控改为 **PSI 语义判断**——`PsiTreeUtil.collectElementsOfType(file, PyFromImportStatement::class.java).any { it.importSource?.asQualifiedName()?.toString() == "sage.all" }`（注释掉的 import 不进解析树，天然排除；`asQualifiedName()` 返回 `QualifiedName?`，必须 `?.toString()` 才能 == String，直接比较编译报错）。
+
+**根因二（sage.all 变量名无索引）**：删除注释行后 GF 走函数索引（`PyFunctionNameIndex`）正常恢复；但 **`ZZ`/`QQ`/`RR`/`CC`/`SR` 是 sage.all 的模块级实例**——生成的 `all.pyi` 里是注解变量形式（`ZZ: _Type_ZZ`，已读用户 WSL stub 确认），`PyFunctionNameIndex`/`PyClassNameIndex` **都不覆盖变量**，`ZZ` 永远查不到声明。**修复**：`SageStubIndex.findDeclaration` 加第三步 `findSageAllAttribute`——`PyModuleNameIndex.findByShortName("all", project, allScope)` 找 `sage.all` 模块（`isSageStubFile` 路径过滤，排除其他包的 all 模块）→ `PyFile.findTopLevelAttribute(name)` 拿带注解的 `PyTargetExpression`（类型链自动生效）→ 复用 positiveCache + isValid 守卫。GF 之前一直不红是因为用户 test.sage 有显式 `from sage.all import *`（星导入默认解析器处理）；删掉后 GF 靠函数索引、ZZ 靠本次新增的变量路径。
+
+**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户侧待测（1.7.2）**：test.sage **删除或注释** `from sage.all import *` 后 GF/ZZ 均无红线（ZZ hover 应为整数环类型）；右键运行正常；其余全清单回归。通过后 tag v1.7.2 + push（**注意 v1.7.1 已发布**，本版是新版本；CI release job 若再遇 GitHub 503，按 v1.7.1 事故教训手动补 Release，勿 rerun）。
+
 ### 待 IDE 实测（用户侧）
 
 1. `e^254` 无错误、hover 类型为元素类（`__pow__` 链）；2. `x ^^ y`/`x ^^= y` 无语法错且按异或/异或赋值解析（**`^^=` 已在独立词法测试验证流正确，但请用户装新 zip 复测一次**——旧 17:10 zip 有惰性 advance bug）；3. bytes 上下文 `x ^ y` 仍标红且 quick fix 到 `^^`，`x ^= y`（bytes 上下文）标红且 quick fix 到 `^^=`；4. 后缀补全 popup 同时含 Sage 集与 Python 内建集；5. `R.<x> = GF(2)[]` 等糖语句不受影响。

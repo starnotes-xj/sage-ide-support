@@ -2,10 +2,14 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.7.1</version>
+  <version>1.7.2</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.7.2 — Fix a regression in the implicit sage.all namespace: commenting
+        out `from sage.all import *` in a .sage file no longer leaves GF/ZZ/...
+        flagged as unresolved references (the explicit-import gate is now
+        PSI-based, so a commented-out import does not count).</li>
     <li>1.7.1 — The New-menu entry text for the Sage file template is now
         localized through the createFromTemplateActionReplacer pipeline:
         "Sage 文件" on a zh-CN IDE, "Sage File" otherwise.</li>
