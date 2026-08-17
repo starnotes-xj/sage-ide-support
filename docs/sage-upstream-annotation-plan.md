@@ -48,7 +48,11 @@ manifolds、SymbolicRing(SR)、Integers/QQ 工厂等。
 3. 出现 `conflict`：双向排查——数据层写错（修 supplemental_docs 发 patch 版）
    或上游注解写错（追加修正 PR）。
 4. curated 条目**保留不删**：工具支持任意已装 sage 版本，老版本仍需兜底；
-   conformance 报告按环境自然区分新旧。
+   conformance 报告按环境自然区分新旧。生成优先级上 curated **高于**源码声明
+   （curated 是经过验证的金标准，且常比上游基类声明更精确），两者一致时无感、
+   分歧时 conformance 报警。**真正的删除只发生在两种情形**：conflict 判定为
+   数据层错误（修正或删除该条）；或未来抬高最低支持的 sage 版本线时批量清理
+   （当前无此线）。
 
 ## 规模与投入估算（2026-08-17 实测 sage 10.9）
 
