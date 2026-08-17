@@ -354,9 +354,9 @@ cd G:\Projects\sage-ide-support
 - 构建 SDK 升到 **2026.2.1**（CI `pycharm("2026.2.1")`，本地 D:\JetBrains\PyCharm 已同步更新）。
 - 教训：**任何索引来的元素，凡要 touching AST（containingFile/getParent/getNode）都必须先 isValid + 容错**；缓存 PsiElement 必须复查有效性。
 
-**后续动作（2026-08-18 三更）**：
-- 上游 PR #42670：三轮评审均已处理并推送（`c5bdfdf` 裸注解 → `581bf4d` 去引号 → `4e2fa5a` TC003 豁免改本地 noqa），已回评论 issuecomment-5318318884 / issuecomment-5318501533 / issuecomment-5318599868。**CI 批准仍是唯一阻塞**：每次推送后 7 组 workflow run 立即生成并停在 `action_required`（0s 未执行），前三轮 run 全部**过期终结**（用户不满点）。已在评论里请 @sagemath/core 批准或允许分支移入主仓；fork CI（starnotes-xj/sage#1，无批准门槛）在同 head 自动全套跑作为实时证据。**红线**：除非评审再提要求，不再自行推 commit（避免 approve-run 过期循环）；等维护者批复。
-- **提醒**：vincentmacri 已表示「改完去引号就 LGTM」，他复审通过后若 CI 批准仍无人响应，可考虑在评论里请 tobiasdiez（已 APPROVED 过）帮忙批准 run。
+**后续动作（2026-08-18 四更）**：
+- 上游 PR #42670：vincentmacri 已发评论「**LGTM. I am okay with approving after the CI finishes on your fork**」（issuecomment-5318660729）——代码侧全部需求已闭环（`c5bdfdf` 裸注解 → `581bf4d` 去引号 → `4e2fa5a` 本地 noqa）。**fork CI（head `4e2fa5a`）证据已回评论 issuecomment-5319090366**：Lint ✓、Static type check（ty+pyright）✓、docker Build & Test 四 shard 全绿（ecl.pyx 中止本轮未复现）；唯一红项 = doc-html 的 `Download old doc` 步骤（fork 无 develop 基线 artifact，**基础设施缺口、与改动无关**）；Meson 全矩阵/meson-minimal/PDF 文档在跑（承诺跑完回帖最终结果）。主仓 7 组 run 仍 `action_required` 未批准。**用户结论（已传达）**：只要修好该基础设施（或该 lane 在主仓跑，artifact 存在），PR 即全绿，无任何失败归因于改动代码。
+- **提醒**：vincentmacri 复审通过后若主仓 CI 批准仍无人响应，可考虑在评论里请 tobiasdiez（已 APPROVED 过）帮忙批准 run。
 - sage-lsp issue #3：已回评论 issuecomment-5311787391——认同"注解长期归 sage 仓"（三个上游 PR 正是此路线），但 stubgen 保持**独立仓库/独立发布**（PyPI CLI，不并入 LSP 也不依赖 LSP，仅可选消费关系）。
 - JetBrains 插件商城：**已打通**（2026-08-17）：用户已手动完成首次上传（插件 `com.starnotesxj.sageide` 已存在于商城，版本 1.4.1 已在 channel——注意可能仍在审核/未公开，用户可在 https://plugins.jetbrains.com/author/me 查状态）。`PUBLISH_TOKEN` 已存为仓库 secret；CI 的 `v*` tag release job 现在**同时**跑 `gradle publishPlugin`（严格模式：重复版本会让 job 红，即发布前必须升 `build.gradle.kts` 版本号）+ `action-gh-release` 附件。测试 tag v1.4.1-test 已清理；报错 "already contains version 1.4.1" 即 token/secret 注入正常、仅版本重复。下一次发版流程：升版本号（**当前已升 1.6.0，未 tag**）→ commit → `git tag v1.6.0` → push → 全自动双发布。
 - **许可证 2026-08-17 已从 MIT 换成 GPL-3.0（两仓库统一，用户拍板）**：注意 PyPI 已发布的 ≤0.8.0 与 GitHub 已发布的 ≤v1.4.1 在法律上仍是 MIT，新版本才适用 GPL。**PEP 639 坑**：pyproject 用 SPDX `license = "GPL-3.0-only"` 时**不得**同时保留 `License ::` classifier（setuptools≥77 直接 InvalidConfigError，CI 的 `pip install -e .` 在跑测试前就炸；本地 PYTHONPATH 跑 unittest 不经过打包所以假绿）——修复 `864a445` 删 classifier。**教训：改打包元数据后必须本地 `python -m build` + `pip install -e .` 验证，不能只跑 unittest。**
