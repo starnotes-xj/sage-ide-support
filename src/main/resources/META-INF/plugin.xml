@@ -12,7 +12,8 @@
         .numerator, .denominator, .continued_fraction, .cyclotomic_polynomial, .sage_eval) and
         bytes/int conversion (.b2i, .i2b); Python's built-in postfix set stays available.
         New inspection: flags ^ / ^= in unambiguous bytes contexts (Sage power vs Python XOR)
-        with a quick fix to ^^.</li>
+        with a quick fix to ^^.  The Sage lexer now merges the ^^ pair into one XOR token,
+        so the correct Sage XOR spelling no longer shows a parser error.</li>
     <li>1.4.1 — Fix PsiInvalidElementAccessException on PyCharm 2026.2: stale stub-index
         elements are re-validated and never dereferenced through a dropped AST node.</li>
     <li>1.4.0 — Supports the whole PyCharm 2026 release year (261–263); GitHub Actions CI

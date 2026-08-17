@@ -72,7 +72,8 @@ class SagePostfixTemplateProvider : PostfixTemplateProvider {
     override fun getTemplates(): Set<PostfixTemplate> =
         PyPostfixTemplateProvider().getTemplates() + sageTemplates
 
-    override fun isTerminalSymbol(currentChar: Char): Boolean = false
+    override fun isTerminalSymbol(currentChar: Char): Boolean =
+        currentChar == '.' || currentChar == '!'
 
     override fun preExpand(file: PsiFile, editor: Editor) = Unit
 

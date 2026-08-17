@@ -56,7 +56,7 @@ class SageXorInspection : LocalInspectionTool() {
                 if (!isBytesLike(node.assignmentTarget) && !isBytesLike(node.value)) return
                 holder.registerProblem(
                     operatorNode.psi,
-                    "In Sage, ^= is power-assignment (preparsed to **=), not XOR. Use ^^= for bitwise XOR.",
+                    "In Sage, ^= is power-assignment (preparsed to **=), not XOR. Write x = x ^^ y instead.",
                     ProblemHighlightType.ERROR,
                 )
             }
