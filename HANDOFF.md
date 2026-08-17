@@ -181,7 +181,7 @@ sagemath 上游对外部 fork PR 每次推送都要维护者手动批准 run（`
   2. PR#2（#42672）：doctest 里直接用 `FinitePolyExtElement`，但 sage doctest 运行器**不注入模块级 import**（`FiniteField` 能用是因为它在 sage.all 里）→ 全平台 NameError。修复 `2f7a53d`：doctest 内显式 `from sage.rings.finite_rings.element_base import FinitePolyExtElement`。**第二坑（`12b80f9`）**：sage doctest 全局命名空间里 `FiniteField` 是 **FiniteFieldFactory 实例**（sage.all 把工厂暴露为 FiniteField 这个名字），不是类——`FiniteField.from_integer` 抛 AttributeError；须再显式 `from sage.rings.finite_rings.finite_field_base import FiniteField` 拿类。**教训：doctest 里任何类型检查用的名字都要显式 import，别信 sage.all 命名空间。**
   3. PR#3（#42675）：3.13 对函数注解**即时求值**——`QuotientRing_generic`/`PowerSeriesRing_generic` 在同类文件里定义于函数**之后** → 3.13 一导入就 NameError（3.14 的 PEP 649 延迟求值掩盖了它，meson 全关只跑 3.14 所以假绿）。修复 `fb1a079`：两个文件加 `from __future__ import annotations`（laurent 的基类在别的模块且顶部已导入，无需改）。**已验绿**：fork meson 8/9 job success（3.13/3.14 × 三平台 + editable + 3.12 + changed-files），docker 版 ✓，全关 ✓，Lint/静态 ✓。
   3. fork 的 doc-html 构建必失败（"Download old doc" 下载不到 develop 的基线 artifact）——基础设施缺口非代码问题；doc-pdf 能跑且有用（正是它先报出 NameError）。
-  4. docker 版 Build & Test 的 `ecl.pyx # Killed due to abort`（cysignals 崩溃，3.14）在 fork 里也复现 → 铁证与我们的改动无关。
+  4. docker 版 Build & Test 的 `ecl.pyx # Killed due to abort`（cysignals 崩溃，3.14）在 fork 里也复现 → 铁证与我们的改动无关。**已提上游 issue [sagemath/sage#42680](https://github.com/sagemath/sage/issues/42680)**（2026-08-17，附三分支对照证据与崩溃签名），并在 PR #42670 留言引用（issuecomment-5312720648）。另一类无关 flake：meson 3.12 的 `gap.py`（`gap(123)` 空输出，GAP 接口启动时序）——重跑验证中，若复现同样提 issue。
 - PR#1（bea9305）fork CI 结果：**Meson 全套绿**（3.12/3.13/3.14 × 三平台）、meson 全关绿、Lint/静态检查绿；docs 失败均为上述基础设施原因。修复得到完整验证，可把此证据贴上游 PR。
 
 ## 全量中文翻译批处理（translate-docs，0.8.0 里程碑）
