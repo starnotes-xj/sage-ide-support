@@ -276,6 +276,21 @@ public class TestPostfix {
         throw new IllegalStateException("preview resources broken for " + cls + ": " + before + " / " + after);
       }
     }
+    // The settings preview panel resolves the description as a STATIC
+    // per-class resource (PostfixTemplateMetaData.getResourceLocation ->
+    // postfixTemplates/<SimpleClassName>/description.html); the overridden
+    // getDescription() method is not consulted, so a missing file raises a
+    // SEVERE "Resource not found" on every click in the settings tree
+    // (v1.6.5 fix).  Assert the file resolves for every per-key class.
+    for (PostfixTemplate t : sageProvider.getTemplates()) {
+      String cls = t.getClass().getSimpleName();
+      String desc = readResource("postfixTemplates/" + cls + "/description.html");
+      if (desc == null || desc.trim().isEmpty()) {
+        throw new IllegalStateException("description.html missing for " + cls +
+                                        " — the settings preview panel would log SEVERE Resource not found");
+      }
+    }
+    System.out.println("description.html resolves for all " + sageProvider.getTemplates().size() + " templates");
   }
 
   static PostfixTemplate findTemplate(SagePostfixTemplateProvider provider, String key) {

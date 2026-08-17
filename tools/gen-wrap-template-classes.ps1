@@ -8,6 +8,12 @@
 # `expr.CC` / `.CC(expr)` (extra dot in the "after" state).  Per-key classes
 # hardcode the plain name instead, exactly like the b2i/i2b resources do.
 #
+# description.html is also required per key (v1.6.5 fix): the settings preview
+# resolves it by <SimpleClassName> as a STATIC resource
+# (PostfixTemplateMetaData.getResourceLocation) — the template's overridden
+# getDescription() method is never consulted by PostfixDescriptionPanel, and a
+# missing description.html raises a SEVERE "Resource not found" per click.
+#
 # Re-run this script whenever SAGE_WRAPPERS changes in
 # SagePostfixTemplateProvider.kt, then update the provider's sageTemplates to
 # use the generated classes.
@@ -49,7 +55,16 @@ foreach ($key in $keys) {
   New-Item -ItemType Directory -Force $dir | Out-Null
   [System.IO.File]::WriteAllText((Join-Path $dir "before.py.template"), "<spot>expr</spot>.$key")
   [System.IO.File]::WriteAllText((Join-Path $dir "after.py.template"), "$key(<spot>expr</spot>)")
+  $desc = @"
+<html>
+<body>
+Wraps the selected expression with the <code>sage.all</code> call
+<code>$key(expr)</code> (no import needed in a <code>.sage</code> file).
+</body>
+</html>
+"@
+  [System.IO.File]::WriteAllText((Join-Path $dir "description.html"), $desc)
 }
 
 [System.IO.File]::WriteAllLines($kt, $lines)
-"Generated: $($keys.Count) classes + $($keys.Count * 2) resource files"
+"Generated: $($keys.Count) classes + $($keys.Count * 3) resource files"

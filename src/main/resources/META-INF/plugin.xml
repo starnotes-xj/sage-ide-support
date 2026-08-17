@@ -2,10 +2,15 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.6.4</version>
+  <version>1.6.5</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.6.5 — Fix the settings page "Resource not found" error: every call-wrap
+        postfix template now ships its own description.html (the preview panel
+        resolves it as a static per-class resource and never consults the
+        template's getDescription() method), so clicking .ZZ/.CC/... no longer
+        logs a SEVERE error.</li>
     <li>1.6.4 — The new-template editor's condition list is trimmed to the
         Sage-accurate set: string / list / dict / set / tuple / non-None plus the
         ready-made sage.all class conditions (Integer, Rational, RealNumber,

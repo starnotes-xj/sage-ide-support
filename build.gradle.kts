@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.starnotesxj"
-version = "1.6.4"
+version = "1.6.5"
 
 // GitHub Actions sets CI=true; there is no local PyCharm on the runner, so the
 // SDK is downloaded there.  Locally the existing PyCharm installation is used.
@@ -47,7 +47,7 @@ kotlin {
 
 intellijPlatform {
     pluginConfiguration {
-        version = "1.6.4"
+        version = "1.6.5"
         ideaVersion {
             // The whole PyCharm 2026 release year: 2026.1 (261) .. 2026.3 (263).
             // The plugin only uses stable, long-standing extension points, so a
