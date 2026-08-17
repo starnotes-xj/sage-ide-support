@@ -346,7 +346,7 @@ cd G:\Projects\sage-ide-support
 
 **配套 stubgen 修复（已 push + WSL 重装生效）**：① RealField 桥接（上 2）；② `FiniteField.__iter__ -> Iterator[元素union]`（commit `1e1daf1`）——本想治 L3 但检查器不走迭代路径（字节码实证 got 直接取 value 类型），**保留**（对 `for x in F:` 循环变量类型化是真实增益）；教训：enhance 类补丁必须跑在 docstring enrich **之后**（enrich 重写 import 区，先加的 import 会被覆盖——实测 Iterator import 被丢）。
 
-**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户实测（1.7.4）**：L19 意外实参消失 ✓、ZZ/RR/CC/GF 无红错 ✓、L18 RR 消失（数据层）✓、L3 用 `# noinspection bad-assignment` 快修压制（用户拍板）✓、④ 平台行为由用户关检查。
+**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户实测（1.7.4）**：L19 意外实参消失 ✓、ZZ/RR/CC/GF 无红错 ✓、L18 RR 消失（数据层）✓、L3 用 `# noinspection bad-assignment` 快修压制（用户拍板）✓、④ 平台行为由用户关检查。**已发布**：`git tag v1.7.4` → push → CI 双发布一次成功（无 503）：商城 1.7.4 + GitHub Release [v1.7.4](https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.7.4)（zip 附件）。v1.7.2/v1.7.3 跳过不发布。
 
 ### 待 IDE 实测（用户侧）
 
