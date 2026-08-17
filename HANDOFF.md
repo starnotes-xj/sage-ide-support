@@ -250,7 +250,24 @@ cd G:\Projects\sage-ide-support
 
 **预览语法高亮机制（已核实，自动生效）**：`PostfixDescriptionPanel.showUsages` 按 `ResourceTextDescriptor.getFileName()`（资源名去 `.template` 后缀 → `before.py`）经 `FileTypeManager` 解析出 **PythonFileType** → `ActionUsagePanel.reset` 挂 **Python 语法高亮器**。因此只要资源命名保持 `before/after.py.template`（与 Python 内建一致），预览自动有 Python 语法高亮 + `<spot>` 蓝色选区；可见颜色取决于文本内容（纯标识符只有默认色 + 选区，与 Python 内建同款表现）。**生成 per-key 资源时勿改此命名。**
 
-**验证**：`.lexer-test` 五测试全绿（TestPostfix 第 7 节新增：b2i/ZZ 模板串含 `$expr$`、per-key 预览资源可解析且 after 无点）+ buildPlugin + verifyPlugin 双版本 Compatible。**用户侧待测（1.6.3 清单）**：① 预览 after 全部为 `XX(expr)` 无点、before 为 `expr.XX`；② `m.b2i` → `int.from_bytes(m, "big")`、`m.i2b` → `int(m).to_bytes(█, "big")`；③ 双击任一 Sage 内建模板弹改名框、改名后 popup 用新名、重启后仍在；④ 新建模板编辑器条件列表 = 数字/字符串/可迭代/集合/非None + 8 个 sage 类型 + 选择类/输入类；⑤ 1.6.2 全清单回归（独立分组/popup/展开/.py 隔离/新建模板持久化）。
+**验证**：`.lexer-test` 五测试全绿（TestPostfix 第 7 节新增：b2i/ZZ 模板串含 `$expr$`、per-key 预览资源可解析且 after 无点）+ buildPlugin + verifyPlugin 双版本 Compatible。**用户实测（1.6.3）**：① `m.b2i`/`m.i2b` 展开正确、② 预览无点且带高亮、③ 双击改名生效——**三点均通过**。
+
+### v1.6.4（2026-08-17 深夜）——新建模板编辑器条件精简为 Sage 精准集
+
+**用户问**：条件有必要这么多吗？像 Python 那样分类可以吗？Python 的类别在 sage 下能判准吗？**逐条审计 Py 条件的 `value()` 实现 × sage stub 类型系统**：
+
+| Py 类别 | sage 下判准？ | 依据 | 处理 |
+|---|---|---|---|
+| number | ✗ | sage `Integer`/`Rational`/`RealNumber` 不继承 builtins `int`/`float`/`complex`（`PyTypeChecker.match` 走继承链）→ 只命中 Python 数值字面量 | 移除 |
+| iterable | ✗ | sage 容器（Matrix/FreeModuleElement 等）stub 未注册 `abc.Iterable` | 移除 |
+| boolean | ✗ | 只命中 builtin bool 字面量，符号布尔不中 | 移除 |
+| exception | ✗ | Python 专用 | 移除 |
+| string / list / dict / set / tuple | ✓ | sage 直接使用 Python builtins 容器 | 保留 |
+| non-none | ✓ | 纯结构判断 | 保留 |
+
+**最终条件集**：字符串/list/dict/set/tuple/非 None（6 通用）+ 8 个 sage 类型即点条件（`PyClassCondition` 继承匹配，经 stub 索引：Integer/Rational/RealNumber/ComplexNumber/FinitePolyExtElement/Polynomial/Matrix/FreeModuleElement）+ 选择类/输入类。**红线**：不得把 number/iterable/boolean/exception 加回（提供即误导）。
+
+**验证**：`.lexer-test` 五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户侧待测（1.6.4）**：新建模板编辑器条件列表 = 上述精准集（不再有数字/可迭代/布尔/异常），其余沿用 1.6.3 清单回归。
 
 ### 待 IDE 实测（用户侧）
 
@@ -386,10 +403,10 @@ wsl.exe -d Ubuntu bash -lc "unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy 
 ### 结论与推荐路线
 
 1. **不重写独立树**——投入 2-4 个月换回现在已有的东西，且 Jupyter 生态（同构的 Python 方言）同样没有走独立树，证明平台意图就是「方言共享基语言 PSI」。
-2. **popup 收尾已完成**（v1.6.1：`SageFile.getFileType()` 覆写 + `.b2i`/`.i2b` key 补点）；用户侧装 1.6.1 实测 `m.ZZ`/`m.CC`/`m.b2i` 为最终确认。
+2. **popup 收尾已完成**（v1.6.1–v1.6.4 连修：popup 根因/设置页分组与新建模板/展开变量/预览/双击编辑/条件精准集），用户侧装 v1.6.4 实测为最终确认。
 3. **上游特性请求**（PyElementType 方言感知语言解析）已写入 PR #3614 行——若被采纳，方言插件可重新注册到方言语言，届时本插件的 Python 注册 + SageFile 门可简化。**新增实证素材**：`PyFileImpl.getFileType()` 硬编码 Python（与 getIcon 同族发行版覆写）导致方言文件在 `LanguageUtil.getLanguageForPsi`/copy-file 链上被识别为基语言——这正是「方言感知语言解析」缺陷的又一具体后果，已写入 v1.6.1 节与已知坑。
 
 ## 交接提示词（给接手 AI 的完整 prompt，可直接粘贴）
 
-> 继续 G:\Projects\sage-ide-support 插件工作。先读 HANDOFF.md 全文（重点是「v1.6.0」四轮 bugfix、「v1.6.1 popup 根因与修复」、「v1.6.2 设置页分组+新建模板」、「v1.6.3 四修」、「已知坑清单」、「独立 Sage 语法树可行性分析」与「.lexer-test」测试设施）。
+> 继续 G:\Projects\sage-ide-support 插件工作。先读 HANDOFF.md 全文（重点是「v1.6.0」四轮 bugfix、「v1.6.1 popup 根因与修复」、「v1.6.2 设置页分组+新建模板」、「v1.6.3 四修」、「v1.6.4 条件精准集」、「已知坑清单」、「独立 Sage 语法树可行性分析」与「.lexer-test」测试设施）。
 > 当前状态：**popup 已在 v1.6.1 修复、设置页分组/新建模板在 v1.6.2 修复、v1.6.3 修了 b2i/i2b 变量丢失/预览多余点/双击编辑、v1.6.4 把新建模板编辑器的条件精简为 sage 精准集**，全回归通过（.lexer-test 五测试 + buildPlugin + verifyPlugin 双版本 Compatible；TestPostfix 含 meta-language 收集契约与模板串/预览资源断言）。唯一待办：**用户装 `build/distributions/sage-ide-support-1.6.4.zip` 实测**：① `m.b2i` → `int.from_bytes(m, "big")`、`m.i2b` → `int(m).to_bytes(█, "big")`；② 预览 after=`XX(expr)` 无点、before=`expr.XX`，带 Python 高亮+蓝色选区；③ 双击任一 Sage 内建模板弹改名框、改名后 popup 用新名、重启后仍在；④ 新建模板编辑器条件 = 字符串/list/dict/set/tuple/非None + 8 个 sage 类型 + 选择类/输入类（**不再有 number/iterable/boolean/exception**）；⑤ 独立分组/popup/展开/.py 隔离/新建模板持久化回归。若实测仍有问题：按 v1.6.1 节末尾的探针方法出诊断版读 idea.log（确认 `Loaded custom plugins ... (1.6.4)`）。红线：不得回退到复用 PyCallWrapPostfixTemplate（预览会变 list）、不得改回 language="Python"/"Sage" 注册、不得重新加回 isEditable=false、**不得把 Py 的 number/iterable/boolean/exception 条件加回编辑器**（对 sage 判断不准，见 v1.6.4 审计）。实测通过后：commit → `git tag v1.6.4` → push（CI 双发布）。
