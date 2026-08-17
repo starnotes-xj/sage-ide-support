@@ -36,7 +36,7 @@ Python"）：
 | PyCharm | **2026.1.x**（build 262；`since-build="262"` / `until-build="262.*"`） |
 | Python 插件 | PyCharm 自带（`com.intellij.modules.python`） |
 | SageMath | 较新版本，WSL / 本机 / Docker 均可，并配置为项目 SDK |
-| sage-pycharm-stubgen | **≥ 0.7.0**（main 分支）：在 Sage 环境内执行 `sage-pycharm-stubgen --install` 生成并安装存根；中文 curated 文档、有限域元素类返回注解与安装降级保护均为 ≥ 0.7.0 的功能 |
+| sage-pycharm-stubgen | **≥ 0.8.0**：在 Sage 环境内执行 `sage-pycharm-stubgen --install` 生成并安装存根；中文 curated 文档与有限域元素类返回注解自 0.7.0 起提供，0.8.0 新增**可选机器翻译层**——`sage-pycharm-stubgen translate-docs --apply-only` 用随包共享缓存把其余英文 Quick-Doc 补成中文 |
 
 安装或重新生成存根后，请执行一次 **文件 → 使缓存失效/重新启动**，让 PyCharm
 重新索引新存根。

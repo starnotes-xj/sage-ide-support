@@ -43,7 +43,7 @@ stubs, and every method type / Chinese Quick-Doc comes from those stubs.
 | PyCharm | **2026.1.x** (build 262; `since-build="262"` / `until-build="262.*"`) |
 | Python plugin | bundled with PyCharm (`com.intellij.modules.python`) |
 | SageMath | any recent version in WSL, native or Docker, configured as the project SDK |
-| sage-pycharm-stubgen | **≥ 0.7.0** (main branch): generate and install the stubs with `sage-pycharm-stubgen --install` inside the Sage environment; the Chinese curated docs, the finite-field element-class return annotations and the install downgrade guard are part of ≥ 0.7.0 |
+| sage-pycharm-stubgen | **≥ 0.8.0**: generate and install the stubs with `sage-pycharm-stubgen --install` inside the Sage environment; the Chinese curated docs and the finite-field element-class return annotations ship since 0.7.0, and 0.8.0 adds an **opt-in machine-translation layer** — `sage-pycharm-stubgen translate-docs --apply-only` fills the remaining English Quick-Docs with Chinese from a bundled shared cache |
 
 After installing or regenerating stubs, run **File → Invalidate Caches / Restart**
 once so PyCharm re-indexes the updated stubs.
