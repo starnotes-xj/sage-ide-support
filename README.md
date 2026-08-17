@@ -131,6 +131,20 @@ parameter/target annotated `bytes`) or a `^` feeding a `bytes(...)` call —
 with quick fixes to `^^` / `^^=`.  Sage power math (`e^254`, `2^8`) is
 never flagged.
 
+### Known limitation: one type-checker warning on sugar assignments
+
+PyCharm's type checker models `F.<a> = GF(2^8, ...)` as a tuple-unpacking
+assignment and compares the generator target `a` (an element of the field)
+against the `GF(...)` call's return type (`FiniteField` itself).  It reports
+one **false-positive** warning — "Expected type `FiniteField_givaroElement |
+...`, got `FiniteField`" — because `a` actually comes from
+`F._first_ngens(1)[0]`, not from unpacking the call result; the code runs
+correctly.  Suppress it per statement without disabling anything else:
+
+```python
+F.<a> = GF(2^8, modulus=x^8 + x^4 + x^3 + x + 1)  # noinspection bad-assignment
+```
+
 ## Building
 
 ```powershell

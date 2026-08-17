@@ -337,14 +337,16 @@ cd G:\Projects\sage-ide-support
 ### v1.7.4（2026-08-18）——N(1) 撞名解析修复：sage.all 声明优先
 
 **用户 1.7.3 实测黄警四类（行号已核）**：
-1. L3 `F.<a> = GF(2^8, ...)`「应为元素union 但实际 FiniteField」——检查器把 Sage 糖多目标赋值当 tuple-unpack：a 有我们给的 union 类型、value `GF(...)` 是 FiniteField → 比出「不兼容」。L2 不报是佐证（`GF(2)[]` 的 `__getitem__` 无注解 → value 类型未知被跳过）。**定性：检查器对糖赋值的已知误报**；已查尽抑制钩子（HighlightErrorFilter 只管 parser 错误、PyInspectionExtension 无类型钩子、PyTypeProviderBase 无 iteration 方法、TypeEvalContext 无语境 flag 公开）→ 暂无干净插件侧抑制，用户可 `# type: ignore` 或接受。
-2. L18 `RR(1)`「RealField_class 对象不可调用」——**真·数据层缺口**：`real_mpfr.pyi` 的 RealField_class 无 `__call__` 注解（对照 CC 有 `__call__(x=None, im=None)` 故 L20 不报）。修法：stubgen curated 补 `RealField_class.__call__`。
-3. L19 `N(1)`「意外实参」——**真 bug（本版修复）**：idea.log 实证 `index hit: 'N' -> ...modular/modsym/p1list.pyi`——**N 撞名**！`all.pyi` 里 N 是 `from sage.misc.functional import numerical_approx as N`（import 别名），但 v1.7.3 的 findDeclaration **先查全局函数/类索引**，单字符名 N 命中无关模块 p1list.pyi 的 N → 错误签名 → N(1) 意外实参。（stubgen 只生成 .pyx 的 pyi，misc/functional 是纯 .py 无 pyi 属设计如此，非 stubgen bug。）
-4. 多处 print 的「Literal/int 没有定义 __str__/__repr__」——Python 插件自带 string-conversion 检查（`INSP.string.conversion.without.dunder.str`），连 builtins int 都报，疑似 2026.2 检查自身行为；**与 Sage 插件无关**，待用户 .py 对照确认后建议关检查或忽略。
+1. L3 `F.<a> = GF(2^8, ...)`「应为元素union 但实际 FiniteField」——**字节码级定论（2026.2 新 Kotlin `PyTypeCheckerInspection` 反编译）**：`visitPyTargetExpression` 对**每个赋值目标**做 `expected=context.getType(target)`（我们 provider 给的 union）vs `got=tryPromotingType(findAssignedValue, expected)`（GF 调用=FiniteField）→ 不匹配报 BAD_ASSIGNMENT。检查器不懂 Sage 糖语义（a 实来自 `F._first_ngens(1)[0]`）。**插件侧抑制钩子已穷尽**：新检查器不咨询 PyInspectionExtension/PyInspectionsSuppressor 仅做注释识别、HighlightErrorFilter 只管 parser 错误、TypeEvalContext 无公开语境 flag、树形态两种都被检查。**用户拍板：注释方案**——`# noinspection bad-assignment`（**IDE Alt+Enter 快修生成的正是此形式**，不是 `PyTypeChecker[bad-assignment]`）；已写入 README EN/zh「已知限制」节。插件侧不自动处理（union 加 FiniteField 的方案会污染 a 的补全/hover，被否）。
+2. L18 `RR(1)`「RealField_class 对象不可调用」——**真·数据层缺口，stubgen 已修**：`real_mpfr.pyi` 的 RealField_class 无基类（stubgen-pyx 掉基类）→ 继承不到 `Parent.__call__(self, x=0, *args, **kwds)`。修复 = enhance_parent_chain bridges 加 `RealField_class(Parent)`（commit `0b82efd`，已 push + 用户 WSL 重装生效，用户实测警告消失）。
+3. L19 `N(1)`「意外实参」——**真 bug（1.7.4 修复）**：idea.log 实证 `index hit: 'N' -> ...modular/modsym/p1list.pyi`——**N 撞名**！`all.pyi` 里 N 是 `from sage.misc.functional import numerical_approx as N`（import 别名），但 v1.7.3 的 findDeclaration **先查全局函数/类索引**，单字符名 N 命中无关模块 p1list.pyi 的 N → 错误签名 → N(1) 意外实参。（stubgen 只生成 .pyx 的 pyi，misc/functional 是纯 .py 无 pyi 属设计如此，非 stubgen bug。）
+4. 多处 print 的「Literal/int 没有定义 __str__/__repr__」——Python 插件自带检查 `PyStringConversionWithoutDunderMethodInspection`，用户 .py 对照**同报** → 平台行为与 Sage 插件无关；建议用户关检查（Inspections 搜 string conversion）。
 
 **修复（1.7.4）**：`SageStubIndex.findDeclaration` 重排——**① `findSageAllDeclaration` 优先**（all.pyi 顶层属性 `ZZ: _Type_ZZ` + **from-import 别名**：遍历 `allFile.fromImports` 的 `importElements` 匹配 `visibleName`，返回 PyImportElement——类型链自动跟随 numerical_approx 签名）；② 全局函数/类索引兜底，候选**优先 all.pyi 文件**（`isSageAllFile`）再任意 sage stub。miss 不打 warn（用户标识符会刷屏）。版本升 1.7.4。
 
-**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户侧待测（1.7.4）**：L19 N(1) 意外实参消失（N hover 应为 numerical_approx 签名）；ZZ/RR/CC/GF 无红错回归；其余 ①④ 按上文定性处理。
+**配套 stubgen 修复（已 push + WSL 重装生效）**：① RealField 桥接（上 2）；② `FiniteField.__iter__ -> Iterator[元素union]`（commit `1e1daf1`）——本想治 L3 但检查器不走迭代路径（字节码实证 got 直接取 value 类型），**保留**（对 `for x in F:` 循环变量类型化是真实增益）；教训：enhance 类补丁必须跑在 docstring enrich **之后**（enrich 重写 import 区，先加的 import 会被覆盖——实测 Iterator import 被丢）。
+
+**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户实测（1.7.4）**：L19 意外实参消失 ✓、ZZ/RR/CC/GF 无红错 ✓、L18 RR 消失（数据层）✓、L3 用 `# noinspection bad-assignment` 快修压制（用户拍板）✓、④ 平台行为由用户关检查。
 
 ### 待 IDE 实测（用户侧）
 

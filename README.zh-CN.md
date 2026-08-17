@@ -114,6 +114,19 @@ Python"）：
 喂给 `bytes(...)` 调用——并带一键修复为 `^^` / `^^=`。Sage 幂运算
 （`e^254`、`2^8`）绝不会被误报。
 
+### 已知限制：糖赋值的一条类型检查警告
+
+PyCharm 的类型检查器把 `F.<a> = GF(2^8, ...)` 当作元组解包赋值来检查，
+把生成元目标 `a`（域元素）与 `GF(...)` 调用的返回类型（`FiniteField`
+本身）比较，从而报出一条**误报**警告——「应为类型 `FiniteField_givaroElement
+| ...`，但实际为 `FiniteField`」。实际上 `a` 来自 `F._first_ngens(1)[0]`
+而不是从调用结果解包，代码运行完全正确。可以按语句精确压制而不关闭任何
+其他检查（IDE 的 Alt+Enter 快速修复生成的正是这条注释）：
+
+```python
+F.<a> = GF(2^8, modulus=x^8 + x^4 + x^3 + x + 1)  # noinspection bad-assignment
+```
+
 ## 构建
 
 ```powershell
