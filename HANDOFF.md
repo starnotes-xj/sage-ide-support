@@ -126,9 +126,20 @@ cd G:\Projects\sage-ide-support
 5. ✅ 语法糖行无波浪线（用户确认）
 6. ✅ 项目树 `.sage` 文件显示 Sage 图标（v1.3.2 起，用户确认）
 
-## 图标血泪史（v1.3.1 → v1.3.2，必读）
+## 2026.2.1 失效 PSI 事故（v1.4.0 → v1.4.1，必读）
 
-症状：编辑器标签 = Sage 图标，项目树 = Python 图标。排查历程：
+症状：PyCharm 升到 2026.2.1 后，高亮/类型提示阶段抛 `PsiInvalidElementAccessException: Invalid PSI Element: PyFunctionImpl`，栈顶在我们 `SageReferenceResolveProvider.resolveName` 第 66 行——**对 stub 索引返回的元素调用 `containingFile`（触发 getNode → InvalidRef）**。
+
+根因：2026.2 的 **impatient-reader** 高亮在读锁不完整持有的窗口里跑，PSI AST 会被更激进地丢弃——索引元素（`PyFunctionImpl` 等）持有的 AST 节点变成悬空引用，而我们的 LOG 行 `declaration.containingFile?.name` 和 `SageStubIndex` 里的路径过滤/日志都在解引用它。
+
+修复（v1.4.1，`1eb0494`）：
+- `SageStubIndex`：正缓存每次命中先 `isValid` 复查（失效即移除）；所有 containingFile 读取走 `safeContainingFile`（isValid 守卫 + try/catch `PsiInvalidElementAccessException`）；日志用安全路径。
+- `SageReferenceResolveProvider`：返回前 `declaration.isValid` 检查；日志不再解引用元素（路径细节由 index 的安全日志提供）。
+- `SageTypeProvider.generatorType`：`pyClass` 加 `takeIf { it.isValid }`。
+- 构建 SDK 升到 **2026.2.1**（CI `pycharm("2026.2.1")`，本地 D:\JetBrains\PyCharm 已同步更新）。
+- 教训：**任何索引来的元素，凡要 touching AST（containingFile/getParent/getNode）都必须先 isValid + 容错**；缓存 PsiElement 必须复查有效性。
+
+## 图标血泪史（v1.3.1 → v1.3.2，必读）症状：编辑器标签 = Sage 图标，项目树 = Python 图标。排查历程：
 
 - v1.3.1 加 `fileIconProvider` + `iconProvider`（order="first"）→ **无效**。
 - 真正根因（反编译 **发行版** `plugins/python-ce/lib/modules/intellij.python.psi.impl.jar` 的 `PyFileImpl.class` 才找到，**fork master 源码里没有这个覆写**）：
