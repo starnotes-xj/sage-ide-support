@@ -28,8 +28,14 @@ with a different extension"):
   fields, ...) and the official SageMath icosahedron icon.
 - **Sage postfix completion** — `expr.ZZ` / `.QQ` / `.RR` / `.CC` / `.SR` /
   `.Integer` / `.N` / `.factor` / `.show` / `.vector` / `.matrix` expand to
-  the corresponding `sage.all` call (Python's built-in postfix set stays
-  available); no imports needed, matching the implicit namespace.
+  the corresponding `sage.all` call, plus CTF number theory
+  (`.euler_phi`, `.carmichael_lambda`, `.divisors`, `.number_of_divisors`,
+  `.prime_factors`, `.squarefree_part`, `.next_prime`, `.random_prime`,
+  `.primitive_root`, `.factorial`, `.numerator`, `.denominator`,
+  `.continued_fraction`, `.cyclotomic_polynomial`, `.sage_eval`) and
+  bytes↔int conversion (`.b2i` → `int.from_bytes(expr, "big")`, `.i2b` →
+  `int(expr).to_bytes(<len>, "big")`); Python's built-in postfix set stays
+  available, and no imports are needed — matching the implicit namespace.
 
 ## How it works with sage-pycharm-stubgen
 

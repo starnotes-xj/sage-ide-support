@@ -22,7 +22,13 @@ Python"）：
 - **Live Templates**（多项式环、有限域等常用构造）+ 官方 SageMath 二十面体图标
 - **Sage 后缀补全**——`expr.ZZ` / `.QQ` / `.RR` / `.CC` / `.SR` / `.Integer` /
   `.N` / `.factor` / `.show` / `.vector` / `.matrix` 展开为对应的 `sage.all`
-  调用（Python 自带后缀模板照常可用）；与隐式命名空间一致，无需 import
+  调用；另含 CTF 数论高频（`.euler_phi`、`.carmichael_lambda`、`.divisors`、
+  `.number_of_divisors`、`.prime_factors`、`.squarefree_part`、`.next_prime`、
+  `.random_prime`、`.primitive_root`、`.factorial`、`.numerator`、
+  `.denominator`、`.continued_fraction`、`.cyclotomic_polynomial`、
+  `.sage_eval`）与字节转换（`.b2i` → `int.from_bytes(expr, "big")`、
+  `.i2b` → `int(expr).to_bytes(<len>, "big")`）；Python 自带后缀模板照常
+  可用，且与隐式命名空间一致、无需 import
 
 ## 与 sage-pycharm-stubgen 的关系
 

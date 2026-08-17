@@ -6,8 +6,11 @@
 
   <change-notes><![CDATA[
   <ul>
-    <li>1.5.0 — Sage postfix completion: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix
-        wrap the expression into the corresponding sage.all call (Python's built-in set stays available).</li>
+    <li>1.5.0 — Sage postfix completion: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix,
+        plus CTF number theory (.euler_phi, .carmichael_lambda, .divisors, .number_of_divisors,
+        .prime_factors, .squarefree_part, .next_prime, .random_prime, .primitive_root, .factorial,
+        .numerator, .denominator, .continued_fraction, .cyclotomic_polynomial, .sage_eval) and
+        bytes/int conversion (.b2i, .i2b); Python's built-in postfix set stays available.</li>
     <li>1.4.1 — Fix PsiInvalidElementAccessException on PyCharm 2026.2: stale stub-index
         elements are re-validated and never dereferenced through a dropped AST node.</li>
     <li>1.4.0 — Supports the whole PyCharm 2026 release year (261–263); GitHub Actions CI
