@@ -2,8 +2,13 @@ package com.starnotesxj.sageide.sugar
 
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplate
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateProvider
+import com.intellij.codeInsight.template.postfix.templates.PostfixTemplatesUtils
+import com.intellij.codeInsight.template.postfix.templates.editable.PostfixTemplateEditor
+import com.intellij.codeInsight.template.postfix.templates.editable.PostfixTemplateExpressionCondition
 import com.intellij.openapi.editor.Editor
 import com.intellij.psi.PsiFile
+import com.jetbrains.python.codeInsight.postfix.PyPostfixTemplateExpressionCondition
+import org.jdom.Element
 
 /**
  * SageMath postfix templates for `.sage` files.
@@ -30,17 +35,21 @@ import com.intellij.psi.PsiFile
  * import — the same guarantee the [SageReferenceResolveProvider] gives to
  * references.
  *
- * **Registration language is Python, not Sage** (see plugin.xml): every Python
- * PSI element type reports `PythonLanguage` (PyElementType hardcodes the
- * Python file type's language), so `PsiUtilCore.getLanguageAtOffset` /
- * `PsiFile.getLanguage()` resolve `.sage` files as PYTHON and the completion
- * machinery collects postfix providers via `allForLanguage(Python)` — a
- * provider registered for the Sage dialect is never consulted.  Registering
- * for Python makes the popup see us; each template's `isApplicable` gates on
- * the containing file being a [SageFile], so nothing leaks into plain `.py`
- * files.  The provider returns ONLY the Sage additions — Python's built-in
- * postfix set comes from PyPostfixTemplateProvider through the same language
- * collection.
+ * **Registration key is the `SageMathPostfix` meta-language, not `Python`**
+ * (see plugin.xml + [SagePostfixLanguage]): every Python PSI element type
+ * reports `PythonLanguage` (PyElementType hardcodes the Python file type's
+ * language), so `PsiUtilCore.getLanguageAtOffset` resolves `.sage` files as
+ * PYTHON and the completion machinery collects postfix providers via
+ * `allForLanguage(Python)` — a provider registered for a concrete language
+ * other than Python is never consulted.  Registering under a meta-language
+ * that matches the Python family makes the popup collect us for Python
+ * lookups, AND the settings tree (which groups providers by their
+ * registration key) shows us under our own top-level "SageMathPostfix" node
+ * instead of nesting us under Python.  Each template's `isApplicable` gates
+ * on the containing file being a [SageFile], so nothing leaks into plain
+ * `.py` files.  The provider returns ONLY the Sage additions — Python's
+ * built-in postfix set comes from PyPostfixTemplateProvider through the same
+ * language collection.
  */
 class SagePostfixTemplateProvider : PostfixTemplateProvider {
 
@@ -67,6 +76,44 @@ class SagePostfixTemplateProvider : PostfixTemplateProvider {
 
     override fun preCheck(copyFile: PsiFile, realEditor: Editor, currentOffset: Int): PsiFile =
         copyFile
+
+    /**
+     * Supports creating new Sage postfix templates in the settings UI (the
+     * "+" button).  Mirrors PyPostfixTemplateProvider: the editor handles the
+     * live-template body and the Python expression-type conditions; the
+     * produced [SageEditablePostfixTemplate] carries the SageFile gate like
+     * the built-ins.
+     */
+    override fun createEditor(templateToEdit: PostfixTemplate?): PostfixTemplateEditor? =
+        if (templateToEdit == null || templateToEdit is SageEditablePostfixTemplate) {
+            SagePostfixTemplateEditor(this)
+        } else {
+            null
+        }
+
+    override fun readExternalTemplate(id: String, name: String, templateElement: Element): PostfixTemplate? {
+        val template = PostfixTemplatesUtils.readExternalLiveTemplate(templateElement, this) ?: return null
+        val conditions = PostfixTemplatesUtils.readExternalConditions(
+            templateElement,
+            com.intellij.util.Function { element: Element -> readCondition(element) })
+        val topmost = PostfixTemplatesUtils.readExternalTopmostAttribute(templateElement)
+        return SageEditablePostfixTemplate(id, name, template, "", conditions, topmost, this, false)
+    }
+
+    override fun writeExternalTemplate(template: PostfixTemplate, parentElement: Element) {
+        if (template is SageEditablePostfixTemplate) {
+            PostfixTemplatesUtils.writeExternalTemplate(template, parentElement)
+        }
+    }
+
+    private fun readCondition(conditionElement: Element): PyPostfixTemplateExpressionCondition? {
+        val id = conditionElement.getAttributeValue(PostfixTemplateExpressionCondition.ID_ATTR)
+        return if (PyPostfixTemplateExpressionCondition.PyClassCondition.ID == id) {
+            PyPostfixTemplateExpressionCondition.PyClassCondition.readFrom(conditionElement)
+        } else {
+            PyPostfixTemplateExpressionCondition.PUBLIC_CONDITIONS[id]
+        }
+    }
 
     companion object {
         private val SAGE_WRAPPERS = listOf(

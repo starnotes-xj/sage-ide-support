@@ -1,5 +1,7 @@
+import com.intellij.codeInsight.template.postfix.templates.LanguagePostfixTemplate;
 import com.intellij.codeInsight.template.postfix.templates.PostfixLiveTemplate;
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplate;
+import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateProvider;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.FileASTNode;
 import com.intellij.lang.Language;
@@ -43,6 +45,7 @@ import com.jetbrains.python.PyElementTypesFacadeImpl;
 import com.jetbrains.python.PyTokenTypes;
 import com.jetbrains.python.PythonDialectsTokenSetContributor;
 import com.jetbrains.python.PythonDialectsTokenSetProvider;
+import com.jetbrains.python.PythonLanguage;
 import com.jetbrains.python.codeInsight.postfix.PyPostfixUtils;
 import com.jetbrains.python.lexer.PythonIndentingLexer;
 import com.jetbrains.python.parsing.SageParser;
@@ -52,6 +55,7 @@ import com.starnotesxj.sageide.sugar.SageFile;
 import com.starnotesxj.sageide.sugar.SageFileElementType;
 import com.starnotesxj.sageide.sugar.SageFileType;
 import com.starnotesxj.sageide.sugar.SageLanguage;
+import com.starnotesxj.sageide.sugar.SagePostfixLanguage;
 import com.starnotesxj.sageide.sugar.SagePostfixTemplateProvider;
 import kotlin.jvm.functions.Function0;
 
@@ -89,7 +93,8 @@ public class TestPostfix {
       PythonDialectsTokenSetContributor.EP_NAME.getName(),
       ExtensionPoint.Kind.INTERFACE,
       fakeDisposable);
-    area.registerExtensionPoint("com.intellij.lang.ast.factory", "com.intellij.lang.ast.factory",
+    area.registerExtensionPoint("com.intellij.lang.ast.factory",
+                                com.intellij.lang.LanguageExtensionPoint.class.getName(),
                                 ExtensionPoint.Kind.INTERFACE, false);
     // The Sage parser definition must be visible through the language EP —
     // PsiFileBase's ctor requires language.getParserDefinition() != null.
@@ -114,6 +119,30 @@ public class TestPostfix {
       com.intellij.openapi.extensions.PluginId.getId("fake")));
     area.getExtensionPoint(com.intellij.lang.LanguageParserDefinitions.INSTANCE.getName())
         .registerExtension(pyPd, fakeDisposable);
+    // --- postfix provider registration via the SageMathPostfix meta-language ---
+    // Mirrors plugin.xml: the provider is registered under the SageMathPostfix
+    // meta-language ID; Python-keyed lookups collect it through the
+    // meta-language branch of LanguageExtension.buildExtensions.
+    area.registerExtensionPoint("com.intellij.metaLanguage",
+                                "com.intellij.lang.MetaLanguage",
+                                ExtensionPoint.Kind.INTERFACE, false);
+    // MetaLanguage's ctor subscribes to both EPs — the provider one must
+    // exist too (we register no instances on it, mirroring the real IDE
+    // layout where the EP is declared by the platform).
+    area.registerExtensionPoint("com.intellij.metaLanguageProvider",
+                                "com.intellij.lang.MetaLanguageProvider",
+                                ExtensionPoint.Kind.INTERFACE, false);
+    area.getExtensionPoint("com.intellij.metaLanguage")
+        .registerExtension(new SagePostfixLanguage(), fakeDisposable);
+    area.registerExtensionPoint("com.intellij.codeInsight.template.postfixTemplateProvider",
+                                com.intellij.lang.LanguageExtensionPoint.class.getName(),
+                                ExtensionPoint.Kind.INTERFACE, false);
+    com.intellij.lang.LanguageExtensionPoint<PostfixTemplateProvider> sagePt =
+      new com.intellij.lang.LanguageExtensionPoint<>("SageMathPostfix", new SagePostfixTemplateProvider());
+    sagePt.setPluginDescriptor(new com.intellij.openapi.extensions.DefaultPluginDescriptor(
+      com.intellij.openapi.extensions.PluginId.getId("fake")));
+    area.getExtensionPoint("com.intellij.codeInsight.template.postfixTemplateProvider")
+        .registerExtension(sagePt, fakeDisposable);
     final PythonDialectsTokenSetProvider provider2 = new PythonDialectsTokenSetProvider();
 
     final com.intellij.util.messages.MessageBus fakeBus =
@@ -194,6 +223,28 @@ public class TestPostfix {
     List<PsiElement> exprs =
       PyPostfixUtils.selectorAllExpressionsWithCurrentOffset().getExpressions(context, copyDocument, newOffset);
     System.out.println("selector expressions: " + exprs.size() + (exprs.isEmpty() ? "" : " first=" + exprs.get(0).getText()));
+
+    // 6. Provider collection through the meta-language — the popup's contract:
+    //    a Python-keyed allForLanguage must include the Sage provider even
+    //    though it is registered under the SageMath meta-language, and a
+    //    non-Python-family language must not collect it.
+    java.util.List<PostfixTemplateProvider> collected =
+      LanguagePostfixTemplate.LANG_EP.allForLanguage(PythonLanguage.INSTANCE);
+    boolean found = false;
+    for (PostfixTemplateProvider p : collected) {
+      if ("sagePostfixTemplates".equals(p.getId())) found = true;
+    }
+    System.out.println("allForLanguage(Python) collected " + collected.size() +
+                       " provider(s), contains sage = " + found);
+    // Language.ANY has no base language, so our Python-family meta-language
+    // must NOT match it — a good negative probe for the criterion.
+    java.util.List<PostfixTemplateProvider> collectedDummy =
+      LanguagePostfixTemplate.LANG_EP.allForLanguage(Language.ANY);
+    System.out.println("allForLanguage(Language.ANY) collected " + collectedDummy.size() +
+                       " provider(s) (expect 0)");
+    if (!found || !collectedDummy.isEmpty()) {
+      throw new IllegalStateException("meta-language provider collection contract broken");
+    }
   }
 
   static ASTNode parse(String text) {

@@ -2,10 +2,15 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.6.1</version>
+  <version>1.6.2</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.6.2 — Postfix Completion settings: the Sage templates now appear under their
+        own top-level "SageMathPostfix" group (registered under a Python-family
+        meta-language) instead of being nested under Python, and the "+" button can
+        create new Sage postfix templates (same editor as Python's, with
+        expression-type conditions; created templates apply in .sage files only).</li>
     <li>1.6.1 — Fix the Sage postfix completion popup: SageFile now reports the Sage file
         type (getFileType() override, mirroring the platform's PyiFile pattern), so the
         postfix-applicability copy file is created as a SageFile and the .ZZ/.CC/... set
@@ -116,17 +121,25 @@
     <!-- Sage postfix templates: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/
          .vector/.matrix wrap the expression into the corresponding sage.all call.
 
-         WHY language="Python" (not "Sage"): every Python PSI element type
+         WHY language="SageMathPostfix" (a meta-language matching the Python
+         family, not "Sage" and not "Python"): every Python PSI element type
          reports PythonLanguage (PyElementType hardcodes PythonFileType's
-         language), so PsiUtilCore.getLanguageAtOffset / PsiFile.getLanguage()
-         resolve .sage files as PYTHON — the completion machinery therefore
-         collects postfix providers via allForLanguage(Python) and never sees a
-         provider registered for the Sage dialect.  Registering here for Python
-         makes the provider visible to the popup; each template's isApplicable
-         then gates on the containing file being a SageFile, so nothing leaks
-         into plain .py files. -->
-    <codeInsight.template.postfixTemplateProvider language="Python"
+         language), so PsiUtilCore.getLanguageAtOffset resolves .sage files as
+         PYTHON — the completion machinery therefore collects postfix providers
+         via allForLanguage(Python) and never sees a provider registered for a
+         concrete non-Python language.  Registering under the SageMathPostfix
+         meta-language makes Python-keyed lookups collect us (LanguageExtension
+         consults matching meta-languages), AND the settings tree — which groups
+         providers by their registration key — shows us under our own top-level
+         "SageMathPostfix" node instead of nesting us under Python.  Each
+         template's isApplicable gates on the containing file being a SageFile,
+         so nothing leaks into plain .py files. -->
+    <codeInsight.template.postfixTemplateProvider language="SageMathPostfix"
                                                   implementationClass="com.starnotesxj.sageide.sugar.SagePostfixTemplateProvider"/>
+    <!-- The (deprecated) direct metaLanguage EP: MetaLanguageProvider does not
+         exist in PyCharm 2026.1, so this is the only form compatible with
+         261–263. -->
+    <metaLanguage implementation="com.starnotesxj.sageide.sugar.SagePostfixLanguage"/>
   </extensions>
 
   <extensions defaultExtensionNs="Pythonid">
