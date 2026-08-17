@@ -58,8 +58,7 @@ foreach ($key in $keys) {
   $desc = @"
 <html>
 <body>
-Wraps the selected expression with the <code>sage.all</code> call
-<code>$key(expr)</code> (no import needed in a <code>.sage</code> file).
+用 <code>sage.all</code> 的 <code>$key(expr)</code> 包裹所选表达式（<code>.sage</code> 文件中无需导入）。
 </body>
 </html>
 "@

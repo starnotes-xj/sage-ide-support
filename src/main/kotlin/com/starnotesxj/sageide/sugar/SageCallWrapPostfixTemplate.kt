@@ -84,11 +84,11 @@ open class SageCallWrapPostfixTemplate(
     companion object {
         private const val FAMILY_DESCRIPTION: String =
             "<html><body>" +
-            "Wraps the selected expression into the corresponding <code>sage.all</code> call " +
-            "(no import needed in a <code>.sage</code> file):<br/>" +
-            "<code>expr</code><b>.ZZ</b> &rarr; <code>ZZ(expr)</code>, " +
-            "<code>expr</code><b>.factor</b> &rarr; <code>factor(expr)</code>, " +
-            "<code>expr</code><b>.euler_phi</b> &rarr; <code>euler_phi(expr)</code>, &hellip;" +
+            "把所选表达式包裹为对应的 <code>sage.all</code> 调用" +
+            "（<code>.sage</code> 文件中无需导入）：<br/>" +
+            "<code>expr</code><b>.ZZ</b> &rarr; <code>ZZ(expr)</code>，" +
+            "<code>expr</code><b>.factor</b> &rarr; <code>factor(expr)</code>，" +
+            "<code>expr</code><b>.euler_phi</b> &rarr; <code>euler_phi(expr)</code>，&hellip;" +
             "</body></html>"
     }
 }

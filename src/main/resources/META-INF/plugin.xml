@@ -2,10 +2,13 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.6.5</version>
+  <version>1.6.6</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.6.6 — The settings-preview descriptions of the Sage postfix templates
+        are now in Chinese (matching the IDE language): every call-wrap key plus
+        the .b2i/.i2b conversions.</li>
     <li>1.6.5 — Fix the settings page "Resource not found" error: every call-wrap
         postfix template now ships its own description.html (the preview panel
         resolves it as a static per-class resource and never consults the
