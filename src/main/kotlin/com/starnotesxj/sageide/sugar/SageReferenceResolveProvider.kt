@@ -63,7 +63,10 @@ class SageReferenceResolveProvider : PyReferenceResolveProvider {
 
         // 2. The implicit sage.all namespace via the stub index.
         val declaration = SageStubIndex.findDeclaration(reference.project, name) ?: return emptyList()
-        LOG.warn("Sage: resolved implicit name '$name' to ${declaration.containingFile?.name}")
+        // The index element's AST may already be dropped (PyCharm 2026.2
+        // impatient-reader highlighting); never hand an invalid element back.
+        if (!declaration.isValid) return emptyList()
+        LOG.warn("Sage: resolved implicit name '$name'")
         return ResolveResultList.to(declaration)
     }
 

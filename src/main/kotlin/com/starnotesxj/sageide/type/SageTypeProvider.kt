@@ -85,7 +85,7 @@ class SageTypeProvider : PyTypeProviderBase() {
 
     /** `(a,) = F._first_ngens(1)` — the generator type is the element type of the tuple. */
     private fun generatorType(factoryType: PyType, context: TypeEvalContext): PyType? {
-        val pyClass = (factoryType as? PyClassType)?.pyClass ?: return null
+        val pyClass = (factoryType as? PyClassType)?.pyClass?.takeIf { it.isValid } ?: return null
         val firstNgens = pyClass.findMethodByName("_first_ngens", true, context) ?: return null
         val callable = context.getType(firstNgens) as? PyCallableType ?: return null
         val returnType = callable.getReturnType(context) ?: return null

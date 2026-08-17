@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.starnotesxj"
-version = "1.4.0"
+version = "1.4.1"
 
 // GitHub Actions sets CI=true; there is no local PyCharm on the runner, so the
 // SDK is downloaded there.  Locally the existing PyCharm installation is used.
@@ -26,10 +26,10 @@ dependencies {
         if (onCi) {
             // Downloaded on the runner.  (PyCharm Community is no longer
             // published since 2025.3, hence the unified accessor.)
-            pycharm("2026.1.4")
+            pycharm("2026.2.1")
         }
         else {
-            // Local PyCharm 2026.1.4 installation as the plugin SDK.
+            // Local PyCharm 2026.2.1 installation as the plugin SDK.
             local("D:/JetBrains/PyCharm")
         }
         // The Python PSI/parser classes: with the 2026.1 split layout they
@@ -46,7 +46,7 @@ kotlin {
 
 intellijPlatform {
     pluginConfiguration {
-        version = "1.4.0"
+        version = "1.4.1"
         ideaVersion {
             // The whole PyCharm 2026 release year: 2026.1 (261) .. 2026.3 (263).
             // The plugin only uses stable, long-standing extension points, so a
