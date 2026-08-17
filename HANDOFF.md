@@ -17,7 +17,8 @@
 | ⑤ Sage 上游 PR #42672（draft） | `G:\Projects\sage-fork` 分支 `annotate-finite-field-element-returns` | FiniteField 四元素方法 `-> FinitePolyExtElement`；head `12b80f9`（doctest 命名空间两连修：元素类导入 + 类 vs 工厂实例）；https://github.com/sagemath/sage/pull/42672 |
 | ⑥ Sage 上游 PR #42675（draft，第四波） | `G:\Projects\sage-fork` 分支 `annotate-factory-function-returns` | PowerSeriesRing → `PowerSeriesRing_generic`、LaurentPolynomialRing → `LaurentPolynomialRing_generic`、QuotientRing → `QuotientRing_generic`；head `fb1a079`（future annotations 修复 3.13 前向引用）；https://github.com/sagemath/sage/pull/42675 |
 
-**⑤⑥ 草稿保持决定（2026-08-17 用户拍板）**：等 #42670 出结果（全绿+评审）再转正，避免 3 个同主题 PR 并行评审返工。转正条件已全部满足并核验过：base=develop 且 MERGEABLE、已推送同步（head `2e433dd` / `09f8d93`）、无 3.14 脆弱断言（#42672 用字符串断言 `__annotations__['return']=='FinitePolyExtElement'`，#42675 纯 isinstance）、静态检查/文档构建类无新增风险。转正命令：`gh pr ready 42672` / `gh pr ready 42675`。
+**⑤⑥ 草稿保持决定（2026-08-17 用户拍板）**：等 #42670 出结果（全绿+评审）再转正，避免 3 个同主题 PR 并行评审返工。转正条件已全部满足并核验过：base=develop 且 MERGEABLE、已推送同步（head `12b80f9` / `fb1a079`）、无 3.14 脆弱断言、fork CI 预验证基本全绿（#42672 修复套件在跑、#42675 已全绿）。转正命令：`gh pr ready 42672` / `gh pr ready 42675`。
+**上游注解分批推进计划（2026-08-17 用户要求写文档）**：[docs/sage-upstream-annotation-plan.md](docs/sage-upstream-annotation-plan.md)——波次：PolynomialRing → MatrixSpace → VectorSpace+FreeModule → NumberField → 精度环三兄弟 → FreeAlgebra，每波一个 PR、同模块家族、fork CI 预验证；配套 stubgen **conformance 模式（0.8.1 已发 PyPI）**：`sage-pycharm-stubgen conformance` 把 curated 修补与源码声明交叉核对（基线：sage 10.9 源码 13,413 个带注解可调用项、569 条 curated 全部 unannotated、0 冲突）。
 | ⑦ PR #3614 契约评论 | — | generation-report.json 作为 typeInformationGenerator EP 输出契约（issuecomment-5308973640） |
 | ⑧ PR #42670 strict-CI 评论 | — | 提议 sage 加 `sage-pycharm-stubgen --strict` 类型桩回归 CI（issuecomment-5308973767） |
 
