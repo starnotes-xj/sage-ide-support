@@ -14,8 +14,8 @@
 | ② 插件 | 本仓库 | **v1.4.0**：idea-version 放宽 **261–263.***（2026.1–2026.3 全年）；**GitHub Actions CI**（push 构建 zip 上传 artifact，v* tag 自动挂 Release）；SDK 双模式（CI 下载 `pycharm("2026.1.4")` + `bundledPlugin("PythonCore")`，本地用 D:\JetBrains\PyCharm）；CI 已绿 |
 | ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | 2 commits（EP + preparse action），PR 描述已重写，OPEN |
 | ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 回归 doctest（a10665b）+ bea9305 移除 get_type_hints 恒等断言（3.14 下注解对象非同一对象）。**CI 状态（2026-08-17）**：旧 head a10665b 三个 run 全部只败在 get_type_hints 行（3.14）；bea9305 已推且为 PR head，但新 run 处于 `action_required` 待维护者批准。另注：非 meson "Build & Test" 里 `libs/ecl.pyx # Killed due to abort`（系统 libecl 24.5 的 sigint 测试在 3.14 崩溃）与本 PR 无关。已发评论 issuecomment-5310875176 请维护者批准。本地验证：4 项 isinstance 断言在 WSL sage 10.9 全 True（`GF(2**8,'a',impl)`×3、`GF(29)`、`Zmod(29)`、`Integers(0)`） |
-| ⑤ Sage 上游 PR #42672（draft） | `G:\Projects\sage-fork` 分支 `annotate-finite-field-element-returns` | FiniteField 四元素方法 `-> FinitePolyExtElement`；https://github.com/sagemath/sage/pull/42672 |
-| ⑥ Sage 上游 PR #42675（draft，第四波） | `G:\Projects\sage-fork` 分支 `annotate-factory-function-returns` | PowerSeriesRing → `PowerSeriesRing_generic`、LaurentPolynomialRing → `LaurentPolynomialRing_generic`、QuotientRing → `QuotientRing_generic`（运行时验证共同基类 + TESTS doctest）；https://github.com/sagemath/sage/pull/42675 |
+| ⑤ Sage 上游 PR #42672（draft） | `G:\Projects\sage-fork` 分支 `annotate-finite-field-element-returns` | FiniteField 四元素方法 `-> FinitePolyExtElement`；head `2f7a53d`（doctest 命名空间 import 修复）；https://github.com/sagemath/sage/pull/42672 |
+| ⑥ Sage 上游 PR #42675（draft，第四波） | `G:\Projects\sage-fork` 分支 `annotate-factory-function-returns` | PowerSeriesRing → `PowerSeriesRing_generic`、LaurentPolynomialRing → `LaurentPolynomialRing_generic`、QuotientRing → `QuotientRing_generic`；head `fb1a079`（future annotations 修复 3.13 前向引用）；https://github.com/sagemath/sage/pull/42675 |
 
 **⑤⑥ 草稿保持决定（2026-08-17 用户拍板）**：等 #42670 出结果（全绿+评审）再转正，避免 3 个同主题 PR 并行评审返工。转正条件已全部满足并核验过：base=develop 且 MERGEABLE、已推送同步（head `2e433dd` / `09f8d93`）、无 3.14 脆弱断言（#42672 用字符串断言 `__annotations__['return']=='FinitePolyExtElement'`，#42675 纯 isinstance）、静态检查/文档构建类无新增风险。转正命令：`gh pr ready 42672` / `gh pr ready 42675`。
 | ⑦ PR #3614 契约评论 | — | generation-report.json 作为 typeInformationGenerator EP 输出契约（issuecomment-5308973640） |
@@ -157,8 +157,14 @@ sagemath 上游对外部 fork PR 每次推送都要维护者手动批准 run（`
 - PR #2（`annotate-finite-field-element-returns`，验 #42672）：https://github.com/starnotes-xj/sage/pull/2
 - PR #3（`annotate-factory-function-returns`，验 #42675）：https://github.com/starnotes-xj/sage/pull/3
 - 触发技巧：若错过 pull_request 事件（如启用 Actions 后），`gh pr close` + `gh pr reopen` 重新触发。
-- 监控：后台 job pwsh-30（上游 31968571473）、pwsh-31（PR#1 三个测试 run）、pwsh-32（PR#2/#3 六个测试 run）。
+- 监控：后台 job pwsh-30（上游 31968571473）、pwsh-33（修复后新 run 全套）。
 - 成本警示：三个全套 ≈ 30-40 小时 runner 分钟（免费档月配额 2000 分钟），用户已知情仍要求全套。
+- **fork CI 已抓到的真实 bug（上游 CI 永远没跑到的）**：
+  1. PR#3（#42675）：3.13 对函数注解**即时求值**——`QuotientRing_generic`/`PowerSeriesRing_generic` 在同类文件里定义于函数**之后** → 3.13 一导入就 NameError（3.14 的 PEP 649 延迟求值掩盖了它，meson 全关只跑 3.14 所以假绿）。修复 `fb1a079`：两个文件加 `from __future__ import annotations`（laurent 的基类在别的模块且顶部已导入，无需改）。
+  2. PR#2（#42672）：doctest 里直接用 `FinitePolyExtElement`，但 sage doctest 运行器**不注入模块级 import**（`FiniteField` 能用是因为它在 sage.all 里）→ 全平台 NameError。修复 `2f7a53d`：doctest 内显式 `from sage.rings.finite_rings.element_base import FinitePolyExtElement`。
+  3. fork 的 doc-html 构建必失败（"Download old doc" 下载不到 develop 的基线 artifact）——基础设施缺口非代码问题；doc-pdf 能跑且有用（正是它先报出 NameError）。
+  4. docker 版 Build & Test 的 `ecl.pyx # Killed due to abort`（cysignals 崩溃，3.14）在 fork 里也复现 → 铁证与我们的改动无关。
+- PR#1（bea9305）fork CI 结果：**Meson 全套绿**（3.12/3.13/3.14 × 三平台）、meson 全关绿、Lint/静态检查绿；docs 失败均为上述基础设施原因。修复得到完整验证，可把此证据贴上游 PR。
 
 ## 全量中文翻译批处理（translate-docs，0.8.0 里程碑）
 
