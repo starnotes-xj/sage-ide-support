@@ -37,6 +37,13 @@ with a different extension"):
   `int(expr).to_bytes(<len>, "big")`); Python's built-in postfix set stays
   available (collected automatically through the Python base-language chain),
   and no imports are needed — matching the implicit namespace.
+- **Configurable Sage postfix set** — in **Settings → Editor → Postfix
+  Completion** the Sage templates live under their own top-level
+  `SageMathPostfix` group with a syntax-highlighted before/after preview and a
+  description; built-ins can be renamed (double-click) and new Sage templates
+  created with **+**, with a Sage-accurate condition list (string / list /
+  dict / set / tuple / non-None plus ready-made `sage.all` class conditions).
+  Created templates persist across restarts and apply in `.sage` files only.
 
 ## How it works with sage-pycharm-stubgen
 
