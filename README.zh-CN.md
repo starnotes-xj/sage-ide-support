@@ -20,6 +20,9 @@ Python"）：
 - **运行配置** —— 右键用 `sage` 命令执行 `.sage` 文件（本机 / WSL / Docker），
   带运行槽图标
 - **Live Templates**（多项式环、有限域等常用构造）+ 官方 SageMath 二十面体图标
+- **Sage 后缀补全**——`expr.ZZ` / `.QQ` / `.RR` / `.CC` / `.SR` / `.Integer` /
+  `.N` / `.factor` / `.show` / `.vector` / `.matrix` 展开为对应的 `sage.all`
+  调用（Python 自带后缀模板照常可用）；与隐式命名空间一致，无需 import
 
 ## 与 sage-pycharm-stubgen 的关系
 

@@ -26,6 +26,10 @@ with a different extension"):
   icon.
 - **Live templates** for common Sage constructs (polynomial rings, finite
   fields, ...) and the official SageMath icosahedron icon.
+- **Sage postfix completion** — `expr.ZZ` / `.QQ` / `.RR` / `.CC` / `.SR` /
+  `.Integer` / `.N` / `.factor` / `.show` / `.vector` / `.matrix` expand to
+  the corresponding `sage.all` call (Python's built-in postfix set stays
+  available); no imports needed, matching the implicit namespace.
 
 ## How it works with sage-pycharm-stubgen
 

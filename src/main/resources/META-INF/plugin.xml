@@ -2,10 +2,12 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.4.1</version>
+  <version>1.5.0</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.5.0 — Sage postfix completion: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix
+        wrap the expression into the corresponding sage.all call (Python's built-in set stays available).</li>
     <li>1.4.1 — Fix PsiInvalidElementAccessException on PyCharm 2026.2: stale stub-index
         elements are re-validated and never dereferenced through a dropped AST node.</li>
     <li>1.4.0 — Supports the whole PyCharm 2026 release year (261–263); GitHub Actions CI
@@ -79,6 +81,14 @@
 
     <!-- Common Sage constructs as live templates (polynomial ring, number field, ...). -->
     <defaultLiveTemplates file="liveTemplates/Sage.xml"/>
+
+    <!-- Sage postfix templates: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/
+         .vector/.matrix wrap the expression into the corresponding sage.all call.
+         The provider re-exports Python's built-in postfix set too, because the
+         LanguageExtensionPoint resolves one provider per language and would
+         otherwise shadow Python's templates for the Sage dialect. -->
+    <codeInsight.template.postfixTemplateProvider language="Sage"
+                                                  implementationClass="com.starnotesxj.sageide.sugar.SagePostfixTemplateProvider"/>
   </extensions>
 
   <extensions defaultExtensionNs="Pythonid">
