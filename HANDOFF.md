@@ -16,6 +16,8 @@
 | ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 回归 doctest（a10665b）+ bea9305 移除 get_type_hints 恒等断言（3.14 下注解对象非同一对象）。**CI 状态（2026-08-17）**：旧 head a10665b 三个 run 全部只败在 get_type_hints 行（3.14）；bea9305 已推且为 PR head，但新 run 处于 `action_required` 待维护者批准。另注：非 meson "Build & Test" 里 `libs/ecl.pyx # Killed due to abort`（系统 libecl 24.5 的 sigint 测试在 3.14 崩溃）与本 PR 无关。已发评论 issuecomment-5310875176 请维护者批准。本地验证：4 项 isinstance 断言在 WSL sage 10.9 全 True（`GF(2**8,'a',impl)`×3、`GF(29)`、`Zmod(29)`、`Integers(0)`） |
 | ⑤ Sage 上游 PR #42672（draft） | `G:\Projects\sage-fork` 分支 `annotate-finite-field-element-returns` | FiniteField 四元素方法 `-> FinitePolyExtElement`；https://github.com/sagemath/sage/pull/42672 |
 | ⑥ Sage 上游 PR #42675（draft，第四波） | `G:\Projects\sage-fork` 分支 `annotate-factory-function-returns` | PowerSeriesRing → `PowerSeriesRing_generic`、LaurentPolynomialRing → `LaurentPolynomialRing_generic`、QuotientRing → `QuotientRing_generic`（运行时验证共同基类 + TESTS doctest）；https://github.com/sagemath/sage/pull/42675 |
+
+**⑤⑥ 草稿保持决定（2026-08-17 用户拍板）**：等 #42670 出结果（全绿+评审）再转正，避免 3 个同主题 PR 并行评审返工。转正条件已全部满足并核验过：base=develop 且 MERGEABLE、已推送同步（head `2e433dd` / `09f8d93`）、无 3.14 脆弱断言（#42672 用字符串断言 `__annotations__['return']=='FinitePolyExtElement'`，#42675 纯 isinstance）、静态检查/文档构建类无新增风险。转正命令：`gh pr ready 42672` / `gh pr ready 42675`。
 | ⑦ PR #3614 契约评论 | — | generation-report.json 作为 typeInformationGenerator EP 输出契约（issuecomment-5308973640） |
 | ⑧ PR #42670 strict-CI 评论 | — | 提议 sage 加 `sage-pycharm-stubgen --strict` 类型桩回归 CI（issuecomment-5308973767） |
 
