@@ -20,6 +20,9 @@ Python"）：
 - **运行配置** —— 右键用 `sage` 命令执行 `.sage` 文件（本机 / WSL / Docker），
   带运行槽图标
 - **Live Templates**（多项式环、有限域等常用构造）+ 官方 SageMath 二十面体图标
+- **New 菜单里的 "Sage File"** —— 右键目录 → **新建 → SageMath → Sage File**
+  即可创建新的 `.sage` 文件（开头注释提示 `^` 是幂、`^^` 是异或、
+  `sage.all` 已隐式注入）
 - **Sage 后缀补全**——`expr.ZZ` / `.QQ` / `.RR` / `.CC` / `.SR` / `.Integer` /
   `.N` / `.factor` / `.show` / `.vector` / `.matrix` 展开为对应的 `sage.all`
   调用；另含 CTF 数论高频（`.euler_phi`、`.carmichael_lambda`、`.divisors`、

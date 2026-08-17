@@ -26,6 +26,9 @@ with a different extension"):
   icon.
 - **Live templates** for common Sage constructs (polynomial rings, finite
   fields, ...) and the official SageMath icosahedron icon.
+- **"Sage File" in the New menu** — right-click a directory → **New →
+  SageMath → Sage File** creates a fresh `.sage` file (the starter comment
+  reminds you that `^` is power, `^^` is XOR, and `sage.all` is implicit).
 - **Sage postfix completion** — `expr.ZZ` / `.QQ` / `.RR` / `.CC` / `.SR` /
   `.Integer` / `.N` / `.factor` / `.show` / `.vector` / `.matrix` expand to
   the corresponding `sage.all` call, plus CTF number theory

@@ -2,10 +2,14 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.6.6</version>
+  <version>1.7.0</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.7.0 — "New → SageMath → Sage File" in the project view: create a fresh
+        .sage file from the right-click New menu (file template with a hint that
+        ^ is power / ^^ is XOR and sage.all is implicit).  The entry is localized
+        — "Sage 文件" on a zh-CN IDE, "Sage File" otherwise.</li>
     <li>1.6.6 — The settings-preview descriptions of the Sage postfix templates
         are now in Chinese (matching the IDE language): every call-wrap key plus
         the .b2i/.i2b conversions.</li>
@@ -138,6 +142,11 @@
 
     <!-- Common Sage constructs as live templates (polynomial ring, number field, ...). -->
     <defaultLiveTemplates file="liveTemplates/Sage.xml"/>
+
+    <!-- "New -> SageMath -> Sage File" in the project view: the fileTemplates/
+         resource "Sage File.sage.ft" is loaded as a default template by the
+         platform loader, and this group EP exposes it in the New menu. -->
+    <fileTemplateGroup implementation="com.starnotesxj.sageide.sugar.SageFileTemplatesFactory"/>
 
     <!-- Sage postfix templates: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/
          .vector/.matrix wrap the expression into the corresponding sage.all call.

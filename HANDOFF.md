@@ -289,6 +289,21 @@ cd G:\Projects\sage-ide-support
 
 **已发布（2026-08-18 凌晨）**：用户全清单实测通过 → README（EN/zh）补「可定制的 Sage 后缀模板集」与 zh 版 `^^=` 行/词法说明 → commit → `git tag v1.6.6` → push → **CI 双发布成功**：GitHub Release [v1.6.6](https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.6.6)（zip 附件 131,607 字节）+ `gradle publishPlugin` 已上传商城（1.6.6，可能仍在审核）。发布前累计 commit：v1.6.1 `d626000` → v1.6.2 `b0424f0` → v1.6.3 `4a8d453` → v1.6.4 `a657e95` → v1.6.5 `74465db` → v1.6.6 `0d54739` → README `11fad8f`。
 
+### v1.7.0（2026-08-18）——右键 New 菜单的「Sage File」入口
+
+**用户问**：① .sage 里能直接写 Python 代码吗（Python 补全 + Sage 补全共存、正常运行）？② 装插件后目录右键 New 菜单没有新建 SageMath 文件的选项。
+
+**① 答复（已写入 README「混写」节）**：可以——`.sage` = 纯 Python + sage.all 注入 + preparser，Python 代码、Python 补全、Sage 补全、后缀补全全部共存，运行走 `sage` 命令；唯一注意 `^` 是幂（异或写 `^^`）。用户确认以后密码学题全部直接新建 .sage。
+
+**② 修复（平台机制，两件套）**：
+- 资源 `src/main/resources/fileTemplates/Sage File.sage.ft`——`FileTemplatesLoader`（platform lang-impl）扫描各插件 classpath 的 `fileTemplates/` 目录，`<名>.<扩展>.ft` 自动成为默认文件模板（name="Sage File"、extension="sage"，经 velocity 渲染），建出的文件天然是 SageFileType 的 .sage 文件。
+- `SageFileTemplatesFactory`（`com.intellij.fileTemplateGroup` EP，Maven/DevKit 插件同款机制）：`FileTemplateGroupDescriptor("SageMath", SageIcons.SAGE)` + `FileTemplateDescriptor("Sage File")`——New 菜单出现 "SageMath" 组内 "Sage File" 条目。
+- 模板内容：两行注释提示（`^` 是幂 / `^^` 是异或 / sage.all 隐式注入）。
+- **条目名本地化（用户要求：中文界面显示「Sage 文件」）**：`SageBundle`（`com.intellij.DynamicBundle`）+ `messages/SageBundle.properties`（EN）与 `SageBundle_zh_CN.properties`（zh）——IDE locale 自动选文件；descriptor 覆写 `getDisplayName()` 返回 bundle 消息（**getFileName() 保持模板名 "Sage File" 不变**，`FileTemplateManager.getTemplate` 才能找到资源；DevKit 插件同款模式：`new FileTemplateDescriptor(name, icon) { override getDisplayName() = DevKitBundle.message(...) }`）。
+- 版本升 **1.7.0**（新功能，非 bugfix）。
+
+**验证**：jar 内 `fileTemplates/Sage File.sage.ft` + plugin.xml `<fileTemplateGroup>` EP ✓（解包核验）；五测试全绿；verifyPlugin 双版本 Compatible。**用户侧待测（1.7.0）**：右键目录 → New → SageMath → Sage File → 输入文件名 → 生成带注释提示的 .sage 文件（Sage 图标、补全/糖解析正常）。
+
 ### 待 IDE 实测（用户侧）
 
 1. `e^254` 无错误、hover 类型为元素类（`__pow__` 链）；2. `x ^^ y`/`x ^^= y` 无语法错且按异或/异或赋值解析（**`^^=` 已在独立词法测试验证流正确，但请用户装新 zip 复测一次**——旧 17:10 zip 有惰性 advance bug）；3. bytes 上下文 `x ^ y` 仍标红且 quick fix 到 `^^`，`x ^= y`（bytes 上下文）标红且 quick fix 到 `^^=`；4. 后缀补全 popup 同时含 Sage 集与 Python 内建集；5. `R.<x> = GF(2)[]` 等糖语句不受影响。
