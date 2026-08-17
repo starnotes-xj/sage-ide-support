@@ -35,7 +35,8 @@ with a different extension"):
   `.continued_fraction`, `.cyclotomic_polynomial`, `.sage_eval`) and
   bytes↔int conversion (`.b2i` → `int.from_bytes(expr, "big")`, `.i2b` →
   `int(expr).to_bytes(<len>, "big")`); Python's built-in postfix set stays
-  available, and no imports are needed — matching the implicit namespace.
+  available (collected automatically through the Python base-language chain),
+  and no imports are needed — matching the implicit namespace.
 
 ## How it works with sage-pycharm-stubgen
 
@@ -103,15 +104,22 @@ Python code run unchanged.  The one operator to watch is `^`:
 | `e^254` | 254th power (preparsed to `**`) | bitwise XOR |
 | `e^(-1)` | inverse (power −1) | bitwise XOR |
 | `x ^^ y` | **bitwise XOR** (preparsed back to `^`) | syntax error |
+| `x ^^= y` | **XOR assignment** (preparsed to `^=`) | syntax error |
 
 So in Sage code use `^` for powers, and in Python-style code use `^^`
 for XOR (`bytes(x ^^ y for x, y in zip(a, b))`).
 
-The plugin flags this misuse with a **red error** wherever a Python-XOR
-intent is unambiguous — a `bytes` operand (`b"..."` literal, `bytes(...)`,
-`bytes.fromhex`, `int.to_bytes`/`int.from_bytes`, a parameter/target
-annotated `bytes`) or a `^` feeding a `bytes(...)` call — with a quick fix
-to `^^`.  Sage power math (`e^254`, `2^8`) is never flagged.
+The plugin's Sage lexer parses these exactly as the preparser would: `^` is
+a power, `^=` a power assignment, `^^` a bitwise XOR and `^^=` a XOR
+assignment — so `e^254` gets proper `__pow__` typing and none of the forms
+show spurious syntax errors, while the text you see never changes.
+
+The plugin still flags the **semantic** misuse with a red error wherever a
+Python-XOR intent is unambiguous — a `bytes` operand (`b"..."` literal,
+`bytes(...)`, `bytes.fromhex`, `int.to_bytes`/`int.from_bytes`, a
+parameter/target annotated `bytes`) or a `^` feeding a `bytes(...)` call —
+with quick fixes to `^^` / `^^=`.  Sage power math (`e^254`, `2^8`) is
+never flagged.
 
 ## Building
 

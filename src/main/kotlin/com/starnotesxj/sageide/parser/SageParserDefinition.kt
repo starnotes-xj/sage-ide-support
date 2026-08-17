@@ -26,18 +26,30 @@ class SageParserDefinition : PythonParserDefinition() {
     override fun createParser(project: Project?): PsiParser = SageParser()
 
     /**
-     * Sage's XOR spelling is `^^`, which the Python lexer tokenizes as two
-     * `^` tokens — a syntax error for the Python parser.  Merge consecutive
-     * XOR tokens into one, so `x ^^ y` parses as a single XOR expression
-     * (Python XOR semantics == Sage `^^` semantics) and the file stops
-     * showing spurious "expression expected" errors.
+     * Full caret lexical remapping to Sage preparse semantics (plan A):
      *
-     * (`^` alone stays a Python XOR token; Sage power semantics for it can
-     * come later from a dedicated lexer remapping `^` to `**`.)
+     * - `^^` — the Python lexer tokenizes it as two `^` tokens, a syntax
+     *   error for the parser; the inner [MergingLexerAdapter] collapses the
+     *   run into one XOR token (Python XOR semantics == Sage `^^`).
+     * - the outer [SageCaretLexer] then remaps the remaining caret forms:
+     *   single `^` -> EXP (Sage power, text stays "^"), `^=` -> EXPEQ
+     *   (power assignment), `^^=` -> one XOREQ token (XOR assignment).
+     *
+     * After this, `e^254` parses as a power and follows the stubs' `__pow__`
+     * type chain, `x ^^ y` / `x ^^= y` parse as bitwise XOR / XOR assignment,
+     * and `x ^= y` parses as power assignment — exactly what the preparser
+     * produces at runtime, while the displayed text never changes.
      */
     override fun createLexer(project: Project?): Lexer =
-        MergingLexerAdapter(super.createLexer(project), TokenSet.create(PyTokenTypes.XOR))
+        SageCaretLexer {
+            MergingLexerAdapter(super.createLexer(project), TokenSet.create(PyTokenTypes.XOR))
+        }
 
+    /**
+     * The Sage file PSI: a [PyFileImpl] whose `getIcon()` returns the Sage
+     * icon.  PyCharm 2026.1's PyFileImpl.getIcon() returns the Python icon
+     * unconditionally and the project view short-circuits through it.
+     */
     /**
      * The Sage file PSI: a [PyFileImpl] whose `getIcon()` returns the Sage
      * icon.  PyCharm 2026.1's PyFileImpl.getIcon() returns the Python icon

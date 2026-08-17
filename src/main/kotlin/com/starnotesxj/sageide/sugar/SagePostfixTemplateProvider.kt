@@ -2,11 +2,8 @@ package com.starnotesxj.sageide.sugar
 
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplate
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateProvider
-import com.intellij.codeInsight.template.postfix.templates.StringBasedPostfixTemplate
 import com.intellij.openapi.editor.Editor
 import com.intellij.psi.PsiFile
-import com.jetbrains.python.codeInsight.postfix.PyCallWrapPostfixTemplate
-import com.jetbrains.python.codeInsight.postfix.PyPostfixTemplateProvider
 
 /**
  * SageMath postfix templates for `.sage` files.
@@ -33,44 +30,33 @@ import com.jetbrains.python.codeInsight.postfix.PyPostfixTemplateProvider
  * import — the same guarantee the [SageReferenceResolveProvider] gives to
  * references.
  *
- * The registration extension point is a `LanguageExtensionPoint`, which
- * resolves to ONE provider per language and falls back to the base language:
- * registering a Sage provider without re-exporting Python's templates would
- * SHADOW the Python built-in set for the Sage dialect.  Hence this provider
- * returns the Python provider's templates plus the Sage additions.
+ * **Registration language is Python, not Sage** (see plugin.xml): every Python
+ * PSI element type reports `PythonLanguage` (PyElementType hardcodes the
+ * Python file type's language), so `PsiUtilCore.getLanguageAtOffset` /
+ * `PsiFile.getLanguage()` resolve `.sage` files as PYTHON and the completion
+ * machinery collects postfix providers via `allForLanguage(Python)` — a
+ * provider registered for the Sage dialect is never consulted.  Registering
+ * for Python makes the popup see us; each template's `isApplicable` gates on
+ * the containing file being a [SageFile], so nothing leaks into plain `.py`
+ * files.  The provider returns ONLY the Sage additions — Python's built-in
+ * postfix set comes from PyPostfixTemplateProvider through the same language
+ * collection.
  */
 class SagePostfixTemplateProvider : PostfixTemplateProvider {
 
     private val sageTemplates: Set<PostfixTemplate> = buildSet {
         for (name in SAGE_WRAPPERS) {
-            add(PyCallWrapPostfixTemplate(name, this@SagePostfixTemplateProvider))
+            add(SageCallWrapPostfixTemplate(name, this@SagePostfixTemplateProvider))
         }
-        add(
-            SageFixedPostfixTemplate(
-                name = "int.from_bytes(expr, 'big')",
-                key = "b2i",
-                example = "int.from_bytes(expr, 'big')",
-                templateText = "int.from_bytes(${StringBasedPostfixTemplate.EXPR}, \"big\")\$END\$",
-                provider = this@SagePostfixTemplateProvider,
-            ),
-        )
-        add(
-            SageFixedPostfixTemplate(
-                name = "int(expr).to_bytes(len, 'big')",
-                key = "i2b",
-                example = "int(expr).to_bytes(len, 'big')",
-                templateText = "int(${StringBasedPostfixTemplate.EXPR}).to_bytes(\$END\$, \"big\")",
-                provider = this@SagePostfixTemplateProvider,
-            ),
-        )
+        add(SageBytesToIntPostfixTemplate(this@SagePostfixTemplateProvider))
+        add(SageIntToBytesPostfixTemplate(this@SagePostfixTemplateProvider))
     }
 
     override fun getId(): String = "sagePostfixTemplates"
 
     override fun getPresentableName(): String = "SageMath"
 
-    override fun getTemplates(): Set<PostfixTemplate> =
-        PyPostfixTemplateProvider().getTemplates() + sageTemplates
+    override fun getTemplates(): Set<PostfixTemplate> = sageTemplates
 
     override fun isTerminalSymbol(currentChar: Char): Boolean =
         currentChar == '.' || currentChar == '!'

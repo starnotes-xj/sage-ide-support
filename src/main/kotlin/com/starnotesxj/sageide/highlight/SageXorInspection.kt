@@ -29,19 +29,25 @@ import com.jetbrains.python.psi.PyStatement
  * `x ** y` and dies with `ValueError: bytes must be in range(0, 256)`.
  * Sage's XOR spelling is `^^` (preparsed back to `^`).
  *
- * This inspection flags `^`/`^=` only where a Python-XOR intent is
- * unambiguous — a `bytes`-typed operand (b"..." literal, `bytes(...)`,
- * `bytes.fromhex`, `int.to_bytes`/`int.from_bytes`, a parameter or target
- * annotated `bytes`/`bytearray`) or a `^` that feeds directly into a
- * `bytes(...)` call.  Sage power math (`e^254`, `2^8`, `x^8 + ...`) is
- * never flagged.
+ * Since v1.6.0 the Sage lexer remaps carets to the preparse semantics, so
+ * `^` parses as a power (EXP), `^=` as power assignment (EXPEQ), `^^` as
+ * XOR and `^^=` as XOR assignment (XOREQ) — none of them are syntax errors
+ * any more.  This inspection therefore flags the **semantic** misuse only:
+ * an EXP token whose text is `^` (or an EXPEQ token whose text is `^=`)
+ * where a Python-XOR intent is unambiguous — a `bytes`-typed operand
+ * (b"..." literal, `bytes(...)`, `bytes.fromhex`, `int.to_bytes` /
+ * `int.from_bytes`, a parameter or target annotated `bytes`/`bytearray`)
+ * or a `^` that feeds directly into a `bytes(...)` call.  Sage power math
+ * (`e^254`, `2^8`) is never flagged.
  */
 class SageXorInspection : LocalInspectionTool() {
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor =
         object : PyElementVisitor() {
             override fun visitPyBinaryExpression(node: PyBinaryExpression) {
-                val operatorNode = node.node.findChildByType(PyTokenTypes.XOR) ?: return
+                // A `^` power (EXP with text "^"); genuine `**` is never flagged.
+                val operatorNode = node.node.findChildByType(PyTokenTypes.EXP)
+                    ?.takeIf { it.text == "^" } ?: return
                 if (!isBytesContext(node)) return
                 holder.registerProblem(
                     operatorNode.psi,
@@ -52,12 +58,22 @@ class SageXorInspection : LocalInspectionTool() {
             }
 
             override fun visitPyAugAssignmentStatement(node: PyAugAssignmentStatement) {
-                val operatorNode = node.node.findChildByType(PyTokenTypes.XOREQ) ?: return
-                if (!isBytesLike(node.assignmentTarget) && !isBytesLike(node.value)) return
+                // A `^=` power assignment (EXPEQ with text "^="); `**=` is not flagged.
+                val operatorNode = node.node.findChildByType(PyTokenTypes.EXPEQ)
+                    ?.takeIf { it.text == "^=" } ?: return
+                // Version-safe target access: PyAugAssignmentStatement.getAssignmentTarget()
+                // only exists since 2026.2 (plugin verifier: NoSuchMethodError on
+                // 2026.1.4).  Read the target as the first expression child of the
+                // AST node instead; the operator token is not a PyExpression, so the
+                // first PyExpression child is the target.
+                val target = node.node.getChildren(null).firstOrNull { it.getPsi() is PyExpression }
+                    ?.getPsi() as? PyExpression
+                if (!isBytesLike(target) && !isBytesLike(node.value)) return
                 holder.registerProblem(
                     operatorNode.psi,
-                    "In Sage, ^= is power-assignment (preparsed to **=), not XOR. Write x = x ^^ y instead.",
+                    "In Sage, ^= is power-assignment (preparsed to **=), not XOR. Use ^^= for bitwise XOR.",
                     ProblemHighlightType.ERROR,
+                    ReplaceCaretEqWithDoubleCaretEq,
                 )
             }
         }
@@ -90,7 +106,7 @@ class SageXorInspection : LocalInspectionTool() {
             }
         }
         if (expr is PyReferenceExpression) {
-            val resolved = expr.reference?.resolve()
+            val resolved = expr.reference.resolve()
             if (resolved is PyAnnotationOwner) {
                 val annotation = resolved.annotation?.text?.trim()
                 if (annotation == "bytes" || annotation == "bytearray") return true
@@ -108,6 +124,18 @@ class SageXorInspection : LocalInspectionTool() {
                 .getDocument(operator.containingFile) ?: return
             val range = operator.textRange
             document.replaceString(range.startOffset, range.endOffset, "^^")
+        }
+    }
+
+    private object ReplaceCaretEqWithDoubleCaretEq : LocalQuickFix {
+        override fun getFamilyName(): String = "Replace ^= with ^^="
+
+        override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
+            val operator = descriptor.psiElement
+            val document = PsiDocumentManager.getInstance(project)
+                .getDocument(operator.containingFile) ?: return
+            val range = operator.textRange
+            document.replaceString(range.startOffset, range.endOffset, "^^=")
         }
     }
 }

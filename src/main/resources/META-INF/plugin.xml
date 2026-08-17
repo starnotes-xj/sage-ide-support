@@ -2,10 +2,22 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.5.0</version>
+  <version>1.6.1</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.6.1 — Fix the Sage postfix completion popup: SageFile now reports the Sage file
+        type (getFileType() override, mirroring the platform's PyiFile pattern), so the
+        postfix-applicability copy file is created as a SageFile and the .ZZ/.CC/... set
+        appears in .sage files.  The .b2i/.i2b keys now carry the platform-required leading
+        dot (.b2i/.i2b), fixing both their popup entries and expansion.</li>
+    <li>1.6.0 — Full caret lexical remapping to Sage preparse semantics: ^ parses as power
+        (e^254 now follows the __pow__ type chain), ^= as power assignment, ^^ as bitwise
+        XOR and ^^= as XOR assignment — all while the on-screen text never changes.  The
+        misused-^ inspection now targets these remapped forms and its ^= quick fix writes
+        ^^= directly.  The postfix provider now returns only the Sage template set;
+        Python's built-in postfix templates are collected automatically through the
+        base-language chain.</li>
     <li>1.5.0 — Sage postfix completion: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix,
         plus CTF number theory (.euler_phi, .carmichael_lambda, .divisors, .number_of_divisors,
         .prime_factors, .squarefree_part, .next_prime, .random_prime, .primitive_root, .factorial,
@@ -65,9 +77,11 @@
     <highlightErrorFilter implementation="com.starnotesxj.sageide.highlight.SageSugarErrorFilter"/>
 
     <!-- The one silently-breaking Sage/Python difference: in .sage, ^ is
-         exponentiation, so Python XOR must be written ^^.  Flag ^ / ^= only
-         in unambiguous bytes contexts (bytes literal/call, bytes-annotated
-         names, or feeding bytes(...)); sage power math is never flagged. -->
+         exponentiation and ^= is power assignment, so Python XOR must be
+         written ^^ / ^^=.  The lexer remaps these to the preparse semantics;
+         this inspection flags ^ / ^= only in unambiguous bytes contexts
+         (bytes literal/call, bytes-annotated names, or feeding bytes(...));
+         sage power math is never flagged. -->
     <localInspection language="Sage"
                      groupName="SageMath"
                      displayName="Misused ^ operator (Sage power vs Python XOR)"
@@ -101,10 +115,17 @@
 
     <!-- Sage postfix templates: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/
          .vector/.matrix wrap the expression into the corresponding sage.all call.
-         The provider re-exports Python's built-in postfix set too, because the
-         LanguageExtensionPoint resolves one provider per language and would
-         otherwise shadow Python's templates for the Sage dialect. -->
-    <codeInsight.template.postfixTemplateProvider language="Sage"
+
+         WHY language="Python" (not "Sage"): every Python PSI element type
+         reports PythonLanguage (PyElementType hardcodes PythonFileType's
+         language), so PsiUtilCore.getLanguageAtOffset / PsiFile.getLanguage()
+         resolve .sage files as PYTHON — the completion machinery therefore
+         collects postfix providers via allForLanguage(Python) and never sees a
+         provider registered for the Sage dialect.  Registering here for Python
+         makes the provider visible to the popup; each template's isApplicable
+         then gates on the containing file being a SageFile, so nothing leaks
+         into plain .py files. -->
+    <codeInsight.template.postfixTemplateProvider language="Python"
                                                   implementationClass="com.starnotesxj.sageide.sugar.SagePostfixTemplateProvider"/>
   </extensions>
 

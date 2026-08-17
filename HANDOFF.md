@@ -4,15 +4,15 @@
 
 用户目标：在 PyCharm 中编写 `.sage` 文件时，获得与 `.py` 文件**完全一致**的代码提示体验——语法糖（`R.<x> = GF(2)[]`）不报错、`F.`/`e.` 补全带彩色图标（红 m 方法标志）+ 类型文本 + 形参列表 + Ctrl+Q 中文文档，右键运行用 `sage` 命令（非 Python）。**保持独立的 Sage 文件类型（不是把 .sage 识别成 Python）。**
 
-## 当前状态（v1.4.0 / stubgen 0.7.1，2026-08-17 凌晨）
+## 当前状态（v1.6.0 / stubgen 0.8.1，2026-08-17 晚）
 
 四项目整合完成，类型知识全部住在数据层；另有三样「stubgen → Sage PR」贡献已推进（2026-08-17 凌晨）：
 
 | 项目 | 路径 | 状态 |
 |---|---|---|
 | ① stubgen | `C:\Users\星记\Documents\CTF练习\sage-pycharm-stubgen` | **0.7.1 已发 PyPI**：`FiniteField._first_ngens -> tuple[元素union,...]`（a/x 定型为元素）、三元素类 `__pow__`/`multiplicative_order` 注解、enrich 支持引用本文件声明名 + 内联体保留；降级安装保护 + curated 落盘（0.7.0 起）；工厂声明类型优先收敛；CI 3.11-3.13 + 可信发布全自动 |
-| ② 插件 | 本仓库 | **v1.4.0**：idea-version 放宽 **261–263.***（2026.1–2026.3 全年）；**GitHub Actions CI**（push 构建 zip 上传 artifact，v* tag 自动挂 Release）；SDK 双模式（CI 下载 `pycharm("2026.1.4")` + `bundledPlugin("PythonCore")`，本地用 D:\JetBrains\PyCharm）；CI 已绿 |
-| ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | 2 commits（EP + preparse action），PR 描述已重写，OPEN |
+| ② 插件 | 本仓库 | **v1.6.1**：Sage-only 后缀模板集（Python 自带模板经 base-language 链自动并入）+ 完整 caret 词法重映射（`SageCaretLexer`：`^`→EXP、`^=`→EXPEQ、`^^=`→XOREQ 合并、`^^`→XOR），`e^254` 按 `__pow__` 类型化；**后缀补全 popup 修复**（v1.6.0 popup 根因：`PyFileImpl.getFileType()` 硬编码 Python → copy 文件非 SageFile → isApplicable 门恒 false；`SageFile` 覆写 `getFileType()` 仿 PyiFile 先例 + `.b2i`/`.i2b` key 补点）；inspection 改检测「文本为 ^ 的 EXP / 文本为 ^= 的 EXPEQ」；idea-version 放宽 **261–263.***（2026.1–2026.3 全年）；**GitHub Actions CI**（push 构建 zip 上传 artifact，v* tag 自动挂 Release）；SDK 双模式（CI 下载 `pycharm("2026.2.1")` + `bundledPlugin("PythonCore")`，本地用 D:\JetBrains\PyCharm）；CI 已绿 |
+| ③ JetBrains PR #3614 | `G:\Projects\intellij-community-sage-pr` | 2 commits（EP + preparse action），PR 描述已重写，OPEN。**待追加的上游特性请求要点（v1.6.0 popup 根因引出）**：Python 方言感知的语言解析——现状 `PyElementType` 构造硬编码 `PythonFileType.INSTANCE.getLanguage()`（python-parser/PyElementType.java）、`CompositePsiElement/LeafPsiElement.getLanguage() = getElementType().getLanguage()`、`PyFileElementType` 构造传 `PythonLanguage`、`PsiFileImpl.getLanguage() = myElementType.getLanguage()`、`PsiUtilCore.getLanguageAtOffset → findLanguageFromElement → 元素语言`；后果：方言（Sage/Jupyter）文件在一切语言键控机制（LanguageExtension EP：postfix provider/completion 等）中一律解析为基语言，方言专属注册永远不被咨询（本插件探针实证：provider 构造 ✓ 但补全流程零咨询）。请求：让 Py 元素类型/文件元素类型在方言文件中报告方言语言，或让 `LanguageSubstitutor` 覆盖 `getLanguageAtOffset` 路径。承接 #3614「.sage 一等公民」主题。 |
 | ④ Sage 上游 PR #42670 | `G:\Projects\sage-fork` | 回归 doctest（a10665b）+ bea9305 移除 get_type_hints 恒等断言（3.14 下注解对象非同一对象）。**CI 状态（2026-08-17 晚）**：两位维护者 APPROVED（tobiasdiez/cxzhong），但 bea9305 的全部 workflow run 已**过期终结**（completed/action_required，0s，从未执行、无法再批准）。已发评论 issuecomment-5313305947 给出两条路：直接合并（附 fork CI 全绿证据）或我推 trivial commit 重生成待批准 run（代价：可能按 stale-review 规则驳回现有 APPROVED）。**勿自行推新 commit**——等维护者选择，避免把两个 APPROVED 弄没。ecl.pyx 崩溃已提 issue #42680 并在 PR 留言引用。
 | ⑤ Sage 上游 PR #42672（draft） | `G:\Projects\sage-fork` 分支 `annotate-finite-field-element-returns` | FiniteField 四元素方法 `-> FinitePolyExtElement`；head `12b80f9`（doctest 命名空间两连修：元素类导入 + 类 vs 工厂实例）；https://github.com/sagemath/sage/pull/42672 |
 | ⑥ Sage 上游 PR #42675（draft，第四波） | `G:\Projects\sage-fork` 分支 `annotate-factory-function-returns` | PowerSeriesRing → `PowerSeriesRing_generic`、LaurentPolynomialRing → `LaurentPolynomialRing_generic`、QuotientRing → `QuotientRing_generic`；head `fb1a079`（future annotations 修复 3.13 前向引用）；https://github.com/sagemath/sage/pull/42675 |
@@ -86,7 +86,8 @@ v1.2.0 组件：
 | SageLanguage | `sugar/SageLanguage.kt` | `Language(PythonLanguage.INSTANCE, "Sage")` 双参构造（base 链是全部 Python 服务生效的关键）+ DependentLanguage |
 | SageFileType | `sugar/SageFileType.kt` | 继承 PythonFileType（protected ctor），name "Sage" |
 | SageParser | `com/jetbrains/python/parsing/SageParser.kt` | **必须在该包**（parseSimpleStatement 是 protected 包可见）；覆盖 parseRoot，`IDENT DOT LT` 前瞻拦截糖语句 → 构建 tuple-unpack 赋值树（targets=[R,x]，EQ 留作 token 叶子——calcTargets 依赖） |
-| SageParserDefinition | `parser/SageParserDefinition.kt` | 继承 PythonParserDefinition，覆盖 createParser + getFileNodeType（SageFileElementType） |
+| SageParserDefinition | `parser/SageParserDefinition.kt` | 继承 PythonParserDefinition，覆盖 createParser + getFileNodeType（SageFileElementType）+ createLexer（v1.6.0：`SageCaretLexer { MergingLexerAdapter(超类 lexer, TokenSet(XOR)) }` 双层） |
+| SageCaretLexer | `parser/SageCaretLexer.kt` | **v1.6.0 完整 caret 词法重映射（方案 A）**：`^`→EXP、`^=`→EXPEQ、`^^=`→合并单 XOREQ（前瞻 = 第二个同状态 lexer 实例）、`^^`→XOR；文本一律不变、语义对齐 Sage preparser |
 | SageTypeProvider | `type/SageTypeProvider.kt` | PyTypeProviderBase.getReferenceType：工厂目标 F ← context.getType(call)；生成元 a/x ← `_first_ngens` 元素类型。**v1.3.0 起无 getReturnType 补丁**——stub 层已带注解。**注册 order="first"**（EP 循环 Ref-非空即短路，last 会被前置 provider 的 Ref(null) 遮蔽） |
 | SageSugarAnalyzer | `sugar/SageSugarAnalyzer.kt` | 糖语句判定 = statement 直接子节点含 PyTokenTypes.LT 叶子 |
 | **隐式命名空间（v1.2.0）** | `sugar/SageReferenceResolveProvider.kt` + `sugar/SageStubIndex.kt` | **Pythonid.pyReferenceResolveProvider**。教训（血泪）：**PsiReferenceContributor 对 Python 引用无效**——检查/类型推断只看主引用，绝不再走 contributor 路线；provider 里不要调 reference.resolve()（递归）；不缓存 null |
@@ -116,6 +117,11 @@ cd G:\Projects\sage-ide-support
 - 图标用 renpe 插件的 PNG（sagemath.png + @2x），不要用 pluginIcon.svg（40×40 会渲染异常）
 - GF 隐式解析不得劫持用户显式 import（当前用 `file.text.contains("from sage.all import")` 快速门控）
 - `PyFunctionTypeImpl.getCallType` / `PyFunctionImpl.getReturnType` 都是 EP first-non-null-wins → 插件 provider 必须对不处理的 callable 返回 null
+- **Python 方言的语言键控陷阱（v1.6.0 popup 根因）**：`PyElementType` 硬编码 `PythonFileType.INSTANCE.getLanguage()`，PSI 元素的 `getLanguage()` 一律返回 **Python**（`PsiUtilCore.getLanguageAtOffset`/`PsiFile.getLanguage()` 同理）→ 所有按语言收集实现的机制（LanguageExtension EP、postfix provider 收集等）对 .sage 文件看到的都是 Python，**注册在方言语言上的 EP 永远不被咨询**。方言插件要用这类功能必须**注册到基语言** + 在实现里按文件类型/PSI 自行把关（见 `SagePostfixTemplateProvider` 注册 language="Python" + `isApplicable` 的 SageFile 门）。
+- **`PyFileImpl` 的文件类型/图标硬编码（v1.6.1 popup 根因，必读）**：发行版 `PyFileImpl` 有两处无条件 Python 身份覆写（`getIcon()` 返回 Python 图标、**`getFileType()` 返回 `PythonFileType.INSTANCE`**；fork 源码 253-256 行 + javap 实证）。`getFileType()` 不是装饰性的：`PostfixLiveTemplate.copyFile` 用 `file.getFileType()` 经 `LanguageUtil.getLanguageForPsi` 推 **copy 文件的语言**——方言文件 PSI 若不覆写，copy 会被基语言解析器创建成基语言 PSI，一切「containingFile is 方言File」的门都恒 false。**方言文件 PSI 必须仿 `PyiFile` 覆写 `getFileType()` 为方言 FileType**（`getLanguage()` 保持 Python 不动）。本插件 `SageFile` 已覆写。
+- **Postfix 模板 key 必须带点（平台契约）**：`PostfixTemplate` 标准构造 = `"." + name`；`computeTemplateKeyWithoutContextChecking` 回走**含终止符**（`m.ZZ` → key `".ZZ"`），lookup string = 带点 key，matcher 按带点 key 精确匹配。传裸 key（如 `"b2i"`）→ popup 条目在 `CompletionResult.wrap` 被过滤丢弃 + 展开时 key 不等报「Template not found by key」。自定义 key 一律写 `".b2i"` 形式。
+- **后缀补全 popup 机制速查（2026.2.x，源码已定论）**：PyCharm 里 `ide.completion.group.enabled` 默认关 → `isShowAsSeparateGroup()` 恒 false → 走 `LiveTemplateCompletionContributor.showCustomLiveTemplates` → `CustomLiveTemplateBase.addCompletions`（`PostfixTemplatesCompletionProvider` 早退）。Java 的 `completion.command.suffixProvider` 属 command completion 特性，Python 无 CommandCompletionFactory 走不到，Python 的 '.' 靠 key 自带点隐式处理——方言插件无需注册 suffixProvider。`isTerminalSymbol` 必须对 `.`(46)/`!`(33) 返回 true（回走含终止符）。
+- **v1.6.0 词法包装教训（更新版，含 bugfix）**：① 2026.x 的 `MergingLexerAdapter` 是 **MergeFunction 新设计**（`MergingLexerAdapterBase`）——合并 run 整段折叠为**一个** token 且类型保持原类型（无 `MergedTokenType`；旧设计的 `TokenSet.contains` 分支保留即可兼容）；② **`MergingLexerAdapterBase.advance()` 是惰性的**（只清缓存，底层推进在下一次 `getTokenType()`）——锁步双实例会静默落后、peek 到陈旧 token；跳过多 token 必须显式「`tokenType`+`advance()`」逐次进行；③ 区分 `^`/`^^` 靠 **token 文本长度**不靠类型；④ 一 token 前瞻用**按需重启且每次 fresh instance** 的 scratch lexer（`start(同 buffer, delegate.tokenEnd, bufferEnd, delegate.state)` + 读首 token）——**复用实例必死**：`PythonIndentingProcessor.start()` 不清空 `myTokenQueue`，一旦某次重启落在空白上，processIndent 塞入的 INDENT/SPACE pending token 永久残留，后续前瞻全返回陈旧 token（v1.6.0 第三轮 bug 的根因，血泪）；单字符运算符不改 flex 状态所以 state 安全。
 
 ## 验证成功标准
 
@@ -126,17 +132,103 @@ cd G:\Projects\sage-ide-support
 4. ✅ 右键 Run 通过 sage 命令执行成功（用户确认）
 5. ✅ 语法糖行无波浪线（用户确认）
 6. ✅ 项目树 `.sage` 文件显示 Sage 图标（v1.3.2 起，用户确认）
+7. **v1.6.0 待验证（本轮交付，用户侧 IDE 实测）**：`e^254` 无错误且 hover 类型为元素类（`__pow__` 链）；`x ^^ y`/`x ^^= y` 无语法错、按异或/异或赋值解析；bytes 上下文的 `x ^ y`/`x ^= y` 仍标红、quick fix 到 `^^`/`^^=`；**后缀 popup 同时含 Sage 集与 Python 内建集（v1.6.1 已修 copy 文件语言链，理论应弹——待用户装 1.6.1 实测 `m.ZZ`/`m.CC`/`m.b2i`）**；`R.<x> = GF(2)[]` 糖语句不受影响。
 
 **v1.5.0（2026-08-17）**：新增 **Sage 后缀补全**（`SagePostfixTemplateProvider`）——`.ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix` + CTF 数论 15 个（`.euler_phi` 等）+ `.b2i`/`.i2b`（`SageFixedPostfixTemplate` 固定参数模板类）。**本轮三连修（9c25ed8）**：① `isTerminalSymbol` 必须对 `.`(46)/`!`(33) 返回 true（字节码实证：`PostfixLiveTemplate` 循环中任一 provider 返回 false 直接 return null → popup 永不弹出，这是「看不到后缀选项」的真根因）；② `SageParserDefinition.createLexer` 用 `MergingLexerAdapter(TokenSet(XOR))` 合并 `^^`（Python 词法器给两个 `^` token → parser 报「应为表达式」）；③ `SageXorInspection`（红色 ERROR + quick fix `^`→`^^`）：bytes 字面量/调用/注解名/喂 bytes(...) 时才报，sage 幂不误报；`^=` 的提示改用 `x = x ^^ y`（`^^=` 暂未解析支持）。
-- **两个排队任务（v1.5.1/v1.6.0，用户已同意，新对话执行）**：
-  1. **Provider 改为 Sage-only 模板集**（去掉 `getTemplates()` 里 `PyPostfixTemplateProvider().getTemplates()` 的合并）。字节码实证：`PostfixLiveTemplate` 用 `LanguagePostfixTemplate.allForLanguage(language)` 自动收集语言+全部基语言的 provider → Python 自带模板会自动并入 .sage，无需手动合并（手动合并反而有重复风险）。
-  2. **完整 caret 词法重映射（方案 A，v1.6.0）**：在 `MergingLexerAdapter` 之上再加一层 `LexerBase` 包装：单字符 `^`(XOR) → `PyTokenTypes.EXP`（**文本保留 "^"**，AST 按幂解析 → `e^254` 自动走 stubs `__pow__` 类型链）；`^=`(XOREQ) → `PyTokenTypes.EXPEQ`；`^^=`(XOR 后紧跟 XOREQ) → 合并为单个 XOREQ（需一 token 前瞻：第二个同状态同步 lexer 实例，平台标准技巧）。所需 token 已确认存在：`PyTokenTypes.EXP/EXPEQ/XOR/XOREQ`。连带更新 `SageXorInspection`：检测目标改为「文本为 `^` 的 EXP token」（bytes 上下文时仍报红 + quick fix）。注意词法层文本与 AST 语义的对应关系：显示不变、解析按 sage 语义。
+- **两个排队任务（v1.5.1/v1.6.0）——已于 2026-08-17 晚完成，见下方「v1.6.0」节**：
+  1. ✅ **Provider 改为 Sage-only 模板集**（`getTemplates()` 不再合并 `PyPostfixTemplateProvider().getTemplates()`）。字节码实证：`PostfixLiveTemplate` 用 `LanguagePostfixTemplate.allForLanguage(language)` 自动收集语言+全部基语言的 provider → Python 自带模板会自动并入 .sage，无需手动合并（手动合并反而有重复风险）。
+  2. ✅ **完整 caret 词法重映射（方案 A）**：`MergingLexerAdapter` 之上再加一层 `LexerBase` 包装（`SageCaretLexer`）：单字符 `^`(XOR) → `PyTokenTypes.EXP`（文本保留 "^"）、`^=`(XOREQ) → `PyTokenTypes.EXPEQ`、`^^=`(XOR 后紧跟 XOREQ) → 合并为单个 XOREQ（一 token 前瞻：第二个同状态同步 lexer 实例）。`SageXorInspection` 检测目标改为「文本为 `^` 的 EXP token / 文本为 `^=` 的 EXPEQ token」，quick fix 相应为 `^`→`^^`、`^=`→`^^=`（`^^=` 已可解析，不再用 `x = x ^^ y` 提示）。
 - 设置页后缀预览显示 `list(...)` 是平台约定（`$EXPR$` 占位符示例=列表字面量 "list"），非 bug。
+
+## v1.6.0（2026-08-17 晚）——两项排队任务完成
+
+**构建已绿**（2026-08-17 19:54，gradle buildPlugin，无警告；含 v1.6.0-bugfix 四轮：惰性 advance 修复 + 后缀模板资源/类重做 + 前瞻 scratch 状态泄漏修复 + **popup 语言注册修复（Python 注册 + SageFile 门）**）：产物 **`build/distributions/sage-ide-support-1.6.0.zip`**（93,948 字节）。已核验 zip 内层 jar 含 `SageCaretLexer.class`、`SageCallWrapPostfixTemplate`/`SageBytesToIntPostfixTemplate`/`SageIntToBytesPostfixTemplate` 及各自的 `postfixTemplates/<类名>/{description.html,before.py.template,after.py.template}`。**未 commit/未 tag**——发版照旧流程：升版本（已升 1.6.0）→ commit → `git tag v1.6.0` → push（CI 双发布）。**回归测试**：`.lexer-test/` 下 TestLexer（PythonLexer 链）、TestIndentLexer（真实 PythonIndentingLexer 链）、TestLookahead（前瞻插桩对照）、TestSageParse（**真实解析器全文复现**）、TestPostfix（key 计算/拷贝解析/适用性判定）——均用 `D:\JetBrains\PyCharm\jbr\bin\java` 跑，假平台环境搭法见各文件头。
+
+**版本已升至 1.6.0**（build.gradle.kts 两处 + plugin.xml + change-notes）。改动文件：`SagePostfixTemplateProvider.kt`（Sage-only）、新增 `parser/SageCaretLexer.kt`、`SageParserDefinition.kt`（接入包装器）、`SageXorInspection.kt`（新检测目标 + `^^=` quick fix）、`plugin.xml`（版本/注释）、README（`^`/`^^` 表 + lexer 语义说明）。
+
+### ① Sage-only 后缀模板集
+
+`getTemplates()` 只返回 `sageTemplates`。依据（HANDOFF 已记）：`PostfixLiveTemplate` 用 `LanguagePostfixTemplate.allForLanguage(language)` 沿 base-language 链收集所有 provider → Python 自带模板自动并入 .sage。Python 自带模板与 Sage 集无 key 冲突。
+
+### ② 完整 caret 词法重映射（方案 A）——`SageCaretLexer`
+
+新文件 `src/main/kotlin/com/starnotesxj/sageide/parser/SageCaretLexer.kt`：`LexerBase` 包装在 XOR 合并层**之外**（`SageCaretLexer { MergingLexerAdapter(super.createLexer(project), TokenSet(XOR)) }`）。重映射表（与 Sage preparser 运行期语义逐一对应，文本全部不变）：
+
+| 文本 | 入流 | 出流 | Sage 预解析语义 |
+|---|---|---|---|
+| `^` | XOR(1 字符) | EXP | 幂 `**` |
+| `^^` | XOR(合并 run) | XOR | 异或 `^` |
+| `^=` | XOREQ | EXPEQ | 幂赋值 `**=` |
+| `^^=` | XOR + XOREQ | **合并为单个 XOREQ** | 异或赋值 `^=` |
+
+实现要点（**必读，防返工**）：
+- **一 token 前瞻 = 按需「重启」一个同工厂 scratch lexer**（`myAhead.start(delegate.bufferSequence, delegate.tokenEnd, delegate.bufferEnd, delegate.state)` 后读第一个 token）。**绝对不要用「两个实例锁步 advance」**——见下方 v1.6.0-bugfix 血泪：`MergingLexerAdapterBase.advance()` 是**惰性**的（只清缓存，底层真正推进发生在下一次 `getTokenType()`），锁步实例会悄悄落后、peek 到陈旧 token。重启式前瞻每次只花一次 flex reset（O(1)），且结果只用于 `=== XOREQ` / is-XOR 判定，即使 indent 栈重置产生 INDENT 之类的怪 token 也正确落入「非 XOREQ → EXP」分支。
+- 区分 `^` 与 `^^` 靠**文本长度**（`tokenEnd - tokenStart == 1`），不靠 token 类型：2026.x 平台（本地 SDK 2026.2.1 已 javap 实证；fork master 同）的 `MergingLexerAdapter` 是 **MergeFunction 新设计**——合并 run **整段折叠为一个 token 且类型保持原类型**（`MergingLexerAdapterBase` + `MergeFunction`，旧的 `MergedTokenType` 已从 platform 删除）。`TokenSet.contains` 分支仍保留，兼容旧平台每个 caret 单独标 MergedTokenType 的情形。
+- `^^=` 合并 token：type=XOREQ、start=主实例当前 token start、end=scratch 实例首 token end；`advance()` 时主实例要跳过**两个** delegate token——同样因为惰性 advance，必须显式「`tokenType` 查询 + `advance()`」×2（只调两次 `advance()` 等于两个 no-op，XOREQ 会重复出现）。
+- `SageXorInspection` 相应翻转：二元→`findChildByType(EXP)` 且文本 `"^"`；增强赋值→`findChildByType(EXPEQ)` 且文本 `"^="`；quick fix 新增 `^=`→`^^=`（**`^^=` 现已可解析**，v1.5.0 的「写 `x = x ^^ y`」提示退役）。`x ^^= y` 本身不再被报。
+- 已知退化输入：`^^^`（Sage 预解析为 `^ **`）仍是一个 XOR token——无人写，文档已注明。
+- 连带收益：`e^254`/`2^8` 现在按 EXP 解析 → 自动走 stubs `__pow__` 类型链（元素类 union 注解），无需 inspection 兜底；`.sage` 里 `^` 的 AST 语义与运行期一致。
+
+### v1.6.0-bugfix（2026-08-17 晚）——`^^=` 报「应为表达式 / 无法赋值给运算符」
+
+**症状（用户实测）**：`e^254` 类型 ✓、`x ^^ y` 无语法错 ✓，但 `e ^^= b` 报「应为表达式」+「无法赋值给运算符」。
+
+**根因**：`MergingLexerAdapterBase.advance()` 是**惰性**的——只把内部缓存置 null，底层 lexer 的真正推进发生在**下一次 `getTokenType()`**（`locateToken` 里 `orig.advance()`）。初版 `SageCaretLexer` 假设「第二个同状态实例与主实例锁步 advance」：每步 advance 里对前瞻实例调 `myAhead.advance()`（惰性 no-op），而它的 `tokenType` 直到第一次 peek 才被查询 → 前瞻实例的底层停在**文件开头**，`lookAhead()` 返回陈旧 token（第一个 peek 甚至返回文件第一个 token），`^^=` 的 XOREQ 永远探测不到 → 流变成 EXP + EXPEQ 两段 → Python parser 产出「`e ** <应为表达式>` + `^= b` 增强赋值（目标=二元表达式）」→ annotator 报「无法赋值给运算符」。另一处连带 bug：合并后 `advance()` 连调两次 `myDelegate.advance()` 也是惰性 no-op，XOREQ 会重复出现。
+
+**修复**：前瞻改为**按需重启 scratch lexer**（见上方实现要点）；合并后跳两 token 改为显式「`tokenType` + `advance()`」×2。**已用独立词法测试验证**（`.lexer-test/TestLexer.java`，SDK jar 直跑，勿用 JDK21——python-ce 插件 jar 是 class v69/Java 25，须用 `D:\JetBrains\PyCharm\jbr\bin\java` 跑）：`e ^^= b` → 单 XOREQ[2-5]、连续 `^^=` 各自合并、`e^2^3` → EXP+EXP、`x ^ ^= y` 不合并、`^^`/`^=`/糖语句流不变，全绿。
+
+**idea.log 交叉验证（2026-08-17 晚）**：当前 PyCharm 会话 17:18:36 启动、加载的是**初版（带 bug）1.6.0**（`Loaded custom plugins: ... Sage IDE Support (1.6.0)` 行 42058）——用户的 `^^=` 报错即来自该构建；会话内 `com.starnotesxj` 日志行全部 WARN 级、**0 条 ERROR**（无异常，纯逻辑 bug）；17:21/17:28 的隐式解析（zip/str/range）与 bytes/len/print 拒绝均正常。修复版 zip（17:40:53）**尚未安装**——日志无重启记录；用户需 Install Plugin from Disk → 重启（两个构建版本号同为 1.6.0，日志无法区分，须以行为复测为准：重启后 `e ^^= b` 无「应为表达式/无法赋值给运算符」即新构建生效）。
+
+**教训**：`MergingLexerAdapterBase` 系（含 PythonIndentingLexer）都是惰性 advance——任何「保持两个 lexer 同步」的代码必须每次 `tokenType` 查询后才能算真推进；做一 token 前瞻就用重启式，别维护锁步状态。
+
+### v1.6.0 解析器级复现（2026-08-17 深夜，决定性证据）
+
+`.lexer-test/TestSageParse.java`：**真实全链路**（PythonIndentingLexer → MergingLexerAdapter(XOR) → SageCaretLexer → **PsiBuilderImpl → SageParser**）在假平台环境（Proxy Application + `Extensions.setRootArea` + 注册 `PythonDialectsTokenSetContributor`/`com.intellij.lang.ast.factory` EP + `PyElementTypesFacadeImpl` 假服务 + `LazyParseableElement.putUserData(CharTable.CHAR_TABLE_KEY)`）下复现解析。
+
+**最终根因（第三轮 bugfix）——前瞻 scratch 实例的状态泄漏**：用户实验发现「最小文件干净、全文文件红」→ 全文喂真实解析器**精确复现**：`m ^^=1` 被解析成 `EXP(^)+EXPEQ(^=)` 两段（binary target `m ^` + ERROR_ELEMENT「应为表达式」+ annotator「无法赋值给运算符」）→ `.lexer-test/TestLookahead.java` 插桩对照（fresh scratch vs **复用同一 scratch**）锁定：**`PythonIndentingProcessor.start()` 不清空 `myTokenQueue`**——复用的 scratch 只要某次前瞻的重启点落在空白字符（全文里 `x^8 + ...` 的第 3 个 `^` 即触发），`setStartState→processIndent` 就向队列塞入 INDENT/SPACE pending token 且**永不清理**；此后每次前瞻都返回队列头的陈旧 token（含陈旧偏移），`^^=` 处前瞻读到 SPACE 而非 XOREQ → 合并失效。最小文件在 `^^=` 前没有任何落空白的前瞻 → 干净。**修复**：`lookAhead()` 每次 `delegateFactory()` **新建实例**（免疫队列/f-string 栈/indent 栈/addFinalBreak 等一切内部残留；每次 `^` 一次 flex 对象分配，代价可忽略）。已用 TestSageParse 全文验证：`m ^^=1` → 干净 `Py:AUG_ASSIGNMENT_STATEMENT` + 单 `Py:XOREQ '^^='`。**教训（写入已知坑）**：任何「重启式复用 lexer 实例」在 Python 系 lexer 上都不安全——`start()` 不清 pending queue；要做一次性前瞻只能 fresh instance。
+
+**已核验**：用户当前安装 jar（18:51:28，103,054B）== 18:43 构建；18:51 会话无本插件异常。**Marketplace 验证（verifyPlugin，本地等效商城 Verification 页）**：`pluginVerification { ides { create(PyCharm, "2026.1.4"); create(PyCharm, "2026.2.1") } }`（`PyCharmCommunity` 已停发、2026.3 无发布版——两坑已踩掉）。**最终结果（19:30，全绿）**：261（2026.1.4）**Compatible ✓**、262（2026.2.1）**Compatible ✓**。修复过的真 bug：`SageXorInspection` 曾用 `PyAugAssignmentStatement.getAssignmentTarget()`（2026.2 才有的方法，261 会 NoSuchMethodError）→ 改为经 `node.node.getChildren(null)` 读第一个 PyExpression 子节点（跨版本安全）。遗留 6 处 experimental API 警告（PyAstTargetExpression.getName / PyAstReferenceExpression.isQualified / getReferencedName——不阻塞，后续可显式转型 PSI 接口消除）。报告在 `build/reports/pluginVerifier/{PY-261.26222.68,PY-262.9437.214}/`。
+
+### v1.6.0-bugfix 第二轮（2026-08-17 深夜）——设置页崩溃 +「list」预览 + `^^=` 交叉验证
+
+**用户报告三问题**：`m ^^=1` 仍红、后缀补全 popup 不弹、设置页后缀预览全变 "list"。逐一定位：
+
+1. **`^^=` 已修复且经双重实证**：① 新词法测试 `.lexer-test/TestIndentLexer.java`——用 **Proxy 伪造 `Application` + `Extensions.setRootArea(new ExtensionsAreaImpl(假 ComponentManager))` + 注册 `PythonDialectsTokenSetContributor` EP** 后，**真实 `PythonIndentingLexer`** 链路（`MergingLexerAdapter(XOR)` → `SageCaretLexer`）对用户原文 `m = 1\nn = 1\nm ^^=1\nprint(m)\n` 输出正确流：`XOREQ '^^=' [14-17]` 单 token ✓；② idea.log 17:49:20 栈：`PyTypeCheckerInspection$Visitor.visitPyAugAssignmentStatement` 正在访问**增强赋值语句**——证明 PSI 已正确解析 `^^=`（不再是语法错）。**用户看到的红**可能与 17:49 的 `PsiInvalidElementAccessException`（PyTypeChecker 崩溃，栈全在 Python CE 代码、`Plugin to blame: Python Community Edition`，疑似 2026.2.1 自身 bug）有关——待用户给准确红字确认。
+2. **设置页 "list" 预览 + 崩溃（真根因，官方文档硬性要求）**：官方 SDK 文档要求每个模板类提供 `resources/postfixTemplates/<SimpleClassName>/{description.html, before.*.template, after.*.template}`（https://plugins.jetbrains.com/docs/intellij/postfix-templates.html）。我们复用 `PyCallWrapPostfixTemplate`（类在 python 插件、其静态资源是 `expr.list`/`list(expr)`）→ 所有 Sage wrap 模板的 Before/After 预览全显示 "list"；`SageFixedPostfixTemplate` 无资源 → `PostfixDescriptionPanel` 抛 `Resource not found` SEVERE + `PostfixTemplatesConfigurableUi` 协程 UnhandledException（idea.log 17:52:22）。**修复**：自有类 `SageCallWrapPostfixTemplate`（资源用 `$key` 占位符）+ 固定模板拆成 `SageBytesToIntPostfixTemplate`/`SageIntToBytesPostfixTemplate` 两个子类（各自独立静态 before/after 资源）。
+3. **`postfixTemplates.xml` 损坏条目**：用户设置里存了一条 `.ZZ` 的 PostfixChangedBuiltinTemplate 但无 `<template>` 子节点（我们 provider 未实现 writeExternalTemplate → 半写条目）。已从用户配置删除；**预防**：全部模板 `isEditable() = false`（不做 live-template 往返就不允许编辑，杜绝再损坏）。
+4. **popup 不弹——最终根因（2026-08-17 深夜，探针实证）**：加探针日志（provider 构造/getTemplates/isTerminalSymbol/preCheck/isApplicable）实测：**provider 构造 ✓ 但补全流程从不咨询**（m.ZZ 输入零探针），而 m.if 正常 → 追源码确认：**`PyElementType` 构造硬编码 `PythonFileType.INSTANCE.getLanguage()`**（`CompositePsiElement/LeafPsiElement.getLanguage() = getElementType().getLanguage()`），`PsiUtilCore.getLanguageAtOffset` / `PsiFile.getLanguage()` 对 .sage 全部解析为 **Python** → 补全流程 `allForLanguage(Python)` 永远看不到注册在 Sage 语言上的 provider。**修复一（19:54 版）**：`plugin.xml` 的 `codeInsight.template.postfixTemplateProvider` 注册语言从 `Sage` 改为 **`Python`**；两个模板类的 `isApplicable` 加门 `context.containingFile is SageFile`。**⚠️ 用户实测（19:56 会话，jar 哈希核验 == 19:54 构建）：`m.ZZ`/`m.CC` 仍不弹——此修复不充分，popup 问题仍未闭环。** 下一步诊断（已备好工具，勿重走弯路）：重加探针（构造/getTemplates/isTerminalSymbol×每次调用/preCheck/isApplicable）确认新注册后 provider 是否被咨询、`isApplicable` 是否 true；若 true 而弹窗仍空 → 失败在**补全匹配层**（`PostfixTemplatesCompletionProvider` 的 `MyGroupPrefixMatcher`/`restartCompletionOnPrefixChange` 前缀机制：Java 有 suffixProvider 使 '.' 进入前缀，Python 无 suffixProvider 却 .if 正常——机制未完全解明，需反编译 `CompletionInitializationContext`/`LookupImpl` 的补全前缀推导）；若 isApplicable false → 查 `context.containingFile is SageFile` 门（copy 文件由 `PsiFileFactory.createFileFromText` 生成，需确认走的是 `SageParserDefinition.createFile`）。**教训**：Python 方言插件的「语言键控」功能（LanguageExtension EP）绝不能只注册方言语言——运行期语言解析对 Python 方言一律返回 Python，必须注册到基语言 + 在实现里按文件类型自行把关。
+
+### v1.6.1（2026-08-17 深夜）——后缀补全 popup 不弹：最终根因、修复与证据链
+
+**症状回顾**：`m.ZZ`/`m.CC` 无弹窗；`m.if` 在 .sage 正常、`x.str`/`x.if` 在 .py 正常（用户 19:56 会话实测，jar 核验 == 19:54 构建）。
+
+**补全前缀匹配层机制定论**（读官方源码 G:\Projects\intellij-community-sage-pr，与 2026.2.1 SDK 字节码逐类核对一致；origin/master 已同步至 2026-08-17，94 个新提交未触碰相关文件）：
+
+1. **模板 key 自带点**：`PostfixTemplate` 标准构造 = `"." + name`（`.if` 的 key 是 `".if"`；`isEditable` javadoc 明说 key starts with `.`）。lookup string = 带点 key，弹窗文本 = trimStart 后裸名。
+2. **前缀推导**：`PostfixLiveTemplate.computeTemplateKeyWithoutContextChecking` 回走**包含终止符**（`m.ZZ` → key `".ZZ"`）→ 会话 matcher `cloneWithPrefix(".ZZ")` → `CamelHumpMatcher(".ZZ")` 精确匹配 lookup `".ZZ"`。**Java 的 suffixProvider 属 2025.3+ command completion 特性，Python 未注册 CommandCompletionFactory 走不到——Python 的 '.' 靠「key 自带点」隐式处理，无需注册 suffixProvider**。
+3. PyCharm 里 `ide.completion.group.enabled` 注册表默认关 → `isShowAsSeparateGroup()` 恒 false → 走经典路径（`LiveTemplateCompletionContributor.showCustomLiveTemplates` → `PostfixLiveTemplate.addCompletions`；`PostfixTemplatesCompletionProvider` 早退）。
+4. **copy 文件链（真根因）**：`PostfixLiveTemplate.copyFile` 用 **`file.getFileType()`**（文件 PSI 的！）经 `LanguageUtil.getLanguageForPsi` 推 copy 文件语言。而发行版 **`PyFileImpl.getFileType()` 硬编码返回 `PythonFileType.INSTANCE`**（与 getIcon 同族的发行版覆写，fork 源码 253-256 行 + javap 实证）→ 我们的 `SageFile` 继承它 → 对 .sage 文件解析出 **PythonLanguage** → `createFileFromText(name, Python, …)` 走 **PythonParserDefinition** → copy 是普通 **PyFileImpl 而非 SageFile** → 每个模板的 `context.containingFile is SageFile` 门**恒 false** → Sage 模板全部被拒 → `.ZZ` 不弹而 `.if`（无此门）正常。**与用户症状完全吻合。**
+
+**修复（1.6.1）**：
+- `SageFile` 覆写 `getFileType()` → `SageFileType.INSTANCE`（**照抄官方方言先例**：`PyiFile` 覆写 `getFileType() = PyiFileType`；`PyDoctestFile`/`PyTypeRepresentationFile` 同模式）。`getLanguage()` **故意不动**（维持 Python——插件设计就是 .sage 在 PSI 层读作 Python，只在需要 Sage 身份处覆写，避免扰动既有正常功能）。copy 链随即变为 SageLanguage → `SageParserDefinition.createFile` → SageFile → 门通过。
+- **`.b2i`/`.i2b` key 补点**：`SageFixedPostfixTemplate` 传的裸 key `"b2i"`/`"i2b"` 违反平台「key 带点」契约 → 匹配层拿 `".b2i"` 对 lookup `"b2i"` 过滤必丢弃 + 展开时 `findApplicableTemplate` key 不等。已改为 `".b2i"`/`".i2b"`。
+- `SageFixedPostfixTemplate` 补 **DumbAware**（索引期间 `isDumbEnough` 恒 false 会跳过这两个模板）。
+
+**证据链**：
+- `.lexer-test/TestPostfix.java` 重建假平台（FileElement 根 + `setPsi(SageFile)` + AbstractFileViewProvider/PsiManagerEx stub + `com.intellij.lang.parserDefinition` EP 注册 Sage/Python 两个 ParserDefinition + fakeBus/loadClass 代理），真实复现 `m.ZZ` 链：key='.ZZ' → copy 解析 → context=Py:IDENTIFIER 'm' → 28/28 模板 `isApplicable -> true`（`containingFile=SageFile type=Sage isSageFile=true, super=true`）→ selector 1 表达式。修复前同 harness 门恒 false（type=Python）。
+- 五个 `.lexer-test` 全绿 + `gradle buildPlugin` + `gradle verifyPlugin`（2026.1.4/2026.2.1 Compatible）。
+- 红线复核：仍 language="Python" 注册、isEditable=false、自有模板类（未复用 PyCallWrapPostfixTemplate）。
+
+**探针已移除**（诊断版 20:48 构建含全套探针；1.6.1 为干净版）。若用户侧仍不弹：重加探针（构造/getTemplates/isTerminalSymbol×每次/preCheck/isApplicable + SageParserDefinition.createFile 探针）→ 让用户输入 m.ZZ 读 idea.log。
+
+### 待 IDE 实测（用户侧）
+
+1. `e^254` 无错误、hover 类型为元素类（`__pow__` 链）；2. `x ^^ y`/`x ^^= y` 无语法错且按异或/异或赋值解析（**`^^=` 已在独立词法测试验证流正确，但请用户装新 zip 复测一次**——旧 17:10 zip 有惰性 advance bug）；3. bytes 上下文 `x ^ y` 仍标红且 quick fix 到 `^^`，`x ^= y`（bytes 上下文）标红且 quick fix 到 `^^=`；4. 后缀补全 popup 同时含 Sage 集与 Python 内建集；5. `R.<x> = GF(2)[]` 等糖语句不受影响。
 
 ## .sage 混写 Python 的 `^`/`^^` 坑（2026-08-17 实测）
 
 `.sage` = 纯 Python + sage.all 注入 + preparser；`requests`/bytes 等 Python 代码原样可跑。唯一坑：**`^` 在 .sage 里是幂（预解析为 `**`）**——Python 的异或必须写 `^^`（预解析回 `^`）。实测案例：`bytes(x ^ y for x, y in zip(a, b))` → `x ** y` → `ValueError: bytes must be in range(0, 256)`；改成 `^^` 后整份 test.sage（GF(2^8) AES 域 + CryptoHack ECB CBC WTF 网络题）一次跑通。已写入插件 README（EN/zh）。
-- **v1.5.0 配套 inspection**（`SageXorInspection`）：无歧义的 Python 异或意图场景（bytes 字面量/调用/注解名/喂 bytes(...)）标红色 ERROR + quick fix 替换 `^`→`^^`；sage 幂运算不误报。**已知局限（记待办）**：`^^` 在 IDE 的 Python 语法树里是两个 `^` token，Python parser 很可能报语法错——正确长线解法是给 Sage 语言做专用 lexer（`^`→`**`、`^^`→`^`），顺带让 `e^254` 在 IDE 里按 `__pow__` 正确类型化；当前先靠 inspection 兜底，未做 lexer。
+- **v1.5.0 配套 inspection**（`SageXorInspection`）：无歧义的 Python 异或意图场景（bytes 字面量/调用/注解名/喂 bytes(...)）标红色 ERROR + quick fix 替换 `^`→`^^`；sage 幂运算不误报。**v1.6.0 起**：专用 lexer（`^`→EXP、`^^`→XOR、`^=`→EXPEQ、`^^=`→XOREQ）已落地（`SageCaretLexer`），inspection 只做**语义**误用标记（检测「文本为 ^ 的 EXP / 文本为 ^= 的 EXPEQ」），`e^254` 已按 `__pow__` 正确类型化；`^=` 的 quick fix 改为直接写 `^^=`。
 
 ## 2026.2.1 失效 PSI 事故（v1.4.0 → v1.4.1，必读）症状：PyCharm 升到 2026.2.1 后，高亮/类型提示阶段抛 `PsiInvalidElementAccessException: Invalid PSI Element: PyFunctionImpl`，栈顶在我们 `SageReferenceResolveProvider.resolveName` 第 66 行——**对 stub 索引返回的元素调用 `containingFile`（触发 getNode → InvalidRef）**。
 
@@ -152,7 +244,7 @@ cd G:\Projects\sage-ide-support
 **后续动作（2026-08-17）**：
 - 上游 PR #42670：两位维护者已 APPROVED（tobiasdiez/cxzhong），但 bea9305 的 workflow run 仍 `action_required` 未批准执行。已发评论 issuecomment-5311785956：列明哪些失败与代码无关（ecl.pyx 崩溃在 fork 里同样复现；html 文档失败为 fork 缺基线 artifact）、bea9305 在 fork 全套验证绿（Meson 全矩阵/全关/Lint/静态检查/PDF 文档），请维护者批准 pending run。
 - sage-lsp issue #3：已回评论 issuecomment-5311787391——认同"注解长期归 sage 仓"（三个上游 PR 正是此路线），但 stubgen 保持**独立仓库/独立发布**（PyPI CLI，不并入 LSP 也不依赖 LSP，仅可选消费关系）。
-- JetBrains 插件商城：**已打通**（2026-08-17）：用户已手动完成首次上传（插件 `com.starnotesxj.sageide` 已存在于商城，版本 1.4.1 已在 channel——注意可能仍在审核/未公开，用户可在 https://plugins.jetbrains.com/author/me 查状态）。`PUBLISH_TOKEN` 已存为仓库 secret；CI 的 `v*` tag release job 现在**同时**跑 `gradle publishPlugin`（严格模式：重复版本会让 job 红，即发布前必须升 `build.gradle.kts` 版本号）+ `action-gh-release` 附件。测试 tag v1.4.1-test 已清理；报错 "already contains version 1.4.1" 即 token/secret 注入正常、仅版本重复。下一次发版流程：升版本号 → commit → `git tag v1.4.2` → push → 全自动双发布。
+- JetBrains 插件商城：**已打通**（2026-08-17）：用户已手动完成首次上传（插件 `com.starnotesxj.sageide` 已存在于商城，版本 1.4.1 已在 channel——注意可能仍在审核/未公开，用户可在 https://plugins.jetbrains.com/author/me 查状态）。`PUBLISH_TOKEN` 已存为仓库 secret；CI 的 `v*` tag release job 现在**同时**跑 `gradle publishPlugin`（严格模式：重复版本会让 job 红，即发布前必须升 `build.gradle.kts` 版本号）+ `action-gh-release` 附件。测试 tag v1.4.1-test 已清理；报错 "already contains version 1.4.1" 即 token/secret 注入正常、仅版本重复。下一次发版流程：升版本号（**当前已升 1.6.0，未 tag**）→ commit → `git tag v1.6.0` → push → 全自动双发布。
 - **许可证 2026-08-17 已从 MIT 换成 GPL-3.0（两仓库统一，用户拍板）**：注意 PyPI 已发布的 ≤0.8.0 与 GitHub 已发布的 ≤v1.4.1 在法律上仍是 MIT，新版本才适用 GPL。**PEP 639 坑**：pyproject 用 SPDX `license = "GPL-3.0-only"` 时**不得**同时保留 `License ::` classifier（setuptools≥77 直接 InvalidConfigError，CI 的 `pip install -e .` 在跑测试前就炸；本地 PYTHONPATH 跑 unittest 不经过打包所以假绿）——修复 `864a445` 删 classifier。**教训：改打包元数据后必须本地 `python -m build` + `pip install -e .` 验证，不能只跑 unittest。**
 - README：两个仓库的 EN/zh-CN 均已加「Quick start / 快速开始」章节；插件 README 修正过时的版本范围行。
 
@@ -223,3 +315,50 @@ wsl.exe -d Ubuntu bash -lc "unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy 
 9. urllib timeout 是**每 socket 操作**的：响应慢慢滴流时超时不触发（"卡死"假象的另一半）。
 
 **后续（0.8.1）**：百度充值后按上方命令重跑批处理 → 缓存重刷还原脚本 → 拷入 `src/sage_pycharm_stubgen/translations.json` → bump 0.8.1 发版 → WSL `--install` + `--apply-only` → 用户 Invalidate Caches。
+
+## 独立 Sage 语法树路线——可行性分析（2026-08-17 深夜，用户问询）
+
+用户问题与本答复要点（结论：**不推荐全量独立树；维持 Python 方言树**，理由与证据如下）：
+
+### Q1. SageMath 官方有没有官方 Sage 解析器？
+
+- **权威变换是 preparser**（[src/sage/misc/preparser.py](https://gitlab.com/sagemath/dev/sage/-/blob/4f68ee003ad3d2147a81b8e5ea0c64798ed32a59/src/sage/misc/preparser.py)）：.sage → 纯 Python 文本（`^`→`**`、`^^`→`^`、整数字面量、`R.<x> = ...` 糖……），然后交给 **CPython 自己的 parser**。本插件 v1.6.0 的 `SageCaretLexer` 就是在词法层镜像这套语义——**方向上与官方一致**。
+- **sage.misc.parser**（[文档](https://doc.sagemath.org/pdf/en/reference/misc/misc.pdf)）：pynac/GiNaC 支持的**符号表达式**解析器（`sage: x^2 + 1` 这类输入 → `SymbolicExpression`）。它**不是**全语言 CST：只覆盖表达式、产物是运行期 Sage 对象、无源码位置信息——不能直接当 IDE 语法树。
+- **结论**：没有可复用的官方 CST。任何「独立 Sage 语法树」都必须自研或从 BNF 生成。
+
+### Q2. 元素类型/PSI 类能否用 JetBrains SDK 减少开发量？
+
+- **能减负，但只覆盖骨架**：Grammar-Kit（BNF → lexer/parser/PSI 生成器）、PsiViewer、ParsingTestCase、`com.intellij.platform.syntax`（新语法引擎）可以自动产出元素类型与 PSI 壳。Python 语法 ≈ 600-700 条 BNF 规则 + Sage 方言扩展，语法层工作量从「手写万行」降到「维护一份 BNF」。
+- **减不了的部分**：类型推断、补全、引用解析、inspection、annotator——这些全部是 PSI 之上的行为逻辑，生成器不覆盖，且它们是本插件**全部用户价值**所在。
+- 关键取舍：生成的 PSI 与 `PyExpression` 类型**不兼容** → Python 生态（PyTypeProvider、补全、解析、inspection）整体失联。
+
+### Q3. 类型推断能否仿照 PyTypeProvider/TypeEvalContext 写？
+
+- **架构上可仿**（EP 回调 + 上下文缓存 + stub 索引驱动 + union 合并），但 `TypeEvalContext` 是 Python 专属、上万行量级、操作 PyExpression——**无法复用**。
+- 自研一个「够用」的 Sage 类型推断器（stub 签名驱动 + 有限数据流 + 工厂返回类型 + 生成元类型）估计 **核心 2-4 周**，随后长期打磨。只能逼近 Python 插件现有质量的下界。
+
+### Q4. 补全/引用解析/隐式命名空间/inspections/后缀模板，花时间能做出吗？
+
+都能做（纯工程），独立树路线的粗略估计：
+
+| 能力 | 估计 | 备注 |
+|---|---|---|
+| 基础解析（BNF+生成） | 1-2 周 | Grammar-Kit 起步 |
+| 补全（成员/形参/类型文本/文档） | 2-3 周 | 需自建补全 contributor + stub 索引对接 |
+| 引用解析 + 隐式 sage.all 命名空间 | 1-2 周 | 自建 resolve 链（Python 的 pyReferenceResolveProvider 不可用） |
+| inspections/annotator（红字类） | 1-2 周 | 自建 visitor 框架 |
+| 后缀模板 | 1-3 天 | 本轮已有现成模板类，只换 provider 门 |
+| **合计** | **2-4 个月** | 且最终体验≈现状，还丢失「与 .py 完全一致」承诺 |
+
+对照：**当前 Python 方言树方案已交付上述全部能力**（类型链、补全、隐式解析、红字、图标、运行配置均经用户实测），popup 匹配层问题已在 v1.6.1 定论并修复（见 v1.6.1 节）。
+
+### 结论与推荐路线
+
+1. **不重写独立树**——投入 2-4 个月换回现在已有的东西，且 Jupyter 生态（同构的 Python 方言）同样没有走独立树，证明平台意图就是「方言共享基语言 PSI」。
+2. **popup 收尾已完成**（v1.6.1：`SageFile.getFileType()` 覆写 + `.b2i`/`.i2b` key 补点）；用户侧装 1.6.1 实测 `m.ZZ`/`m.CC`/`m.b2i` 为最终确认。
+3. **上游特性请求**（PyElementType 方言感知语言解析）已写入 PR #3614 行——若被采纳，方言插件可重新注册到方言语言，届时本插件的 Python 注册 + SageFile 门可简化。**新增实证素材**：`PyFileImpl.getFileType()` 硬编码 Python（与 getIcon 同族发行版覆写）导致方言文件在 `LanguageUtil.getLanguageForPsi`/copy-file 链上被识别为基语言——这正是「方言感知语言解析」缺陷的又一具体后果，已写入 v1.6.1 节与已知坑。
+
+## 交接提示词（给接手 AI 的完整 prompt，可直接粘贴）
+
+> 继续 G:\Projects\sage-ide-support 插件工作。先读 HANDOFF.md 全文（重点是「v1.6.0」四轮 bugfix、「v1.6.1 popup 根因与修复」、「已知坑清单」、「独立 Sage 语法树可行性分析」与「.lexer-test」测试设施）。
+> 当前状态：**后缀补全 popup 已在 v1.6.1 修复并全回归通过**（根因 = 发行版 `PyFileImpl.getFileType()` 硬编码 Python → postfix copy 文件被建成 PyFile → `is SageFile` 门恒 false；修复 = `SageFile.getFileType()` 覆写仿 PyiFile + `.b2i`/`.i2b` key 补点 + SageFixedPostfixTemplate 补 DumbAware）。唯一待办：**用户装 `build/distributions/sage-ide-support-1.6.1.zip` 实测** `m.ZZ`/`m.CC`/`m.b2i` 弹窗 + 回车展开正确（`ZZ(m)`/`int.from_bytes(m, "big")`）。若实测仍不弹：① 确认 idea.log 有 `Loaded custom plugins ... Sage IDE Support (1.6.1)`（排除装错版本）；② 重加探针（provider 构造/getTemplates/isTerminalSymbol×每次/preCheck/isApplicable + `SageParserDefinition.createFile` 探针）出诊断版读 log（诊断方法见 v1.6.1 节末尾）；③ 红线：不得回退到复用 PyCallWrapPostfixTemplate（预览会变 list）、不得去掉 isEditable=false、不得改回 language="Sage" 注册。实测通过后：commit → `git tag v1.6.1` → push（CI 双发布）。
