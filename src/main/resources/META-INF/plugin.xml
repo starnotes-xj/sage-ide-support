@@ -2,10 +2,15 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.7.3</version>
+  <version>1.7.4</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.7.4 — The implicit sage.all namespace now resolves sage.all module
+        declarations FIRST (top-level attributes and from-import aliases like
+        `N` = numerical_approx), before the global name indexes — single-letter
+        names previously collided with unrelated sage modules and produced
+        wrong call signatures ("unexpected argument" on N(1)).</li>
     <li>1.7.3 — Locate the sage.all stub module through the function index
         (GF anchor) instead of PyModuleNameIndex, which does not reliably
         index .pyi stub modules; ZZ/QQ/RR/CC/SR now resolve without the

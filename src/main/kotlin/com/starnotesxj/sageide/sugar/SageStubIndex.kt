@@ -42,10 +42,23 @@ object SageStubIndex {
             if (it.isValid) return it
             positiveCache.remove(name)
         }
+        // 1. The sage.all module is the namespace the `sage` command actually
+        //    injects — its declarations MUST win over the global name indexes:
+        //    single-letter names (N, n) collide with unrelated sage modules
+        //    (e.g. `modular/modsym/p1list.pyi`'s N), and resolving them there
+        //    yields a wrong signature ("unexpected argument" on N(1)).
+        findSageAllDeclaration(project, name)?.let {
+            positiveCache[name] = it
+            return it
+        }
+        // 2. Global function/class index fallback (GF and other sage.all
+        //    functions declared as `def` in all.pyi).  Prefer candidates
+        //    declared in all.pyi itself, then any sage stub file.
         val candidates = mutableListOf<PsiElement>()
         PyFunctionNameIndex.find(name, project, GlobalSearchScope.allScope(project)).forEach { candidates += it }
         PyClassNameIndex.find(name, project, GlobalSearchScope.allScope(project)).forEach { candidates += it }
-        val result = candidates.firstOrNull { isSageStubDeclaration(it) } ?: findSageAllAttribute(project, name)
+        val result = candidates.firstOrNull { isSageAllFile(safeContainingFile(it)) }
+            ?: candidates.firstOrNull { isSageStubDeclaration(it) }
         if (result != null) {
             positiveCache[name] = result
             LOG.warn("Sage stub index hit: '$name' -> ${safeContainingFilePath(result)}")
@@ -61,14 +74,13 @@ object SageStubIndex {
     }
 
     /**
-     * Resolves a name to a top-level attribute of the `sage.all` stub module.
-     *
-     * `ZZ`/`QQ`/`RR`/`CC`/`SR` (and other `sage.all` names) are module-level
-     * INSTANCES — the generated `all.pyi` declares them as annotated
-     * variables (`ZZ: _Type_ZZ`), which neither PyFunctionNameIndex nor
-     * PyClassNameIndex covers.  The declaration carries the annotation, so
-     * returning the target restores the whole type chain (`ZZ` -> the
-     * integer-ring type).
+     * Resolves a name inside the `sage.all` stub module: first a top-level
+     * attribute (`ZZ: _Type_ZZ` — module-level instances that neither the
+     * function nor the class index covers), then a from-import alias
+     * (`from sage.misc.functional import numerical_approx as N` — `N` is an
+     * import target, also invisible to both indexes).  Returning the target
+     * restores the type chain: `ZZ` -> the integer-ring type, `N` -> the
+     * `numerical_approx` callable signature.
      *
      * The `sage.all` stub module is located through the function index on a
      * name that provably resolves there ([SAGE_ALL_ANCHOR_NAME] — `GF` is a
@@ -76,23 +88,40 @@ object SageStubIndex {
      * GF for the user): PyModuleNameIndex does not reliably index `.pyi`
      * stub modules, so locating the file through it failed in the wild.
      */
-    private fun findSageAllAttribute(project: Project, name: String): PyTargetExpression? {
-        val anchor = PyFunctionNameIndex.find(SAGE_ALL_ANCHOR_NAME, project, GlobalSearchScope.allScope(project))
-            .firstOrNull { isSageStubDeclaration(it) }
-        val allFile = anchor?.let { safeContainingFile(it) } as? PyFile
+    private fun findSageAllDeclaration(project: Project, name: String): PsiElement? {
+        val allFile = sageAllFile(project)
         if (allFile == null) {
             LOG.warn("Sage stub sage.all anchor '$SAGE_ALL_ANCHOR_NAME' not found — cannot resolve '$name'")
             return null
         }
-        val attribute = allFile.findTopLevelAttribute(name)
-        if (attribute == null) {
-            LOG.warn("Sage stub sage.all attribute miss: '$name' not a top-level attribute of ${safeContainingFilePath(allFile)}")
-            return null
+        allFile.findTopLevelAttribute(name)?.let { attribute ->
+            if (attribute.isValid) {
+                LOG.warn("Sage stub sage.all attribute hit: '$name' in ${safeContainingFilePath(attribute)}")
+                return attribute
+            }
         }
-        if (!attribute.isValid) return null
-        LOG.warn("Sage stub sage.all attribute hit: '$name' in ${safeContainingFilePath(attribute)}")
-        return attribute
+        for (fromImport in allFile.fromImports) {
+            for (importElement in fromImport.importElements) {
+                if (importElement.visibleName == name) {
+                    if (!importElement.isValid) return null
+                    LOG.warn("Sage stub sage.all import-alias hit: '$name' in ${safeContainingFilePath(importElement)}")
+                    return importElement
+                }
+            }
+        }
+        // No warn on a miss: user identifiers legitimately miss every path
+        // and would flood the log.
+        return null
     }
+
+    /** The `sage/all.pyi` stub module, located through the GF function-index anchor. */
+    private fun sageAllFile(project: Project): PyFile? {
+        val anchor = PyFunctionNameIndex.find(SAGE_ALL_ANCHOR_NAME, project, GlobalSearchScope.allScope(project))
+            .firstOrNull { isSageStubDeclaration(it) }
+        return anchor?.let { safeContainingFile(it) } as? PyFile
+    }
+
+    private fun isSageAllFile(file: PsiFile?): Boolean = isSageStubFile(file) && file?.name == "all.pyi"
 
     /** A name that the generated `sage/all.pyi` declares as a `def`, used to locate the module file. */
     private const val SAGE_ALL_ANCHOR_NAME = "GF"

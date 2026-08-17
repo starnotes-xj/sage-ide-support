@@ -332,7 +332,19 @@ cd G:\Projects\sage-ide-support
 
 **修复（1.7.3）**：定位 `sage.all` stub 模块改用**函数索引锚点**——`PyFunctionNameIndex.find("GF", allScope)` 命中 all.pyi 里的 `def GF`（用户日志实证同一索引路径已解析 GF），`safeContainingFile(anchor) as PyFile` 得 all.pyi → `findTopLevelAttribute(name)` 拿 `ZZ: _Type_ZZ` 的 PyTargetExpression。**三分支日志齐备**：`anchor not found`（GF 索引断）/ `attribute miss`（findTopLevelAttribute null，下一轮再分诊）/ `attribute hit`。版本升 1.7.3（1.7.2 已装到用户 IDE，升版保证日志区分）。
 
-**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户侧待测（1.7.3）**：删除/注释 import 后 ZZ 无红线；若仍红，读 idea.log 三条日志定位（`sage.all anchor not found` → 函数索引问题；`attribute miss` → findTopLevelAttribute 对 stub 文件不生效，需换 PSI 遍历）。
+**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户实测（1.7.3）**：ZZ/GF 红错消失 ✓；但出现新一批**黄色警告**（用户列表 + 行号），逐条分析见下。
+
+### v1.7.4（2026-08-18）——N(1) 撞名解析修复：sage.all 声明优先
+
+**用户 1.7.3 实测黄警四类（行号已核）**：
+1. L3 `F.<a> = GF(2^8, ...)`「应为元素union 但实际 FiniteField」——检查器把 Sage 糖多目标赋值当 tuple-unpack：a 有我们给的 union 类型、value `GF(...)` 是 FiniteField → 比出「不兼容」。L2 不报是佐证（`GF(2)[]` 的 `__getitem__` 无注解 → value 类型未知被跳过）。**定性：检查器对糖赋值的已知误报**；已查尽抑制钩子（HighlightErrorFilter 只管 parser 错误、PyInspectionExtension 无类型钩子、PyTypeProviderBase 无 iteration 方法、TypeEvalContext 无语境 flag 公开）→ 暂无干净插件侧抑制，用户可 `# type: ignore` 或接受。
+2. L18 `RR(1)`「RealField_class 对象不可调用」——**真·数据层缺口**：`real_mpfr.pyi` 的 RealField_class 无 `__call__` 注解（对照 CC 有 `__call__(x=None, im=None)` 故 L20 不报）。修法：stubgen curated 补 `RealField_class.__call__`。
+3. L19 `N(1)`「意外实参」——**真 bug（本版修复）**：idea.log 实证 `index hit: 'N' -> ...modular/modsym/p1list.pyi`——**N 撞名**！`all.pyi` 里 N 是 `from sage.misc.functional import numerical_approx as N`（import 别名），但 v1.7.3 的 findDeclaration **先查全局函数/类索引**，单字符名 N 命中无关模块 p1list.pyi 的 N → 错误签名 → N(1) 意外实参。（stubgen 只生成 .pyx 的 pyi，misc/functional 是纯 .py 无 pyi 属设计如此，非 stubgen bug。）
+4. 多处 print 的「Literal/int 没有定义 __str__/__repr__」——Python 插件自带 string-conversion 检查（`INSP.string.conversion.without.dunder.str`），连 builtins int 都报，疑似 2026.2 检查自身行为；**与 Sage 插件无关**，待用户 .py 对照确认后建议关检查或忽略。
+
+**修复（1.7.4）**：`SageStubIndex.findDeclaration` 重排——**① `findSageAllDeclaration` 优先**（all.pyi 顶层属性 `ZZ: _Type_ZZ` + **from-import 别名**：遍历 `allFile.fromImports` 的 `importElements` 匹配 `visibleName`，返回 PyImportElement——类型链自动跟随 numerical_approx 签名）；② 全局函数/类索引兜底，候选**优先 all.pyi 文件**（`isSageAllFile`）再任意 sage stub。miss 不打 warn（用户标识符会刷屏）。版本升 1.7.4。
+
+**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户侧待测（1.7.4）**：L19 N(1) 意外实参消失（N hover 应为 numerical_approx 签名）；ZZ/RR/CC/GF 无红错回归；其余 ①④ 按上文定性处理。
 
 ### 待 IDE 实测（用户侧）
 
