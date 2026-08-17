@@ -102,3 +102,8 @@ Requires JDK 21, Kotlin 2.3.0 and the IntelliJ Platform Gradle Plugin
 - [sagemath/sage PR #42670](https://github.com/sagemath/sage/pull/42670) /
   [#42672](https://github.com/sagemath/sage/pull/42672) — upstream Sage
   annotations feeding the same type-information chain.
+
+## License
+
+[GPL-3.0](LICENSE). Derivative works must remain open under the same
+license, and the original copyright notice must be preserved.

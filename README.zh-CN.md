@@ -90,3 +90,7 @@ gradle buildPlugin --no-daemon   # 产出 build/distributions/*.zip
 - [sagemath/sage PR #42670](https://github.com/sagemath/sage/pull/42670) /
   [#42672](https://github.com/sagemath/sage/pull/42672) —— Sage 上游注解，
   为同一条类型信息链供数。
+
+## 许可证
+
+[GPL-3.0](LICENSE)。衍生作品须以相同许可证保持开源，并保留原作者版权声明。
