@@ -107,6 +107,12 @@ Python code run unchanged.  The one operator to watch is `^`:
 So in Sage code use `^` for powers, and in Python-style code use `^^`
 for XOR (`bytes(x ^^ y for x, y in zip(a, b))`).
 
+The plugin flags this misuse with a **red error** wherever a Python-XOR
+intent is unambiguous — a `bytes` operand (`b"..."` literal, `bytes(...)`,
+`bytes.fromhex`, `int.to_bytes`/`int.from_bytes`, a parameter/target
+annotated `bytes`) or a `^` feeding a `bytes(...)` call — with a quick fix
+to `^^`.  Sage power math (`e^254`, `2^8`) is never flagged.
+
 ## Building
 
 ```powershell

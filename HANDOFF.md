@@ -132,6 +132,7 @@ cd G:\Projects\sage-ide-support
 ## .sage 混写 Python 的 `^`/`^^` 坑（2026-08-17 实测）
 
 `.sage` = 纯 Python + sage.all 注入 + preparser；`requests`/bytes 等 Python 代码原样可跑。唯一坑：**`^` 在 .sage 里是幂（预解析为 `**`）**——Python 的异或必须写 `^^`（预解析回 `^`）。实测案例：`bytes(x ^ y for x, y in zip(a, b))` → `x ** y` → `ValueError: bytes must be in range(0, 256)`；改成 `^^` 后整份 test.sage（GF(2^8) AES 域 + CryptoHack ECB CBC WTF 网络题）一次跑通。已写入插件 README（EN/zh）。
+- **v1.5.0 配套 inspection**（`SageXorInspection`）：无歧义的 Python 异或意图场景（bytes 字面量/调用/注解名/喂 bytes(...)）标红色 ERROR + quick fix 替换 `^`→`^^`；sage 幂运算不误报。**已知局限（记待办）**：`^^` 在 IDE 的 Python 语法树里是两个 `^` token，Python parser 很可能报语法错——正确长线解法是给 Sage 语言做专用 lexer（`^`→`**`、`^^`→`^`），顺带让 `e^254` 在 IDE 里按 `__pow__` 正确类型化；当前先靠 inspection 兜底，未做 lexer。
 
 ## 2026.2.1 失效 PSI 事故（v1.4.0 → v1.4.1，必读）症状：PyCharm 升到 2026.2.1 后，高亮/类型提示阶段抛 `PsiInvalidElementAccessException: Invalid PSI Element: PyFunctionImpl`，栈顶在我们 `SageReferenceResolveProvider.resolveName` 第 66 行——**对 stub 索引返回的元素调用 `containingFile`（触发 getNode → InvalidRef）**。
 

@@ -95,6 +95,12 @@ Python"）：
 所以：Sage 代码里用 `^` 求幂；Python 风格代码里用 `^^` 做异或
 （如 `bytes(x ^^ y for x, y in zip(a, b))`）。
 
+插件会在 Python 异或意图无歧义的场景把误用的 `^` 标成**红色错误**——
+操作数是 bytes（`b"..."` 字面量、`bytes(...)`、`bytes.fromhex`、
+`int.to_bytes`/`int.from_bytes`、注解为 `bytes` 的参数/变量）或 `^` 直接
+喂给 `bytes(...)` 调用——并带一键修复为 `^^`。Sage 幂运算（`e^254`、
+`2^8`）绝不会被误报。
+
 ## 构建
 
 ```powershell

@@ -10,7 +10,9 @@
         plus CTF number theory (.euler_phi, .carmichael_lambda, .divisors, .number_of_divisors,
         .prime_factors, .squarefree_part, .next_prime, .random_prime, .primitive_root, .factorial,
         .numerator, .denominator, .continued_fraction, .cyclotomic_polynomial, .sage_eval) and
-        bytes/int conversion (.b2i, .i2b); Python's built-in postfix set stays available.</li>
+        bytes/int conversion (.b2i, .i2b); Python's built-in postfix set stays available.
+        New inspection: flags ^ / ^= in unambiguous bytes contexts (Sage power vs Python XOR)
+        with a quick fix to ^^.</li>
     <li>1.4.1 — Fix PsiInvalidElementAccessException on PyCharm 2026.2: stale stub-index
         elements are re-validated and never dereferenced through a dropped AST node.</li>
     <li>1.4.0 — Supports the whole PyCharm 2026 release year (261–263); GitHub Actions CI
@@ -60,6 +62,17 @@
     <!-- Defensive: if a sugar statement ever falls back to the error-recovered
          Python tree, suppress the parser-error squiggles on exactly that statement. -->
     <highlightErrorFilter implementation="com.starnotesxj.sageide.highlight.SageSugarErrorFilter"/>
+
+    <!-- The one silently-breaking Sage/Python difference: in .sage, ^ is
+         exponentiation, so Python XOR must be written ^^.  Flag ^ / ^= only
+         in unambiguous bytes contexts (bytes literal/call, bytes-annotated
+         names, or feeding bytes(...)); sage power math is never flagged. -->
+    <localInspection language="Sage"
+                     groupName="SageMath"
+                     displayName="Misused ^ operator (Sage power vs Python XOR)"
+                     enabledByDefault="true"
+                     level="ERROR"
+                     implementationClass="com.starnotesxj.sageide.highlight.SageXorInspection"/>
 
     <!-- Project view icon: the tree resolves file icons through the
          fileIconProvider chain, where a Python presentation can win for
