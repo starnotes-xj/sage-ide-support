@@ -149,6 +149,17 @@ PYTHONPATH=/mnt/c/Users/星记/Documents/CTF练习/sage-pycharm-stubgen/src \
 # 生成后 PyCharm 需 Invalidate Caches 重索引
 ```
 
+## fork CI 自验证机制（2026-08-17 建立，绕过 sagemath 审批门槛）
+
+sagemath 上游对外部 fork PR 每次推送都要维护者手动批准 run（`action_required`）。绕过办法：**在用户自己的 fork（starnotes-xj/sage）里建内部 PR**（分支 → fork develop）——pull_request 语义与上游完全一致（含 merge-fixes 步骤、changed-files 分片、editable 不翻倍），且无审批门槛。fork develop 已与上游同步（`c9c8381`）；fork 的 Actions 曾被默认禁用，用户已在仓库 Settings 启用。
+
+- PR #1（`annotate-ring-factory-return-types`，验 #42670 bea9305）：https://github.com/starnotes-xj/sage/pull/1
+- PR #2（`annotate-finite-field-element-returns`，验 #42672）：https://github.com/starnotes-xj/sage/pull/2
+- PR #3（`annotate-factory-function-returns`，验 #42675）：https://github.com/starnotes-xj/sage/pull/3
+- 触发技巧：若错过 pull_request 事件（如启用 Actions 后），`gh pr close` + `gh pr reopen` 重新触发。
+- 监控：后台 job pwsh-30（上游 31968571473）、pwsh-31（PR#1 三个测试 run）、pwsh-32（PR#2/#3 六个测试 run）。
+- 成本警示：三个全套 ≈ 30-40 小时 runner 分钟（免费档月配额 2000 分钟），用户已知情仍要求全套。
+
 ## 全量中文翻译批处理（translate-docs，0.8.0 里程碑）
 
 状态：**0.8.0 已发 PyPI**（首批 991 条缓存 + 代码块还原机制）；WSL sage 环境已装 0.8.0 并 `--install` + `--apply-only`（**982 条已应用**，已验证：Clifford stub 中文散文 + `TESTS::` 还原 + 0 处「圣人」）。**批处理暂停在 991/11799（8%）**——百度账户余额耗尽（LLM 与标准 MT 双双 54004），用户选择先发部分版；充值后重跑批处理（断点续传）→ 缓存拷入 `src/sage_pycharm_stubgen/translations.json` → 发 0.8.1。缓存 `C:\Users\星记\.sage-pycharm-stubgen\translations.json`，每 200 条落盘一次、可随时中断续跑。
