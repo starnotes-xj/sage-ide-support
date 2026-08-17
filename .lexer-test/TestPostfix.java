@@ -245,6 +245,59 @@ public class TestPostfix {
     if (!found || !collectedDummy.isEmpty()) {
       throw new IllegalStateException("meta-language provider collection contract broken");
     }
+
+    // 7. Expansion template strings must reference the $expr$ template
+    //    variable (a literal "expr" would not be substituted — v1.6.3 fix),
+    //    and every per-key preview resource must resolve from the plugin.
+    PostfixTemplate b2i = findTemplate(sageProvider, ".b2i");
+    String b2iText =
+      ((com.intellij.codeInsight.template.postfix.templates.StringBasedPostfixTemplate)b2i).getTemplateString(context);
+    System.out.println("b2i template string: " + b2iText);
+    if (!b2iText.contains("$expr$")) {
+      throw new IllegalStateException("b2i template lost the $expr$ variable: " + b2iText);
+    }
+    PostfixTemplate zz = findTemplate(sageProvider, ".ZZ");
+    String zzText =
+      ((com.intellij.codeInsight.template.postfix.templates.StringBasedPostfixTemplate)zz).getTemplateString(context);
+    System.out.println("ZZ template string: " + zzText);
+    if (!zzText.contains("$expr$") || !zzText.startsWith("ZZ(")) {
+      throw new IllegalStateException("ZZ template string broken: " + zzText);
+    }
+    for (String previewKey : new String[]{"ZZ", "euler_phi", "sage_eval"}) {
+      String pascal = "";
+      for (String part : previewKey.split("_")) {
+        pascal += part.substring(0, 1).toUpperCase() + part.substring(1);
+      }
+      String cls = "Sage" + pascal + "PostfixTemplate";
+      String before = readResource("postfixTemplates/" + cls + "/before.py.template");
+      String after = readResource("postfixTemplates/" + cls + "/after.py.template");
+      System.out.println(cls + " before=" + before.replace("\n", "\\n") + " after=" + after.replace("\n", "\\n"));
+      if (before == null || after == null || !after.startsWith(previewKey + "(") || after.contains("." + previewKey + "(")) {
+        throw new IllegalStateException("preview resources broken for " + cls + ": " + before + " / " + after);
+      }
+    }
+  }
+
+  static PostfixTemplate findTemplate(SagePostfixTemplateProvider provider, String key) {
+    for (PostfixTemplate t : provider.getTemplates()) {
+      if (key.equals(t.getKey())) return t;
+    }
+    throw new IllegalStateException("template not found: " + key);
+  }
+
+  static String readResource(String path) {
+    java.io.InputStream in = SagePostfixTemplateProvider.class.getClassLoader().getResourceAsStream(path);
+    if (in == null) return null;
+    try (java.io.InputStream stream = in) {
+      java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+      byte[] buf = new byte[4096];
+      int n;
+      while ((n = stream.read(buf)) > 0) out.write(buf, 0, n);
+      return out.toString("UTF-8");
+    }
+    catch (java.io.IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   static ASTNode parse(String text) {

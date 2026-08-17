@@ -1,7 +1,6 @@
 package com.starnotesxj.sageide.sugar
 
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateProvider
-import com.intellij.codeInsight.template.postfix.templates.StringBasedPostfixTemplate
 
 /**
  * `.b2i` -> `int.from_bytes(expr, "big")` — CTF bytes-to-int conversion.
@@ -12,6 +11,9 @@ class SageBytesToIntPostfixTemplate(provider: PostfixTemplateProvider) : SageFix
     name = "int.from_bytes(expr, 'big')",
     key = ".b2i",
     example = "int.from_bytes(expr, 'big')",
-    templateText = "int.from_bytes(${StringBasedPostfixTemplate.EXPR}, \"big\")\$END\$",
+    // $expr$ references the target expression — the platform's
+    // StringBasedPostfixTemplate.EXPR convention for built-in templates
+    // (user-created templates in the editor use $EXPR$ instead).
+    templateText = "int.from_bytes(\$expr\$, \"big\")\$END\$",
     provider = provider,
 )

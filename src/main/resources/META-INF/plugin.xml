@@ -2,10 +2,16 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.6.2</version>
+  <version>1.6.3</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.6.3 — Fix the .b2i/.i2b expansions (the selected expression is now substituted
+        instead of the literal word "expr"); the settings preview of the call-wrap family
+        no longer shows an extra dot in the after state (per-key preview resources);
+        double-clicking a Sage template now opens the edit (rename) dialog like Python's
+        built-ins; the new-template editor offers a Sage-apt condition set (expression
+        kinds plus ready-made sage.all class conditions).</li>
     <li>1.6.2 — Postfix Completion settings: the Sage templates now appear under their
         own top-level "SageMathPostfix" group (registered under a Python-family
         meta-language) instead of being nested under Python, and the "+" button can

@@ -29,9 +29,11 @@ import com.jetbrains.python.codeInsight.postfix.PyPostfixUtils
  * [SageIntToBytesPostfixTemplate]), each carrying its own
  * `postfixTemplates/<SubclassName>/` description/example resources.
  *
- * Templates are deliberately NOT editable: a half-written "changed builtin"
- * entry in `postfixTemplates.xml` breaks the completion popup, and editing
- * requires the live-template round trip this provider does not implement.
+ * Templates are editable in the same way Python's built-ins are: the
+ * settings tree offers a rename dialog (the default editor); the storage
+ * round trip is complete, so renamed built-ins persist as
+ * `PostfixChangedBuiltinTemplate` entries without half-written data (the
+ * v1.5.0 corruption case).
  */
 open class SageFixedPostfixTemplate(
     name: String,
@@ -48,8 +50,6 @@ open class SageFixedPostfixTemplate(
 ), DumbAware {
 
     override fun getTemplateString(element: PsiElement): String = templateText
-
-    override fun isEditable(): Boolean = false
 
     /**
      * The provider is registered for the Python language (see plugin.xml) so

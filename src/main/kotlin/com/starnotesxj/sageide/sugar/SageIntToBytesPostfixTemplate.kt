@@ -1,7 +1,6 @@
 package com.starnotesxj.sageide.sugar
 
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateProvider
-import com.intellij.codeInsight.template.postfix.templates.StringBasedPostfixTemplate
 
 /**
  * `.i2b` -> `int(expr).to_bytes(<len>, "big")` — CTF int-to-bytes conversion.
@@ -12,6 +11,8 @@ class SageIntToBytesPostfixTemplate(provider: PostfixTemplateProvider) : SageFix
     name = "int(expr).to_bytes(len, 'big')",
     key = ".i2b",
     example = "int(expr).to_bytes(len, 'big')",
-    templateText = "int(${StringBasedPostfixTemplate.EXPR}).to_bytes(\$END\$, \"big\")",
+    // $expr$ references the target expression — see
+    // SageBytesToIntPostfixTemplate.
+    templateText = "int(\$expr\$).to_bytes(\$END\$, \"big\")",
     provider = provider,
 )

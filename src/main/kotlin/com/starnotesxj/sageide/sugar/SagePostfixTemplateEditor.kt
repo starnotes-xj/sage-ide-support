@@ -33,8 +33,9 @@ import javax.swing.JComponent
  *
  * Mirrors PyCharm's `PyPostfixTemplateEditor` (which is hard-wired to
  * `PyPostfixTemplateProvider` and therefore not reusable): the same
- * live-template body editor plus the Python expression-type conditions
- * (built-in expression classes and a class chooser), producing
+ * live-template body editor plus expression-type conditions — a Sage-apt
+ * selection (generic expression kinds that apply to Python-family PSI plus
+ * ready-made sage.all class conditions and a class chooser) — producing
  * [SageEditablePostfixTemplate]s.  The generic
  * [PostfixTemplateEditorBase] accepts any provider, so only the condition
  * list and the factory method are custom.
@@ -43,8 +44,25 @@ class SagePostfixTemplateEditor(provider: PostfixTemplateProvider) :
     PostfixTemplateEditorBase<PyPostfixTemplateExpressionCondition?>(provider, true) {
 
     override fun fillConditions(group: DefaultActionGroup) {
-        for (condition in PyPostfixTemplateExpressionCondition.PUBLIC_CONDITIONS.values) {
-            group.add(AddConditionAction(condition))
+        // Expression-kind conditions (PSI/type based — equally valid for Sage,
+        // whose files are Python PSI): the subset that matters for the Sage
+        // template family, without Python-only options (boolean/exception).
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyNumberExpression()))
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyStringExpression()))
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyIterable()))
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyDict()))
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyList()))
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PySet()))
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyTuple()))
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyNonNoneExpression()))
+        // Sage-specific: ready-made class conditions for the common sage.all
+        // types (resolved through the stub index — the same index that types
+        // F.<a> generator statements).
+        for (sageType in SAGE_TYPES) {
+            val condition = PyPostfixTemplateExpressionCondition.PyClassCondition.create(sageType)
+            if (condition != null) {
+                group.add(AddConditionAction(condition))
+            }
         }
         val projects = ProjectManager.getInstance().openProjects
         if (projects.isNotEmpty()) {
@@ -152,6 +170,20 @@ class SagePostfixTemplateEditor(provider: PostfixTemplateProvider) :
     }
 
     companion object {
+        // Common sage.all types a template author may want to constrain the
+        // expression to (qualified names as in the sage stubs; matched by
+        // inheritance, so subclasses qualify too).
+        private val SAGE_TYPES = listOf(
+            "sage.rings.integer.Integer",
+            "sage.rings.rational.Rational",
+            "sage.rings.real_mpfr.RealNumber",
+            "sage.rings.complex_mpfr.ComplexNumber",
+            "sage.rings.finite_rings.element_base.FinitePolyExtElement",
+            "sage.rings.polynomial.polynomial_element.Polynomial",
+            "sage.matrix.matrix0.Matrix",
+            "sage.modules.free_module_element.FreeModuleElement",
+        )
+
         private fun createPopup(project: Project?, model: GotoClassModel2): ChooseClassByNamePopup {
             val provider: ChooseByNameItemProvider = DefaultChooseByNameItemProvider(null)
             val oldPopup = project?.getUserData(ChooseByNamePopup.CHOOSE_BY_NAME_POPUP_IN_PROJECT_KEY)
