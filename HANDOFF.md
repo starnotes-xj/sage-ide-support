@@ -127,7 +127,11 @@ cd G:\Projects\sage-ide-support
 5. ✅ 语法糖行无波浪线（用户确认）
 6. ✅ 项目树 `.sage` 文件显示 Sage 图标（v1.3.2 起，用户确认）
 
-**v1.5.0（2026-08-17）**：新增 **Sage 后缀补全**（`SagePostfixTemplateProvider`）——`.ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix` 展开为对应 sage.all 调用。要点：① postfix 模板只能由插件提供（设置界面不能新增）；② EP 是 `LanguageExtensionPoint`（每语言单 provider、方言回退基语言）——Sage 注册自己的 provider 会**遮蔽** Python 自带模板，所以 `getTemplates()` 必须返回 `PyPostfixTemplateProvider().getTemplates() + sage 模板`；③ 模板类用 `PyCallWrapPostfixTemplate(name, provider)`（key=函数名，展开为 `name($EXPR$)`）。
+**v1.5.0（2026-08-17）**：新增 **Sage 后缀补全**（`SagePostfixTemplateProvider`）——`.ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix` + CTF 数论 15 个（`.euler_phi` 等）+ `.b2i`/`.i2b`（`SageFixedPostfixTemplate` 固定参数模板类）。**本轮三连修（9c25ed8）**：① `isTerminalSymbol` 必须对 `.`(46)/`!`(33) 返回 true（字节码实证：`PostfixLiveTemplate` 循环中任一 provider 返回 false 直接 return null → popup 永不弹出，这是「看不到后缀选项」的真根因）；② `SageParserDefinition.createLexer` 用 `MergingLexerAdapter(TokenSet(XOR))` 合并 `^^`（Python 词法器给两个 `^` token → parser 报「应为表达式」）；③ `SageXorInspection`（红色 ERROR + quick fix `^`→`^^`）：bytes 字面量/调用/注解名/喂 bytes(...) 时才报，sage 幂不误报；`^=` 的提示改用 `x = x ^^ y`（`^^=` 暂未解析支持）。
+- **两个排队任务（v1.5.1/v1.6.0，用户已同意，新对话执行）**：
+  1. **Provider 改为 Sage-only 模板集**（去掉 `getTemplates()` 里 `PyPostfixTemplateProvider().getTemplates()` 的合并）。字节码实证：`PostfixLiveTemplate` 用 `LanguagePostfixTemplate.allForLanguage(language)` 自动收集语言+全部基语言的 provider → Python 自带模板会自动并入 .sage，无需手动合并（手动合并反而有重复风险）。
+  2. **完整 caret 词法重映射（方案 A，v1.6.0）**：在 `MergingLexerAdapter` 之上再加一层 `LexerBase` 包装：单字符 `^`(XOR) → `PyTokenTypes.EXP`（**文本保留 "^"**，AST 按幂解析 → `e^254` 自动走 stubs `__pow__` 类型链）；`^=`(XOREQ) → `PyTokenTypes.EXPEQ`；`^^=`(XOR 后紧跟 XOREQ) → 合并为单个 XOREQ（需一 token 前瞻：第二个同状态同步 lexer 实例，平台标准技巧）。所需 token 已确认存在：`PyTokenTypes.EXP/EXPEQ/XOR/XOREQ`。连带更新 `SageXorInspection`：检测目标改为「文本为 `^` 的 EXP token」（bytes 上下文时仍报红 + quick fix）。注意词法层文本与 AST 语义的对应关系：显示不变、解析按 sage 语义。
+- 设置页后缀预览显示 `list(...)` 是平台约定（`$EXPR$` 占位符示例=列表字面量 "list"），非 bug。
 
 ## .sage 混写 Python 的 `^`/`^^` 坑（2026-08-17 实测）
 
