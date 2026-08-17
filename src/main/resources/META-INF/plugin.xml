@@ -2,10 +2,17 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.6.3</version>
+  <version>1.6.4</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.6.4 — The new-template editor's condition list is trimmed to the
+        Sage-accurate set: string / list / dict / set / tuple / non-None plus the
+        ready-made sage.all class conditions (Integer, Rational, RealNumber,
+        ComplexNumber, FinitePolyExtElement, Polynomial, Matrix, FreeModuleElement)
+        and the class chooser.  Python's number/iterable/boolean/exception categories
+        are not offered — they misjudge sage types (sage numbers don't inherit
+        builtins int/float/complex and sage containers don't inherit abc.Iterable).</li>
     <li>1.6.3 — Fix the .b2i/.i2b expansions (the selected expression is now substituted
         instead of the literal word "expr"); the settings preview of the call-wrap family
         no longer shows an extra dot in the after state (per-key preview resources);

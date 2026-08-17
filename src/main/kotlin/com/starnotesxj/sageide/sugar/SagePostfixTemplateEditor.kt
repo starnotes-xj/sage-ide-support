@@ -44,20 +44,31 @@ class SagePostfixTemplateEditor(provider: PostfixTemplateProvider) :
     PostfixTemplateEditorBase<PyPostfixTemplateExpressionCondition?>(provider, true) {
 
     override fun fillConditions(group: DefaultActionGroup) {
-        // Expression-kind conditions (PSI/type based — equally valid for Sage,
-        // whose files are Python PSI): the subset that matters for the Sage
-        // template family, without Python-only options (boolean/exception).
-        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyNumberExpression()))
+        // Lean, Sage-ACCURATE condition set.  Python's own categories were
+        // audited against Sage's stub type system — the ones that misjudge
+        // in .sage files are deliberately NOT offered:
+        //   number   ✗ — sage Integer/Rational/RealNumber do not inherit
+        //               builtins int/float/complex, so PyNumberExpression
+        //               matches only Python numeric literals; use the sage
+        //               class conditions below instead.
+        //   iterable ✗ — sage containers (Matrix, FreeModuleElement, ...)
+        //               do not inherit abc.Iterable in the stubs.
+        //   boolean  ✗ — only matches builtin bool literals, not symbolic
+        //               sage booleans.
+        //   exception✗ — Python-specific.
+        // The ones that DO judge correctly are kept: strings and the
+        // builtin containers (sage uses the Python builtins for them) and
+        // non-None (purely structural).
         group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyStringExpression()))
-        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyIterable()))
-        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyDict()))
         group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyList()))
+        group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyDict()))
         group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PySet()))
         group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyTuple()))
         group.add(AddConditionAction(PyPostfixTemplateExpressionCondition.PyNonNoneExpression()))
         // Sage-specific: ready-made class conditions for the common sage.all
         // types (resolved through the stub index — the same index that types
-        // F.<a> generator statements).
+        // F.<a> generator statements; inheritance-based, so subclasses
+        // qualify too).
         for (sageType in SAGE_TYPES) {
             val condition = PyPostfixTemplateExpressionCondition.PyClassCondition.create(sageType)
             if (condition != null) {
