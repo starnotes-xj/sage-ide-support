@@ -126,9 +126,7 @@ cd G:\Projects\sage-ide-support
 5. ✅ 语法糖行无波浪线（用户确认）
 6. ✅ 项目树 `.sage` 文件显示 Sage 图标（v1.3.2 起，用户确认）
 
-## 2026.2.1 失效 PSI 事故（v1.4.0 → v1.4.1，必读）
-
-症状：PyCharm 升到 2026.2.1 后，高亮/类型提示阶段抛 `PsiInvalidElementAccessException: Invalid PSI Element: PyFunctionImpl`，栈顶在我们 `SageReferenceResolveProvider.resolveName` 第 66 行——**对 stub 索引返回的元素调用 `containingFile`（触发 getNode → InvalidRef）**。
+## 2026.2.1 失效 PSI 事故（v1.4.0 → v1.4.1，必读）症状：PyCharm 升到 2026.2.1 后，高亮/类型提示阶段抛 `PsiInvalidElementAccessException: Invalid PSI Element: PyFunctionImpl`，栈顶在我们 `SageReferenceResolveProvider.resolveName` 第 66 行——**对 stub 索引返回的元素调用 `containingFile`（触发 getNode → InvalidRef）**。
 
 根因：2026.2 的 **impatient-reader** 高亮在读锁不完整持有的窗口里跑，PSI AST 会被更激进地丢弃——索引元素（`PyFunctionImpl` 等）持有的 AST 节点变成悬空引用，而我们的 LOG 行 `declaration.containingFile?.name` 和 `SageStubIndex` 里的路径过滤/日志都在解引用它。
 
@@ -138,6 +136,12 @@ cd G:\Projects\sage-ide-support
 - `SageTypeProvider.generatorType`：`pyClass` 加 `takeIf { it.isValid }`。
 - 构建 SDK 升到 **2026.2.1**（CI `pycharm("2026.2.1")`，本地 D:\JetBrains\PyCharm 已同步更新）。
 - 教训：**任何索引来的元素，凡要 touching AST（containingFile/getParent/getNode）都必须先 isValid + 容错**；缓存 PsiElement 必须复查有效性。
+
+**后续动作（2026-08-17）**：
+- 上游 PR #42670：两位维护者已 APPROVED（tobiasdiez/cxzhong），但 bea9305 的 workflow run 仍 `action_required` 未批准执行。已发评论 issuecomment-5311785956：列明哪些失败与代码无关（ecl.pyx 崩溃在 fork 里同样复现；html 文档失败为 fork 缺基线 artifact）、bea9305 在 fork 全套验证绿（Meson 全矩阵/全关/Lint/静态检查/PDF 文档），请维护者批准 pending run。
+- sage-lsp issue #3：已回评论 issuecomment-5311787391——认同"注解长期归 sage 仓"（三个上游 PR 正是此路线），但 stubgen 保持**独立仓库/独立发布**（PyPI CLI，不并入 LSP 也不依赖 LSP，仅可选消费关系）。
+- JetBrains 插件商城：已备好发布要素（plugin.xml change-notes + gradle `publishing.token=PUBLISH_TOKEN`）。待用户注册 plugins.jetbrains.com 账号并生成 token 后 `gradle publishPlugin` 上传；JetBrains 审核约 2 个工作日。发布前记得 plugin.xml 版本号随 release bump。
+- README：两个仓库的 EN/zh-CN 均已加「Quick start / 快速开始」章节；插件 README 修正过时的版本范围行。
 
 ## 图标血泪史（v1.3.1 → v1.3.2，必读）症状：编辑器标签 = Sage 图标，项目树 = Python 图标。排查历程：
 
