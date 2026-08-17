@@ -324,7 +324,15 @@ cd G:\Projects\sage-ide-support
 
 **根因二（sage.all 变量名无索引）**：删除注释行后 GF 走函数索引（`PyFunctionNameIndex`）正常恢复；但 **`ZZ`/`QQ`/`RR`/`CC`/`SR` 是 sage.all 的模块级实例**——生成的 `all.pyi` 里是注解变量形式（`ZZ: _Type_ZZ`，已读用户 WSL stub 确认），`PyFunctionNameIndex`/`PyClassNameIndex` **都不覆盖变量**，`ZZ` 永远查不到声明。**修复**：`SageStubIndex.findDeclaration` 加第三步 `findSageAllAttribute`——`PyModuleNameIndex.findByShortName("all", project, allScope)` 找 `sage.all` 模块（`isSageStubFile` 路径过滤，排除其他包的 all 模块）→ `PyFile.findTopLevelAttribute(name)` 拿带注解的 `PyTargetExpression`（类型链自动生效）→ 复用 positiveCache + isValid 守卫。GF 之前一直不红是因为用户 test.sage 有显式 `from sage.all import *`（星导入默认解析器处理）；删掉后 GF 靠函数索引、ZZ 靠本次新增的变量路径。
 
-**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户侧待测（1.7.2）**：test.sage **删除或注释** `from sage.all import *` 后 GF/ZZ 均无红线（ZZ hover 应为整数环类型）；右键运行正常；其余全清单回归。通过后 tag v1.7.2 + push（**注意 v1.7.1 已发布**，本版是新版本；CI release job 若再遇 GitHub 503，按 v1.7.1 事故教训手动补 Release，勿 rerun）。
+**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户实测（1.7.2）**：注释/删除 import 行后 **ZZ 仍报未解析**（GF 已好）。
+
+### v1.7.3（2026-08-18）——ZZ 仍未解析：定位 sage.all 模块改用 GF 锚点
+
+**idea.log 证据（1.7.2 会话）**：1.7.2 已加载、`resolved implicit name 'GF'` 多条（门控修复生效、函数索引路径正常）、**ZZ 零日志**——`findSageAllAttribute` 静默 null（当时 miss 无日志分支）。1.7.2 的实现用 `PyModuleNameIndex.findByShortName("all", ...)` 定位 all.pyi——**该索引不覆盖 .pyi stub 模块**（实测空结果），allFile 为 null 直接返回。
+
+**修复（1.7.3）**：定位 `sage.all` stub 模块改用**函数索引锚点**——`PyFunctionNameIndex.find("GF", allScope)` 命中 all.pyi 里的 `def GF`（用户日志实证同一索引路径已解析 GF），`safeContainingFile(anchor) as PyFile` 得 all.pyi → `findTopLevelAttribute(name)` 拿 `ZZ: _Type_ZZ` 的 PyTargetExpression。**三分支日志齐备**：`anchor not found`（GF 索引断）/ `attribute miss`（findTopLevelAttribute null，下一轮再分诊）/ `attribute hit`。版本升 1.7.3（1.7.2 已装到用户 IDE，升版保证日志区分）。
+
+**验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户侧待测（1.7.3）**：删除/注释 import 后 ZZ 无红线；若仍红，读 idea.log 三条日志定位（`sage.all anchor not found` → 函数索引问题；`attribute miss` → findTopLevelAttribute 对 stub 文件不生效，需换 PSI 遍历）。
 
 ### 待 IDE 实测（用户侧）
 

@@ -11,7 +11,6 @@ import com.jetbrains.python.psi.PyFile
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.stubs.PyClassNameIndex
 import com.jetbrains.python.psi.stubs.PyFunctionNameIndex
-import com.jetbrains.python.psi.stubs.PyModuleNameIndex
 
 /**
  * Looks up declarations of Sage built-in names in the SDK's generated stubs.
@@ -70,15 +69,33 @@ object SageStubIndex {
      * PyClassNameIndex covers.  The declaration carries the annotation, so
      * returning the target restores the whole type chain (`ZZ` -> the
      * integer-ring type).
+     *
+     * The `sage.all` stub module is located through the function index on a
+     * name that provably resolves there ([SAGE_ALL_ANCHOR_NAME] — `GF` is a
+     * `def` in the generated all.pyi and the same index path that resolves
+     * GF for the user): PyModuleNameIndex does not reliably index `.pyi`
+     * stub modules, so locating the file through it failed in the wild.
      */
     private fun findSageAllAttribute(project: Project, name: String): PyTargetExpression? {
-        val allModule = PyModuleNameIndex.findByShortName("all", project, GlobalSearchScope.allScope(project))
-            .firstOrNull { isSageStubFile(it) } as? PyFile ?: return null
-        val attribute = allModule.findTopLevelAttribute(name) ?: return null
+        val anchor = PyFunctionNameIndex.find(SAGE_ALL_ANCHOR_NAME, project, GlobalSearchScope.allScope(project))
+            .firstOrNull { isSageStubDeclaration(it) }
+        val allFile = anchor?.let { safeContainingFile(it) } as? PyFile
+        if (allFile == null) {
+            LOG.warn("Sage stub sage.all anchor '$SAGE_ALL_ANCHOR_NAME' not found — cannot resolve '$name'")
+            return null
+        }
+        val attribute = allFile.findTopLevelAttribute(name)
+        if (attribute == null) {
+            LOG.warn("Sage stub sage.all attribute miss: '$name' not a top-level attribute of ${safeContainingFilePath(allFile)}")
+            return null
+        }
         if (!attribute.isValid) return null
         LOG.warn("Sage stub sage.all attribute hit: '$name' in ${safeContainingFilePath(attribute)}")
         return attribute
     }
+
+    /** A name that the generated `sage/all.pyi` declares as a `def`, used to locate the module file. */
+    private const val SAGE_ALL_ANCHOR_NAME = "GF"
 
     private fun isSageStubDeclaration(element: PsiElement): Boolean =
         isSageStubFile(safeContainingFile(element))
