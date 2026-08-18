@@ -25,8 +25,15 @@
         from an import element itself: `ecm = ECM()` was left untyped and
         `ecm.` completed nothing without an explicit sage.all import.
         Completion entries now also carry a fixed "sage.all" tail text and
-        callable names (functions, classes, factories like ZZ/RR/CC, symbolic
-        functions) insert `()` with the caret inside.</li>
+        callable names (functions, classes, factories like ZZ/QQ/RR/CC,
+        symbolic functions) insert `()` with the caret inside — the
+        `_Type_*` factory attributes are followed through the name indexes
+        (with a `_with_category` fallback for the runtime-only subclass
+        names) instead of relying on the type engine, and
+        `getAnnotationValue()` is read as the annotation text string that
+        this platform actually returns.  `for q in prime_divisors(p - 1)`
+        chains type correctly once the companion stubgen 0.8.3 stubs
+        (pure-Python modules included) are installed.</li>
     <li>1.7.5 — Typing a quote character in .sage files now inserts the pair
         ("", '' or triple-quoted) with the caret inside, exactly like .py
         files: the quoteHandler extension point resolves handlers by the

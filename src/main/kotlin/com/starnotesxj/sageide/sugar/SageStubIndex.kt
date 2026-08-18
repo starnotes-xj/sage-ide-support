@@ -256,11 +256,7 @@ object SageStubIndex {
                 // reference was the reason this path never ran (v1.7.6
                 // probe: alias=null for CC/QQ while ZZ/RR worked only
                 // through PyCharm's own annotation resolution).
-                val debug = target.name == "CC" || target.name == "QQ"
                 val aliasName = target.annotationValue
-                if (debug) {
-                    LOG.warn("Sage callable '${target.name}': annotationText=$aliasName")
-                }
                 if (aliasName != null && aliasName.startsWith("_Type_")) {
                     val file = try {
                         target.containingFile
@@ -270,23 +266,11 @@ object SageStubIndex {
                     val importElement = file?.fromImports
                         ?.flatMap { it.importElements.asList() }
                         ?.firstOrNull { it.visibleName == aliasName }
-                    if (debug) {
-                        LOG.warn(
-                            "Sage callable '${target.name}': file=${file?.name} importElement=${importElement != null}",
-                        )
-                    }
                     if (importElement != null) {
                         val statement = importElement.containingImportStatement as? PyFromImportStatement
                         val moduleQName = statement?.importSource?.asQualifiedName()?.toString()
                         val importedName = importElement.importedQName?.lastComponent ?: aliasName
                         val cls = followImportAlias(project, moduleQName, importedName) as? PyClass
-                        if (debug) {
-                            val hasCall = cls != null && cls.isValid &&
-                                cls.findMethodByName("__call__", true, TypeEvalContext.codeInsightFallback(project)) != null
-                            LOG.warn(
-                                "Sage callable '${target.name}': module=$moduleQName imported=$importedName cls=${cls?.name ?: "null"} hasCall=$hasCall",
-                            )
-                        }
                         if (cls != null && cls.isValid) {
                             return cls.findMethodByName("__call__", true, TypeEvalContext.codeInsightFallback(project)) != null
                         }
@@ -297,7 +281,6 @@ object SageStubIndex {
                 } catch (_: RuntimeException) {
                     null
                 }
-                if (debug) LOG.warn("Sage callable '${target.name}': fallback type=${type?.javaClass?.simpleName}")
                 isCallableValueType(type)
             }
             else -> false

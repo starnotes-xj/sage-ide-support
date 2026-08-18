@@ -9,8 +9,6 @@ import com.intellij.codeInsight.completion.InsertHandler
 import com.intellij.codeInsight.completion.InsertionContext
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
-import com.intellij.codeInsight.lookup.LookupElementPresentation
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbService
 import com.intellij.patterns.PlatformPatterns
@@ -110,7 +108,6 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     // unavailable while the IDE is indexing.
                     if (DumbService.isDumb(position.project)) return
 
-                    var added = 0
                     for ((name, element) in SageStubIndex.collectSageAllDeclarations(position.project)) {
                         if (!result.prefixMatcher.prefixMatches(name)) continue
                         val validElement = element?.takeIf { it.isValid }
@@ -142,18 +139,6 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                             builder = builder.withInsertHandler(SageParensInsertHandler)
                         }
                         result.addElement(builder)
-                        added++
-                        if (added <= 6) {
-                            val presentation = LookupElementPresentation.renderElement(builder)
-                            LOG.warn(
-                                "Sage completion entry: '$name' callable=$callable psi=${entryTarget?.javaClass?.simpleName} pres=$presentation",
-                            )
-                        }
-                    }
-                    if (added > 0 && added <= 30 || prefix.length <= 2) {
-                        LOG.warn(
-                            "Sage completion: prefix='$prefix' in ${file.name} -> added $added sage.all entries",
-                        )
                     }
                 }
             },
@@ -179,9 +164,5 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
             document.insertString(offset, "()")
             editor.caretModel.moveToOffset(offset + 1)
         }
-    }
-
-    companion object {
-        private val LOG = Logger.getInstance(SageImplicitCompletionContributor::class.java)
     }
 }

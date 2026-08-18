@@ -76,6 +76,16 @@
 
 **插件侧配合**：getReturnType 白名单（prime_divisors/divisors/prime_range → list[Integer]）降级为保险网——stub 存在时经 isSageStubFile 门自动跳过。验证：用户重启 PyCharm 后 `q.` 应弹出 nbits 等 Integer 方法。
 
+### v1.7.6 第四修（次日凌晨）——CC/QQ 括号：`getAnnotationValue()` 返回 String 不是 PyExpression
+
+**症状**：ZZ/RR 回车有括号、同文件定义的 CC/QQ 没有。**探针定位**：`Sage callable 'CC': annotationText=null`——直查路径从未执行。
+
+**根因（平台 API 认知错误）**：2026 平台 `PyTargetExpression.getAnnotationValue()` 返回 **stub 里存的注解文本字符串**（`"_Type_CC"`），不是 PyExpression 节点（fork PyTargetExpressionImpl.java:347-352 `stub.getAnnotation()`）。代码 `as? PyReferenceExpression` 恒 null → `_Type_*` 直查路径失效 → CC/QQ（悬空别名）退回类型求值失败；ZZ/RR 的别名不悬空、PyCharm 自身注解解析恰好能过——所以"同文件却行为不一"。类型提供者分支同病（静默 null 返回）。
+
+**修复**：两处直接读注解文本 `target.annotationValue`（String），`__call__` 查找用 `TypeEvalContext.codeInsightFallback(project)` 非 null 上下文，containingFile 访问加异常保护。
+
+**全量排查（WSL 运行时真相 × 插件跟随逻辑）**：245 个 `_Type_*` 目标中 runtime-callable 而跟随漏网的仅 3 个：`e`（`_Type_e` → `E`——expression.pyi 未声明该实例名，符号常数按表达式替换调用；与 pi 不一致但属常数直觉，留待数据层）、`pari`（cypari2 在 sage 树外，插件全局索引能找到——审计假象）、`sage_globals`（builtins.function 别名）。别名侧 ~40 个漏跟均为 LazyImport/目录实例（polytopes、simplicial_complexes 等 catalog 加括号反而不对）与 stdlib/cysignals 审计假象。**无 CC 式工厂漏网**。探针日志已全部清除。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。

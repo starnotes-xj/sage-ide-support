@@ -143,37 +143,27 @@ class SageTypeProvider : PyTypeProviderBase() {
      * alias cannot be followed.
      */
     private fun sageAllFactoryAttributeType(target: PyTargetExpression): PyType? {
-        val debug = target.name == "CC"
         val file = try {
             target.containingFile
         } catch (_: RuntimeException) {
             null
         } as? com.jetbrains.python.psi.PyFile
-        if (file == null) {
-            if (debug) LOG.warn("Sage factory CC: containingFile not a PyFile")
-            return null
-        }
+        if (file == null) return null
         // `getAnnotationValue()` returns the annotation TEXT String on this
         // platform (the stub's annotation string), NOT a PyExpression.
         val aliasName = target.annotationValue
-        if (debug) LOG.warn("Sage factory CC: annotationText=$aliasName")
-        if (aliasName == null || !aliasName.startsWith("_Type_")) {
-            return null
-        }
+        if (aliasName == null || !aliasName.startsWith("_Type_")) return null
         for (fromImport in file.fromImports) {
             for (importElement in fromImport.importElements) {
                 if (importElement.visibleName != aliasName) continue
                 val moduleQName = fromImport.importSource?.asQualifiedName()?.toString()
                 val importedName = importElement.importedQName?.lastComponent ?: aliasName
                 val cls = SageStubIndex.findAliasClass(target.project, moduleQName, importedName)
-                if (debug) LOG.warn("Sage factory CC: import '$importedName' from '$moduleQName' -> cls=${cls?.name ?: "null"}")
                 if (cls == null) continue
                 if (!cls.isValid) continue
-                LOG.warn("Sage: factory attribute '${target.name}' typed as instance of ${cls.name}")
                 return PyClassTypeImpl(cls, false)
             }
         }
-        if (debug) LOG.warn("Sage factory CC: no matching _Type_ import found")
         return null
     }
 
