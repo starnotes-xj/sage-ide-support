@@ -16,7 +16,13 @@
         The plugin now fills the namespace itself, straight from the stub
         data layer (sage/all.pyi's __all__ plus its top-level declarations),
         inserting the bare name without an import (sage injects the
-        namespace at runtime).</li>
+        namespace at runtime).
+        Also fixes the type chain behind those names: from-import aliases
+        (`from sage.interfaces.ecm import ECM as ECM` — most of all.pyi) are
+        now followed to their real declaration when resolving, because
+        PyCharm's type engine cannot derive a type from an import element
+        itself — `ecm = ECM()` was left untyped and `ecm.` completed
+        nothing without an explicit sage.all import.</li>
     <li>1.7.5 — Typing a quote character in .sage files now inserts the pair
         ("", '' or triple-quoted) with the caret inside, exactly like .py
         files: the quoteHandler extension point resolves handlers by the

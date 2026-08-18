@@ -80,10 +80,12 @@ object SageStubIndex {
      * Resolves a name inside the `sage.all` stub module: first a top-level
      * attribute (`ZZ: _Type_ZZ` — module-level instances that neither the
      * function nor the class index covers), then a from-import alias
-     * (`from sage.misc.functional import numerical_approx as N` — `N` is an
-     * import target, also invisible to both indexes).  Returning the target
-     * restores the type chain: `ZZ` -> the integer-ring type, `N` -> the
-     * `numerical_approx` callable signature.
+     * (`from sage.interfaces.ecm import ECM as ECM` — most of all.pyi is such
+     * re-export aliases), followed to the REAL declaration so PyCharm's type
+     * engine can type the result.  Returning the target restores the type
+     * chain: `ZZ` -> the integer-ring type, `N` -> the `numerical_approx`
+     * callable signature, `ECM` -> the ECM class (so `ecm = ECM()` types and
+     * `ecm.` completes `factor`).
      *
      * The `sage.all` stub module is located through the function index on a
      * name that provably resolves there ([SAGE_ALL_ANCHOR_NAME] — `GF` is a
@@ -107,6 +109,23 @@ object SageStubIndex {
             for (importElement in fromImport.importElements) {
                 if (importElement.visibleName == name) {
                     if (!importElement.isValid) return null
+                    // Follow the alias to the REAL declaration.  The import
+                    // element itself is invisible to PyCharm's type engine:
+                    // `PyReferenceExpressionImpl.getTypeFromTarget` can only
+                    // type PyFunction/PyClass/PyTypedElement targets, so an
+                    // alias like `from sage.interfaces.ecm import ECM as ECM`
+                    // returned as-is leaves `ECM()` untyped and kills every
+                    // downstream member completion (`ecm.factor` etc.) —
+                    // v1.7.6 bug.  `getReference()` here is the import
+                    // element's own PyImportReference (module resolution via
+                    // PyImportResolver), NOT the reference expression being
+                    // resolved — it never consults pyReferenceResolveProvider,
+                    // so there is no recursion.
+                    val target = importElement.reference?.resolve()
+                    if (target != null && target.isValid) {
+                        LOG.warn("Sage stub sage.all import-alias hit: '$name' -> ${safeContainingFilePath(target)}")
+                        return target
+                    }
                     LOG.warn("Sage stub sage.all import-alias hit: '$name' in ${safeContainingFilePath(importElement)}")
                     return importElement
                 }

@@ -49,6 +49,14 @@
 
 **验证步骤（用户侧）**：装 `build/distributions/sage-ide-support-1.7.6.zip` → 无 import 的 .sage 里输入 `Mod`/`RR`/`mo`/`rr` → 应弹出 "Mod sage.all"、"RR sage.all" 等候选（其余 ~1300 名同享）；`.py` 文件不受影响；有 `from sage.all import *` 的文件行为不变。注意 CC/QQ/ZZ 现在会同时有本插件的 "sage.all" 项与 PyCharm 自身的 "sage.rings.cc" 等项（无害重复）。
 
+### v1.7.6 第二修（同日）——from-import 别名返回 PyImportElement 导致调用无类型（`ecm = ECM()` → `ecm.` 无补全）
+
+**用户报告**：无 import 时 `ecm = ECM()` 之后输入 `ecm.` 无成员补全；加上 `from sage.all import *` 后 `factor` 等正常。
+
+**根因（源码证据链）**：all.pyi 的 `ECM` 是 from-import 别名（`from sage.interfaces.ecm import ECM as ECM`，all.pyi 绝大多数声明都是这种重导出别名）。v1.7.4 起 `findSageAllDeclaration` 直接返回该 `PyImportElement`。但 `PyReferenceExpressionImpl.getTypeFromTarget`（fork 548-609 行）对 target 只认 PyTargetExpression/PyFunction/PyClass/PyTypedElement/PsiDirectory——**`PyImportElement` 不是 PyTypedElement、`PyImportElementImpl` 无 getType**，type provider 也不应答（插件 provider 只管糖 target）→ `getTypeFromTarget` 返回 null → `ECM()`（`PyCallExpressionHelper.getCallType` → `getCalleeType` → `getExplicitCalleeType` → `context.getType(callee)`）无类型 → `ecm` 无类型 → `PyQualifiedReference.getVariants` 走 isUnknown 分支（guessClassTypeByName 对 `ecm` 无类名匹配 + collectSeenMembers 只收文件里已写过的成员）→ 空 popup。星号导入路径则经 `PyStarImportElement` 解析落到真实 `class ECM`（ecm.py:61）→ 有类型。
+
+**修复**：`findSageAllDeclaration` 的别名分支改为 `importElement.reference?.resolve()` **跟随到真实声明**再返回（失败才退回别名元素）。**无递归风险**：这是 PyImportElement 自己的 PyImportReference（走 PyImportResolver 模块解析），不是被解析的 reference expression；且 PyImportReference 不咨询 pyReferenceResolveProvider EP（fork 已核实），import 元素所在文件是 all.pyi 也过不了 isSageFile 门。修复后 `ECM()` → PyClass → `createCallableFromClass` → 实例类型 → `ecm.factor` 补全 ✓；同一修复让全部 ~700 个别名（Integer/var/factor/...）的调用类型链一次到位。结果按名缓存（positiveCache），alias resolve 每名只发生一次。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
@@ -146,6 +154,7 @@ cd G:\Projects\sage-ide-support
 - **可编辑后缀模板三件套**：设置页「+」新建模板要求 provider 实现 `createEditor`（null 或本插件 editable 类型时返回编辑器，否则返回 null=不弹）+ `readExternalTemplate` + `writeExternalTemplate`（PostfixTemplateStorage 的读写往返都走这两个；缺了新建的模板重启即丢）。Python 的 `PyPostfixTemplateEditor` 构造限死 `PyPostfixTemplateProvider`（final）不可复用——但平台 `PostfixTemplateEditorBase` 接受任意 provider，照 PyEditor 复刻即可；可编辑模板复用 `PyEditablePostfixTemplate`（构造接受泛型 provider）+ 子类覆写 `getExpressions` 加方言文件门。
 - **设置页预览资源三件套（v1.6.5 血泪）**：每个模板类的 `resources/postfixTemplates/<SimpleClassName>/` 下 **description.html + before/after.py.template 三份缺一不可**。before/after 由 `PostfixTemplateMetaData.decorateTextDescriptorWithKey` 读（`$key` 占位符会被**带点 key 原样替换**，per-key 类硬编码裸名才能避免 after 多一个点）；description 由 `PostfixTemplateMetaData.getResourceLocation` 按 SimpleClassName 静态查找——**模板类覆写 `getDescription()` 对设置页无效**（`PostfixDescriptionPanel` 只读资源），缺 description.html 每次点击模板就一条 SEVERE「Resource not found」。生成器脚本与 TestPostfix 断言都必须覆盖三件套。
 - **v1.6.0 词法包装教训（更新版，含 bugfix）**：① 2026.x 的 `MergingLexerAdapter` 是 **MergeFunction 新设计**（`MergingLexerAdapterBase`）——合并 run 整段折叠为**一个** token 且类型保持原类型（无 `MergedTokenType`；旧设计的 `TokenSet.contains` 分支保留即可兼容）；② **`MergingLexerAdapterBase.advance()` 是惰性的**（只清缓存，底层推进在下一次 `getTokenType()`）——锁步双实例会静默落后、peek 到陈旧 token；跳过多 token 必须显式「`tokenType`+`advance()`」逐次进行；③ 区分 `^`/`^^` 靠 **token 文本长度**不靠类型；④ 一 token 前瞻用**按需重启且每次 fresh instance** 的 scratch lexer（`start(同 buffer, delegate.tokenEnd, bufferEnd, delegate.state)` + 读首 token）——**复用实例必死**：`PythonIndentingProcessor.start()` 不清空 `myTokenQueue`，一旦某次重启落在空白上，processIndent 塞入的 INDENT/SPACE pending token 永久残留，后续前瞻全返回陈旧 token（v1.6.0 第三轮 bug 的根因，血泪）；单字符运算符不改 flex 状态所以 state 安全。
+- **`PyImportElement` 不是 PyTypedElement（v1.7.6 第二修根因）**：`PyReferenceExpressionImpl.getTypeFromTarget` 只给 PyTargetExpression/PyFunction/PyClass/PyTypedElement/PsiDirectory 推导类型；**把 from-import 别名（PyImportElement）作为 resolve provider 的返回目标，会让整个调用类型链断掉**（`ECM()` 无类型 → `ecm = ECM()` 的 `ecm.` 成员补全为空）。resolve provider 返回别名前必须 `importElement.reference?.resolve()` 跟随到真实声明；PyImportReference 走 PyImportResolver 不咨询 pyReferenceResolveProvider，无递归风险。
 
 ## 验证成功标准
 
