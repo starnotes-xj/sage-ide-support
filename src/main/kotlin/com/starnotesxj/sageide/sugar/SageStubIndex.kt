@@ -249,16 +249,24 @@ object SageStubIndex {
                 // and check `__call__` on the real class — no type
                 // evaluation involved, so it cannot be affected by dangling
                 // alias resolution in the type engine.
+                //
+                // NOTE: `getAnnotationValue()` returns the annotation TEXT
+                // String on this platform (the stub's annotation string,
+                // e.g. "_Type_CC"), NOT a PyExpression — casting it to a
+                // reference was the reason this path never ran (v1.7.6
+                // probe: alias=null for CC/QQ while ZZ/RR worked only
+                // through PyCharm's own annotation resolution).
                 val debug = target.name == "CC" || target.name == "QQ"
-                val annotation = target.annotationValue as? com.jetbrains.python.psi.PyReferenceExpression
-                val aliasName = annotation?.referencedName
+                val aliasName = target.annotationValue
                 if (debug) {
-                    LOG.warn(
-                        "Sage callable '${target.name}': annotationClass=${annotation?.javaClass?.simpleName} alias=$aliasName",
-                    )
+                    LOG.warn("Sage callable '${target.name}': annotationText=$aliasName")
                 }
                 if (aliasName != null && aliasName.startsWith("_Type_")) {
-                    val file = target.containingFile as? PyFile
+                    val file = try {
+                        target.containingFile
+                    } catch (_: RuntimeException) {
+                        null
+                    } as? PyFile
                     val importElement = file?.fromImports
                         ?.flatMap { it.importElements.asList() }
                         ?.firstOrNull { it.visibleName == aliasName }
