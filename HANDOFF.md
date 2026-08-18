@@ -32,7 +32,6 @@
 - 仍待上游：`F.characteristic` Ctrl+Q 中文文档的最终点检
 
 ## v1.7.6（2026-08-18 晚）——隐式 sage.all 命名空间补全（Mod/RR 补全缺失的真根因与修复）
-
 **用户报告**：无 `from sage.all import *` 的 .sage 文件里，`CC`/`QQ`/`ZZ` 有补全（候选来自 sage.all），`Mod`/`RR` 补全候选列表里完全没有；跳转 Mod → all.pyi、RR → all.py。
 
 **机制定论（本地 SDK javap 实证 + 用户环境 ground truth 扫描）**：PyCharm 无导入名的补全来自 Python 插件的 **`PyClassNameCompletionContributor`**（"Include importable names in basic completion"，`PyCodeInsightSettings.INCLUDE_IMPORTABLE_NAMES_IN_BASIC_COMPLETION` 默认 true）：它扫 `PyExportedModuleAttributeIndex`（顶层 def/class/target）+ `PyModuleNameIndex`，**但 `createScope` 里与 `notScope(getScopeRestrictedByFileTypes(everythingScope, PyiFileType))` 求交——全部 `.pyi` 文件被排除**，只有真实 `.py` 模块的声明能进候选。用户 conda-sage 整棵树都是 stubgen 的 `.pyi`，名字只有在某个真实 `.py` 里有声明才"碰巧"补全：
@@ -60,6 +59,22 @@
 2. 连带修复（用户同轮反馈）：**补全项尾标 "sage.all" 不显示**——`withTypeText` 被 `withPsiElement` 激活的元素默认渲染吞掉（与 PyCharm 自身 importable 条目用自定义 renderer 同理）→ 改 `withExpensiveRenderer(SageAllRenderer)` 显式 itemText/icon/typeText(灰)。**回车无小括号**——callable 名（PyFunction/PyClass 恒可调用；PyTargetExpression 实例按 `PyClassType.isCallable`（= 类 MRO 有无 `__call__`，经 PyABCUtil.hasMethod——已核 stub 数据：Parent.pyi:326 `__call__` 覆盖 ZZ/QQ/RR/CC/SR、Function_cos 可调用、pi/e 不可调用）判定；别名先 followImportAlias 再判）挂 `ParenthesesInsertHandler.WITH_PARAMETERS`（与 PyCharm 函数补全同款，尊重用户「自动插入括号」设置）。
 
 修复后 `ECM()` → PyClass → `createCallableFromClass` → 实例类型 → `ecm.factor` 补全 ✓；同一修复让全部 ~700 个别名（Integer/var/factor/...）的调用类型链一次到位。结果按名缓存（positiveCache/callableCache），follow 每名只发生一次。
+
+### v1.7.6 第三修（同日深夜）——数据层：stubgen 0.8.3 补全纯 Python 模块 stub
+
+**用户要求**：`q.nbits()`（`max(q.nbits() for q in prime_divisors(p - 1))`）这类纯 Python 模块函数链也要有类型——插件侧白名单不通用。
+
+**根因**：stubgen `DEFAULT_PATTERNS = ("**/*.pyx",)` 只给编译模块生成 stub；sage 里 ~2100 个纯 Python 模块（arith/misc.py 的 prime_divisors 等）没有 .pyi，`def prime_divisors(n)` 无注解 → `q` 无类型 → `q.` 无成员补全。curated 表（supplemental_docs，24 个模块段）其实早有这些函数的返回类型条目，但 enrich 阶段没有对应的 .pyi 目标，无处落笔。
+
+**修复（stubgen 0.8.3，commit `100f8d7`）**：
+- 新 `py_renderer.py`：ast 解析 `.py` → 完整 `.pyi`（签名/装饰器/赋值/`__all__` 原样保留，函数体剥到 docstring，`if __name__ == "__main__"` 块剔除；必须完整——PyCharm 优先读 .pyi，缺声明即缺成员）；全树预检 2093 个模块渲染+compile 全绿。
+- `generator.py`：`--include-py` 发现 `*.py`；默认排除 `__init__.py`/tests/`*_test.py`/doctest/distributions/顶层 `all.py`+`all__*`（**子包 all.py 是星号导入壳，保留并 stub**）。
+- `docstring_enrich.py`：运行时文档收集的模块导入 `except Exception` → **`except BaseException`**——pytest 的 `Skipped` 是 BaseException，导入 `cvxpy_backend_test.py` 时曾把整个生成 run 打挂（实测）。
+- `supplemental_docs.py`：补 `sage.arith.misc.prime_divisors` curated 条目（`list[Integer]` + 中文文档）。
+- 测试 `tests/test_py_renderer.py`（5 条，全绿）；README 更新。
+- **WSL 实测**：0.8.3 装入 sage env → `--include-py --install` 全量重生成 **Discovered=Generated=2837, Failed=0**；`arith/misc.pyi` 含 `def prime_divisors(n) -> list[Integer]:` + 中文文档 ✓。
+
+**插件侧配合**：getReturnType 白名单（prime_divisors/divisors/prime_range → list[Integer]）降级为保险网——stub 存在时经 isSageStubFile 门自动跳过。验证：用户重启 PyCharm 后 `q.` 应弹出 nbits 等 Integer 方法。
 
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
