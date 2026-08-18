@@ -4,7 +4,7 @@
 
 用户目标：在 PyCharm 中编写 `.sage` 文件时，获得与 `.py` 文件**完全一致**的代码提示体验——语法糖（`R.<x> = GF(2)[]`）不报错、`F.`/`e.` 补全带彩色图标（红 m 方法标志）+ 类型文本 + 形参列表 + Ctrl+Q 中文文档，右键运行用 `sage` 命令（非 Python）。**保持独立的 Sage 文件类型（不是把 .sage 识别成 Python）。**
 
-## 当前状态（v1.7.4 / stubgen 0.8.2，2026-08-18）
+## 当前状态（v1.7.5 / stubgen 0.8.2，2026-08-18）
 
 （历史标题：v1.6.0 / stubgen 0.8.1，2026-08-17 晚。**stubgen 0.8.2 已发 PyPI**（2026-08-18）：RealField_class Parent 桥接（RR 可调用）+ `FiniteField.__iter__ -> Iterator[元素union]`（for 循环类型化）；commit `0b82efd`/`1e1daf1`/`01b1cc2`，tag v0.8.2，CI tests+publish 双绿。插件最新发布 v1.7.4。）
 
@@ -349,6 +349,14 @@ cd G:\Projects\sage-ide-support
 **配套 stubgen 修复（已 push + WSL 重装生效）**：① RealField 桥接（上 2）；② `FiniteField.__iter__ -> Iterator[元素union]`（commit `1e1daf1`）——本想治 L3 但检查器不走迭代路径（字节码实证 got 直接取 value 类型），**保留**（对 `for x in F:` 循环变量类型化是真实增益）；教训：enhance 类补丁必须跑在 docstring enrich **之后**（enrich 重写 import 区，先加的 import 会被覆盖——实测 Iterator import 被丢）。
 
 **验证**：五测试全绿 + buildPlugin + verifyPlugin 双版本 Compatible。**用户实测（1.7.4）**：L19 意外实参消失 ✓、ZZ/RR/CC/GF 无红错 ✓、L18 RR 消失（数据层）✓、L3 用 `# noinspection bad-assignment` 快修压制（用户拍板）✓、④ 平台行为由用户关检查。**已发布**：`git tag v1.7.4` → push → CI 双发布一次成功（无 503）：商城 1.7.4 + GitHub Release [v1.7.4](https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.7.4)（zip 附件）。v1.7.2/v1.7.3 跳过不发布。
+
+### v1.7.5（2026-08-18）——.sage 输入引号成对：quoteHandler 注册
+
+**用户报**：.sage 文件里敲 `"` 只出一个字符，.py 里出一对 `""`。
+
+**根因**：成对引号由 `quoteHandler` 扩展点驱动，而该 EP 按**光标处语言**（Sage 方言）查找 handler 且**不回退基语言**（实证：Python 的 `PythonQuoteHandler` 只注册在 "Python" 下，.sage 敲引号单字符——方言语言在所有 LanguageExtension 键控机制下都咨询不到基语言注册，与 17 行表 ⑦ 的上游特性请求同源）。
+
+**修复**：新增 `SageQuoteHandler : PythonQuoteHandler()`（`src/main/kotlin/com/starnotesxj/sageide/editor/SageQuoteHandler.kt`，无覆写、零逻辑重复），plugin.xml 注册 `<lang.quoteHandler language="Sage" implementationClass="...SageQuoteHandler"/>`——行为与 .py **逐字节一致**（成对插入、已有闭引号跳过、三引号补全，`MultiCharQuoteHandler` 继承）。`PythonQuoteHandler`/`BaseQuoteHandler` 在 `intellij.python.syntax.jar`（PythonCore 内，编译类路径已含；javap 实证公开无参构造）。版本升 1.7.5。
 
 ### 待 IDE 实测（用户侧）
 
