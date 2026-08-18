@@ -2,10 +2,16 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.7.4</version>
+  <version>1.7.5</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.7.5 — Typing a quote character in .sage files now inserts the pair
+        ("", '' or triple-quoted) with the caret inside, exactly like .py
+        files: the quoteHandler extension point resolves handlers by the
+        language at the caret (the Sage dialect) without falling back to base
+        languages, so Python's own quote handler never applied to .sage
+        files; a Sage-registered handler now inherits its behavior.</li>
     <li>1.7.4 — The implicit sage.all namespace now resolves sage.all module
         declarations FIRST (top-level attributes and from-import aliases like
         `N` = numerical_approx), before the global name indexes — single-letter
@@ -116,6 +122,16 @@
     <!-- The Sage dialect parser: a Python parser extended with generator sugar. -->
     <lang.parserDefinition language="Sage"
                            implementationClass="com.starnotesxj.sageide.parser.SageParserDefinition"/>
+
+    <!-- Typing a quote in .sage files now inserts the pair ("", '') exactly
+         like .py files: the quoteHandler extension point resolves the handler
+         for the language at the caret (the Sage dialect) without falling back
+         to base languages, so Python's handler — registered for "Python" only —
+         never fired in .sage files.  Subclassing PythonQuoteHandler inherits
+         its behavior (pair insertion, closing-quote skipping, triple quotes)
+         unchanged. -->
+    <lang.quoteHandler language="Sage"
+                       implementationClass="com.starnotesxj.sageide.editor.SageQuoteHandler"/>
 
     <!-- Defensive: if a sugar statement ever falls back to the error-recovered
          Python tree, suppress the parser-error squiggles on exactly that statement. -->
