@@ -249,20 +249,38 @@ object SageStubIndex {
                 // and check `__call__` on the real class — no type
                 // evaluation involved, so it cannot be affected by dangling
                 // alias resolution in the type engine.
+                val debug = target.name == "CC" || target.name == "QQ"
                 val annotation = target.annotationValue as? com.jetbrains.python.psi.PyReferenceExpression
                 val aliasName = annotation?.referencedName
+                if (debug) {
+                    LOG.warn(
+                        "Sage callable '${target.name}': annotationClass=${annotation?.javaClass?.simpleName} alias=$aliasName",
+                    )
+                }
                 if (aliasName != null && aliasName.startsWith("_Type_")) {
                     val file = target.containingFile as? PyFile
                     val importElement = file?.fromImports
                         ?.flatMap { it.importElements.asList() }
                         ?.firstOrNull { it.visibleName == aliasName }
+                    if (debug) {
+                        LOG.warn(
+                            "Sage callable '${target.name}': file=${file?.name} importElement=${importElement != null}",
+                        )
+                    }
                     if (importElement != null) {
                         val statement = importElement.containingImportStatement as? PyFromImportStatement
                         val moduleQName = statement?.importSource?.asQualifiedName()?.toString()
                         val importedName = importElement.importedQName?.lastComponent ?: aliasName
                         val cls = followImportAlias(project, moduleQName, importedName) as? PyClass
+                        if (debug) {
+                            val hasCall = cls != null && cls.isValid &&
+                                cls.findMethodByName("__call__", true, TypeEvalContext.codeInsightFallback(project)) != null
+                            LOG.warn(
+                                "Sage callable '${target.name}': module=$moduleQName imported=$importedName cls=${cls?.name ?: "null"} hasCall=$hasCall",
+                            )
+                        }
                         if (cls != null && cls.isValid) {
-                            return cls.findMethodByName("__call__", true, null) != null
+                            return cls.findMethodByName("__call__", true, TypeEvalContext.codeInsightFallback(project)) != null
                         }
                     }
                 }
@@ -271,6 +289,7 @@ object SageStubIndex {
                 } catch (_: RuntimeException) {
                     null
                 }
+                if (debug) LOG.warn("Sage callable '${target.name}': fallback type=${type?.javaClass?.simpleName}")
                 isCallableValueType(type)
             }
             else -> false
