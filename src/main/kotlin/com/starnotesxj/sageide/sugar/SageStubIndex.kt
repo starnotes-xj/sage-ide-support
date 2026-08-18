@@ -244,6 +244,28 @@ object SageStubIndex {
         return when (target) {
             is PyFunction, is PyClass -> true
             is PyTargetExpression -> {
+                // Fast path for the `Name: _Type_Name` factory attributes
+                // (ZZ/QQ/RR/CC/SR/...): follow the annotation alias directly
+                // and check `__call__` on the real class — no type
+                // evaluation involved, so it cannot be affected by dangling
+                // alias resolution in the type engine.
+                val annotation = target.annotationValue as? com.jetbrains.python.psi.PyReferenceExpression
+                val aliasName = annotation?.referencedName
+                if (aliasName != null && aliasName.startsWith("_Type_")) {
+                    val file = target.containingFile as? PyFile
+                    val importElement = file?.fromImports
+                        ?.flatMap { it.importElements.asList() }
+                        ?.firstOrNull { it.visibleName == aliasName }
+                    if (importElement != null) {
+                        val statement = importElement.containingImportStatement as? PyFromImportStatement
+                        val moduleQName = statement?.importSource?.asQualifiedName()?.toString()
+                        val importedName = importElement.importedQName?.lastComponent ?: aliasName
+                        val cls = followImportAlias(project, moduleQName, importedName) as? PyClass
+                        if (cls != null && cls.isValid) {
+                            return cls.findMethodByName("__call__", true, null) != null
+                        }
+                    }
+                }
                 val type = try {
                     TypeEvalContext.codeCompletion(project, target.containingFile).getType(target)
                 } catch (_: RuntimeException) {
@@ -285,12 +307,21 @@ object SageStubIndex {
     /** True for `.pyi` files inside the installed Sage stub tree (`site-packages/sage`). */
     @JvmStatic
     fun isSageStubFile(file: PsiFile?): Boolean {
+        if (!isSageSdkFile(file)) return false
+        if (!file!!.name.endsWith(".pyi") || !file.virtualFile!!.path.endsWith(".pyi")) return false
+        return true
+    }
+
+    /**
+     * True for any file inside the installed Sage tree
+     * (`site-packages/sage/...`), `.py` or `.pyi`.  The path segment is
+     * matched EXACTLY: a loose `contains("sage")` also matches a conda env
+     * named `envs/sage` (the user's real layout!), which would admit every
+     * file under that env's site-packages.
+     */
+    @JvmStatic
+    fun isSageSdkFile(file: PsiFile?): Boolean {
         val path = file?.virtualFile?.path ?: return false
-        if (!file.name.endsWith(".pyi") || !path.endsWith(".pyi")) return false
-        // Match the `site-packages/sage/...` path segment EXACTLY.  A loose
-        // `path.contains("sage")` also matches a conda env named `envs/sage`
-        // (the user's real layout!), which would admit every .pyi under that
-        // env's site-packages — e.g. builtins.pyi — as a "sage stub".
         return path.contains("/site-packages/sage/") || path.contains("\\site-packages\\sage\\")
     }
 

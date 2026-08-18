@@ -6,10 +6,14 @@ import com.intellij.openapi.util.Ref
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyAssignmentStatement
+import com.jetbrains.python.psi.PyCallable
+import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyTargetExpression
+import com.jetbrains.python.psi.impl.PyBuiltinCache
 import com.jetbrains.python.psi.types.PyCallableType
 import com.jetbrains.python.psi.types.PyClassType
 import com.jetbrains.python.psi.types.PyClassTypeImpl
+import com.jetbrains.python.psi.types.PyCollectionTypeImpl
 import com.jetbrains.python.psi.types.PyTupleType
 import com.jetbrains.python.psi.types.PyType
 import com.jetbrains.python.psi.types.PyTypeProviderBase
@@ -42,6 +46,29 @@ import com.starnotesxj.sageide.sugar.SageSugarInfo
  * `.sage` files.
  */
 class SageTypeProvider : PyTypeProviderBase() {
+
+    /**
+     * Return types for a curated set of sage functions whose modules have NO
+     * generated stub (stubgen skips some pure-Python modules, e.g.
+     * `sage/arith/misc.py`), so their unannotated `def`s leave element chains
+     * like `for q in prime_divisors(p-1)` untyped and `q.` member completion
+     * empty.  This is the v1.2-era patch pattern, kept deliberately MINIMAL:
+     * every function that HAS a stub keeps its data-layer annotation
+     * (v1.3.0 principle) — this provider only answers for the un-stubbed
+     * sage SDK modules.
+     */
+    override fun getReturnType(callable: PyCallable, context: TypeEvalContext): Ref<PyType>? {
+        val function = callable as? PyFunction ?: return null
+        val file = function.containingFile ?: return null
+        if (SageStubIndex.isSageStubFile(file)) return null
+        if (!SageStubIndex.isSageSdkFile(file)) return null
+        val returnsIntegerList = function.name in INTEGER_LIST_FUNCTIONS
+        if (!returnsIntegerList) return null
+        val integerClass = SageStubIndex.findClass(function.project, "Integer") ?: return null
+        val listClass = PyBuiltinCache.getInstance(function).listType?.pyClass ?: return null
+        val elementType = PyClassTypeImpl(integerClass, false)
+        return Ref.create(PyCollectionTypeImpl(listClass, false, listOf(elementType)))
+    }
 
     override fun getReferenceType(
         referenceTarget: PsiElement,
@@ -116,27 +143,49 @@ class SageTypeProvider : PyTypeProviderBase() {
      * alias cannot be followed.
      */
     private fun sageAllFactoryAttributeType(target: PyTargetExpression): PyType? {
-        val file = target.containingFile as? com.jetbrains.python.psi.PyFile ?: return null
-        val annotation = target.annotationValue as? com.jetbrains.python.psi.PyReferenceExpression ?: return null
-        val aliasName = annotation.referencedName ?: return null
-        if (!aliasName.startsWith("_Type_")) return null
+        val debug = target.name == "CC"
+        val file = target.containingFile as? com.jetbrains.python.psi.PyFile
+        if (file == null) {
+            if (debug) LOG.warn("Sage factory CC: containingFile not a PyFile")
+            return null
+        }
+        val annotation = target.annotationValue
+        if (debug) {
+            LOG.warn("Sage factory CC: annotation=${annotation?.javaClass?.simpleName}")
+        }
+        val annotationRef = annotation as? com.jetbrains.python.psi.PyReferenceExpression
+        val aliasName = annotationRef?.referencedName
+        if (aliasName == null) {
+            if (debug) LOG.warn("Sage factory CC: annotation is not a plain reference (aliasName=$aliasName)")
+            return null
+        }
+        if (!aliasName.startsWith("_Type_")) {
+            if (debug) LOG.warn("Sage factory CC: alias '$aliasName' does not start with _Type_")
+            return null
+        }
         for (fromImport in file.fromImports) {
             for (importElement in fromImport.importElements) {
                 if (importElement.visibleName != aliasName) continue
                 val moduleQName = fromImport.importSource?.asQualifiedName()?.toString()
                 val importedName = importElement.importedQName?.lastComponent ?: aliasName
                 val cls = SageStubIndex.findAliasClass(target.project, moduleQName, importedName)
-                    ?: continue
+                if (debug) LOG.warn("Sage factory CC: import '$importedName' from '$moduleQName' -> cls=${cls?.name ?: "null"}")
+                if (cls == null) continue
                 if (!cls.isValid) continue
                 LOG.warn("Sage: factory attribute '${target.name}' typed as instance of ${cls.name}")
                 return PyClassTypeImpl(cls, false)
             }
         }
+        if (debug) LOG.warn("Sage factory CC: no matching _Type_ import found")
         return null
     }
 
     companion object {
         private val FACTORY_TYPE_KEY = Key.create<PyType>("sageide.sugar.factoryType")
+
+        /** Sage functions (in un-stubbed modules) that return a list of Integers. */
+        private val INTEGER_LIST_FUNCTIONS = setOf("prime_divisors", "divisors", "prime_range")
+
         private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(SageTypeProvider::class.java)
     }
 }
