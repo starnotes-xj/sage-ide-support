@@ -6,11 +6,16 @@ import com.intellij.codeInsight.completion.CompletionProvider
 import com.intellij.codeInsight.completion.CompletionResultSet
 import com.intellij.codeInsight.completion.CompletionType
 import com.intellij.codeInsight.completion.PrioritizedLookupElement
+import com.intellij.codeInsight.completion.util.ParenthesesInsertHandler
+import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
+import com.intellij.codeInsight.lookup.LookupElementPresentation
+import com.intellij.codeInsight.lookup.LookupElementRenderer
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbService
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.patterns.StandardPatterns
+import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
 import com.jetbrains.python.psi.PyImportStatementBase
@@ -45,7 +50,12 @@ import com.jetbrains.python.psi.PyTargetExpression
  * `__all__` plus its top-level declarations), independent of which bridge or
  * pure-Python files happen to exist.
  *
- * The entries insert the bare name (no `from sage.all import X`): the `sage`
+ * Each entry carries a fixed `sage.all` tail (a custom renderer — the
+ * element-derived default presentation swallows `withTypeText`), and
+ * callable names (functions, classes, factories like ZZ/RR/CC, symbolic
+ * function wrappers — [SageStubIndex.isCallableDeclaration]) insert `()`
+ * with the caret inside, like PyCharm's own function completion.  The
+ * entries insert the bare name — no `from sage.all import X`: the `sage`
  * command injects the namespace at runtime, so an import is redundant in a
  * .sage file and would change the file's meaning for the plugin's
  * explicit-import gate.
@@ -71,7 +81,7 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     context: ProcessingContext,
                     result: CompletionResultSet,
                 ) {
-                    val file = parameters.originalFile ?: return
+                    val file = parameters.originalFile
                     if (!SageFileUtils.isSageFile(file)) return
                     // An explicit sage.all import means ordinary Python
                     // completion (star-import variants) already covers the
@@ -103,13 +113,34 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         val builder = LookupElementBuilder.create(name)
                         if (validElement != null) {
                             builder.withPsiElement(validElement)
-                            validElement.getIcon(0)?.let { builder.withIcon(it) }
                         }
-                        builder.withTypeText("sage.all", true)
+                        builder.withExpensiveRenderer(SageAllRenderer(name, validElement))
+                        if (SageStubIndex.isCallableDeclaration(position.project, name, validElement)) {
+                            builder.withInsertHandler(ParenthesesInsertHandler.WITH_PARAMETERS)
+                        }
                         result.addElement(PrioritizedLookupElement.withPriority(builder, -1.0))
                     }
                 }
             },
         )
+    }
+
+    /**
+     * Renders an entry with a fixed `sage.all` type text.  The default
+     * element-derived presentation (activated by `withPsiElement`) overrides
+     * the builder's type text, which is why `withTypeText` alone showed
+     * nothing — the same reason PyCharm's own importable-name entries use a
+     * custom renderer.
+     */
+    private class SageAllRenderer(
+        private val name: String,
+        private val element: PsiElement?,
+    ) : LookupElementRenderer<LookupElement>() {
+        override fun renderElement(element: LookupElement, presentation: LookupElementPresentation) {
+            presentation.itemText = name
+            presentation.icon = this.element?.getIcon(0)
+            presentation.typeText = "sage.all"
+            presentation.isTypeGrayed = true
+        }
     }
 }

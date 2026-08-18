@@ -8,12 +8,20 @@ import com.intellij.psi.PsiInvalidElementAccessException
 import com.intellij.psi.search.GlobalSearchScope
 import com.jetbrains.python.psi.PyClass
 import com.jetbrains.python.psi.PyFile
+import com.jetbrains.python.psi.PyFromImportStatement
 import com.jetbrains.python.psi.PyFunction
+import com.jetbrains.python.psi.PyImportElement
 import com.jetbrains.python.psi.PyListLiteralExpression
 import com.jetbrains.python.psi.PyStringLiteralExpression
 import com.jetbrains.python.psi.PyTargetExpression
+import com.jetbrains.python.psi.resolve.QualifiedNameFinder
 import com.jetbrains.python.psi.stubs.PyClassNameIndex
 import com.jetbrains.python.psi.stubs.PyFunctionNameIndex
+import com.jetbrains.python.psi.types.PyCallableType
+import com.jetbrains.python.psi.types.PyClassType
+import com.jetbrains.python.psi.types.PyOverloadType
+import com.jetbrains.python.psi.types.PyType
+import com.jetbrains.python.psi.types.TypeEvalContext
 
 /**
  * Looks up declarations of Sage built-in names in the SDK's generated stubs.
@@ -116,12 +124,11 @@ object SageStubIndex {
                     // alias like `from sage.interfaces.ecm import ECM as ECM`
                     // returned as-is leaves `ECM()` untyped and kills every
                     // downstream member completion (`ecm.factor` etc.) —
-                    // v1.7.6 bug.  `getReference()` here is the import
-                    // element's own PyImportReference (module resolution via
-                    // PyImportResolver), NOT the reference expression being
-                    // resolved — it never consults pyReferenceResolveProvider,
-                    // so there is no recursion.
-                    val target = importElement.reference?.resolve()
+                    // v1.7.6 bug.  See [followImportAlias] for why the
+                    // import element's own reference is not used.
+                    val importedName = importElement.importedQName?.lastComponent ?: name
+                    val moduleQName = fromImport.importSource?.asQualifiedName()?.toString()
+                    val target = followImportAlias(project, moduleQName, importedName)
                     if (target != null && target.isValid) {
                         LOG.warn("Sage stub sage.all import-alias hit: '$name' -> ${safeContainingFilePath(target)}")
                         return target
@@ -134,6 +141,85 @@ object SageStubIndex {
         // No warn on a miss: user identifiers legitimately miss every path
         // and would flood the log.
         return null
+    }
+
+    /**
+     * Follows a `from <module> import <name>` alias of the generated all.pyi
+     * to the REAL declaration (class/function/attribute) via the name
+     * indexes: exact module match first (`sage.interfaces.ecm.ECM`), then any
+     * declaration in the sage stub tree, then null.
+     *
+     * The import element's own `PyImportReference` is deliberately NOT used:
+     * resolving it from inside the all.pyi stub tree returned null for every
+     * alias in the wild (idea.log 2026-08-18 showed only the fallback branch
+     * of the caller), while the function/class indexes are exactly the data
+     * source the rest of this file already relies on.
+     */
+    private fun followImportAlias(project: Project, moduleQName: String?, importedName: String): PsiElement? {
+        val candidates = ArrayList<PsiElement>()
+        PyFunctionNameIndex.find(importedName, project, GlobalSearchScope.allScope(project))
+            .forEach { candidates += it }
+        PyClassNameIndex.find(importedName, project, GlobalSearchScope.allScope(project))
+            .forEach { candidates += it }
+        return candidates.firstOrNull { candidate ->
+            val file = safeContainingFile(candidate) ?: return@firstOrNull false
+            moduleQName != null &&
+                QualifiedNameFinder.findShortestImportableQName(file)?.toString() == moduleQName
+        } ?: candidates.firstOrNull { isSageStubFile(safeContainingFile(it)) }
+    }
+
+    /**
+     * Whether a sage.all name is callable, so the implicit-namespace
+     * completion can append `()` like PyCharm does for plain functions.
+     * PyFunction/PyClass are callable; a PyTargetExpression instance is
+     * callable when its class has `__call__` (ZZ/QQ/RR/CC/SR and the symbolic
+     * function wrappers do; pi/e/true/false/NaN do not); a from-import alias
+     * is followed to its real declaration first ([followImportAlias]).
+     * Results are cached per name.
+     */
+    fun isCallableDeclaration(project: Project, name: String, element: PsiElement?): Boolean {
+        callableCache[name]?.let { return it }
+        val result = computeIsCallable(project, name, element)
+        callableCache[name] = result
+        return result
+    }
+
+    private fun computeIsCallable(project: Project, name: String, element: PsiElement?): Boolean {
+        val target: PsiElement? = when (element) {
+            is PyFunction, is PyClass -> element
+            is PyImportElement -> {
+                val statement = element.containingImportStatement as? PyFromImportStatement
+                val moduleQName = statement?.importSource?.asQualifiedName()?.toString()
+                val importedName = element.importedQName?.lastComponent ?: name
+                followImportAlias(project, moduleQName, importedName)
+            }
+            is PyTargetExpression -> element
+            else -> return false
+        }
+        return when (target) {
+            is PyFunction, is PyClass -> true
+            is PyTargetExpression -> {
+                val type = try {
+                    TypeEvalContext.codeCompletion(project, target.containingFile).getType(target)
+                } catch (_: RuntimeException) {
+                    null
+                }
+                isCallableValueType(type)
+            }
+            else -> false
+        }
+    }
+
+    private fun isCallableValueType(type: PyType?): Boolean = when (type) {
+        null -> false
+        // For an INSTANCE of a class, callable iff the class defines
+        // `__call__` (PyClassTypeImpl.isCallable -> PyABCUtil -> hasMethod).
+        // A PyClassType is a PyCallableType by hierarchy, so this branch must
+        // come first to get the __call__-based answer.
+        is PyClassType -> type.isCallable
+        is PyOverloadType -> true
+        is PyCallableType -> true
+        else -> false
     }
 
     /** The `sage/all.pyi` stub module, located through the GF function-index anchor. */
@@ -271,6 +357,9 @@ object SageStubIndex {
     /** Session cache of the sage.all namespace: name -> declaration in `sage/all.pyi` (null when undeclared). */
     @Volatile
     private var sageAllDeclarationsCache: Map<String, PsiElement?>? = null
+
+    /** Session cache of callability per sage.all name (see [isCallableDeclaration]). */
+    private val callableCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
     private val LOG = Logger.getInstance(SageStubIndex::class.java)
 }

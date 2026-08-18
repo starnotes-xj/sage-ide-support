@@ -19,10 +19,14 @@
         namespace at runtime).
         Also fixes the type chain behind those names: from-import aliases
         (`from sage.interfaces.ecm import ECM as ECM` — most of all.pyi) are
-        now followed to their real declaration when resolving, because
-        PyCharm's type engine cannot derive a type from an import element
-        itself — `ecm = ECM()` was left untyped and `ecm.` completed
-        nothing without an explicit sage.all import.</li>
+        now followed to their real declaration (through the name indexes —
+        the import element's own reference resolves to nothing from inside
+        the stub tree), because PyCharm's type engine cannot derive a type
+        from an import element itself: `ecm = ECM()` was left untyped and
+        `ecm.` completed nothing without an explicit sage.all import.
+        Completion entries now also carry a fixed "sage.all" tail text and
+        callable names (functions, classes, factories like ZZ/RR/CC, symbolic
+        functions) insert `()` with the caret inside.</li>
     <li>1.7.5 — Typing a quote character in .sage files now inserts the pair
         ("", '' or triple-quoted) with the caret inside, exactly like .py
         files: the quoteHandler extension point resolves handlers by the
