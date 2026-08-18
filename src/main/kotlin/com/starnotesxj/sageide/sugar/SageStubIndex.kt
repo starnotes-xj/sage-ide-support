@@ -8,6 +8,9 @@ import com.intellij.psi.PsiInvalidElementAccessException
 import com.intellij.psi.search.GlobalSearchScope
 import com.jetbrains.python.psi.PyClass
 import com.jetbrains.python.psi.PyFile
+import com.jetbrains.python.psi.PyFunction
+import com.jetbrains.python.psi.PyListLiteralExpression
+import com.jetbrains.python.psi.PyStringLiteralExpression
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.stubs.PyClassNameIndex
 import com.jetbrains.python.psi.stubs.PyFunctionNameIndex
@@ -142,6 +145,77 @@ object SageStubIndex {
     }
 
     /**
+     * All names of the runtime-injected `sage.all` namespace, mapped to a
+     * representative declaration element in the generated `sage/all.pyi`
+     * (the element is null for names that have no per-name declaration in the
+     * stub file — e.g. aliases synthesized by the real all.py at runtime —
+     * but the name itself is still a valid namespace member).
+     *
+     * Source of truth is the stub's `__all__` list (the exact namespace the
+     * `sage` command injects); top-level functions/classes/attributes and
+     * from-import aliases are unioned in for robustness.  The result is
+     * cached for the session: the installed stubs only change when the user
+     * regenerates them, and the cache entries are re-validated on every use
+     * (same policy as [findDeclaration]).
+     */
+    fun collectSageAllDeclarations(project: Project): Map<String, PsiElement?> {
+        sageAllDeclarationsCache?.let { return it }
+        return synchronized(this) {
+            sageAllDeclarationsCache ?: computeSageAllDeclarations(project).also {
+                // Negative results are NOT cached (same policy as
+                // findDeclaration): the first completion can happen before the
+                // SDK stubs are indexed, and caching that miss would poison
+                // every later completion.
+                if (it.isNotEmpty()) sageAllDeclarationsCache = it
+            }
+        }
+    }
+
+    private fun computeSageAllDeclarations(project: Project): Map<String, PsiElement?> {
+        val allFile = sageAllFile(project)
+            ?: run {
+                LOG.warn("Sage stub sage.all anchor '$SAGE_ALL_ANCHOR_NAME' not found — cannot enumerate sage.all names")
+                return emptyMap()
+            }
+        val byName = LinkedHashMap<String, PsiElement?>()
+
+        // 1. Top-level attributes: ZZ/QQ/RR/CC/SR and the other module-level
+        //    instances (`RR: _Type_RR` in the generated all.pyi).
+        for (attribute in allFile.topLevelAttributes) {
+            val name = attribute.name ?: continue
+            if (name == "__all__") continue
+            byName.putIfAbsent(name, attribute)
+        }
+        // 2. Top-level functions: GF, Mod, factor, ... (`def GF(...)` etc.).
+        for (function in allFile.topLevelFunctions) {
+            val name = function.name ?: continue
+            byName.putIfAbsent(name, function)
+        }
+        // 3. Top-level classes.
+        for (pyClass in allFile.topLevelClasses) {
+            val name = pyClass.name ?: continue
+            byName.putIfAbsent(name, pyClass)
+        }
+        // 4. From-import aliases: `from sage.misc.functional import
+        //    numerical_approx as N` — N is invisible to the other collections.
+        for (fromImport in allFile.fromImports) {
+            for (importElement in fromImport.importElements) {
+                val name = importElement.visibleName ?: continue
+                byName.putIfAbsent(name, importElement)
+            }
+        }
+        // 5. The authoritative namespace: the `__all__` list at the end of
+        //    the generated all.pyi.  Names listed there but declared nowhere
+        //    (runtime-synthesized aliases) are added without an element.
+        for (entry in (allFile.findTopLevelAttribute("__all__")
+                ?.findAssignedValue() as? PyListLiteralExpression)?.elements.orEmpty()) {
+            val name = (entry as? PyStringLiteralExpression)?.stringValue ?: continue
+            byName.putIfAbsent(name, byName[name])
+        }
+        return byName
+    }
+
+    /**
      * Finds a class declaration by its simple name in the installed Sage stub tree.
      * Positive results are cached per name (same policy as [findDeclaration]).
      */
@@ -174,6 +248,10 @@ object SageStubIndex {
         safeContainingFile(element)?.virtualFile?.path ?: "<invalid>"
 
     private val classCache = java.util.concurrent.ConcurrentHashMap<String, PyClass>()
+
+    /** Session cache of the sage.all namespace: name -> declaration in `sage/all.pyi` (null when undeclared). */
+    @Volatile
+    private var sageAllDeclarationsCache: Map<String, PsiElement?>? = null
 
     private val LOG = Logger.getInstance(SageStubIndex::class.java)
 }

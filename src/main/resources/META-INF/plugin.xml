@@ -2,10 +2,21 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.7.5</version>
+  <version>1.7.6</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.7.6 — The implicit sage.all namespace now completes in .sage files:
+        typing an unqualified name (RR, Mod, ...) offers the whole injected
+        namespace with a "sage.all" tail.  PyCharm's own importable-name
+        completion only scans real .py modules (it excludes .pyi stubs), so
+        it happened to offer CC/QQ/ZZ (declared in the cc.py bridge file and
+        the pure-Python rational_field.py / integer_mod_ring.py) while RR and
+        Mod — declared only in the generated .pyi stubs — never appeared.
+        The plugin now fills the namespace itself, straight from the stub
+        data layer (sage/all.pyi's __all__ plus its top-level declarations),
+        inserting the bare name without an import (sage injects the
+        namespace at runtime).</li>
     <li>1.7.5 — Typing a quote character in .sage files now inserts the pair
         ("", '' or triple-quoted) with the caret inside, exactly like .py
         files: the quoteHandler extension point resolves handlers by the
@@ -173,6 +184,24 @@
 
     <!-- Common Sage constructs as live templates (polynomial ring, number field, ...). -->
     <defaultLiveTemplates file="liveTemplates/Sage.xml"/>
+
+    <!-- Implicit sage.all namespace completion for .sage files WITHOUT an
+         explicit `from sage.all import ...` (see SageImplicitCompletionContributor
+         for the full root-cause write-up: PyCharm's own importable-name
+         completion excludes .pyi stubs, so RR/Mod — declared only in the
+         generated stubs — never completed while CC/QQ/ZZ did via their real
+         .py bridge/source files).
+
+         WHY language="Python": every Python PSI element type reports
+         PythonLanguage, so completion contributors are collected per the
+         language at the caret — which is PYTHON even in .sage files.  A
+         contributor registered for the Sage dialect would never be consulted
+         (the v1.6.0 postfix-popup trap).  The provider gates on the
+         containing file being a .sage file, so plain .py files are
+         untouched. -->
+    <completion.contributor language="Python"
+                            order="first"
+                            implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
 
     <!-- "New -> SageMath -> Sage File" in the project view: the fileTemplates/
          resource "Sage File.sage.ft" is loaded as a default template by the

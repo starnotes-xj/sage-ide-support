@@ -4,7 +4,7 @@
 
 用户目标：在 PyCharm 中编写 `.sage` 文件时，获得与 `.py` 文件**完全一致**的代码提示体验——语法糖（`R.<x> = GF(2)[]`）不报错、`F.`/`e.` 补全带彩色图标（红 m 方法标志）+ 类型文本 + 形参列表 + Ctrl+Q 中文文档，右键运行用 `sage` 命令（非 Python）。**保持独立的 Sage 文件类型（不是把 .sage 识别成 Python）。**
 
-## 当前状态（v1.7.5 / stubgen 0.8.2，2026-08-18）
+## 当前状态（v1.7.6 / stubgen 0.8.2，2026-08-18）
 
 （历史标题：v1.6.0 / stubgen 0.8.1，2026-08-17 晚。**stubgen 0.8.2 已发 PyPI**（2026-08-18）：RealField_class Parent 桥接（RR 可调用）+ `FiniteField.__iter__ -> Iterator[元素union]`（for 循环类型化）；commit `0b82efd`/`1e1daf1`/`01b1cc2`，tag v0.8.2，CI tests+publish 双绿。插件最新发布 v1.7.4。）
 
@@ -30,6 +30,24 @@
 - ✅ `multiplicative_order` → Integer（三元素类注解）
 - ✅ 插件版本范围 → 2026 全年（261–263.*）
 - 仍待上游：`F.characteristic` Ctrl+Q 中文文档的最终点检
+
+## v1.7.6（2026-08-18 晚）——隐式 sage.all 命名空间补全（Mod/RR 补全缺失的真根因与修复）
+
+**用户报告**：无 `from sage.all import *` 的 .sage 文件里，`CC`/`QQ`/`ZZ` 有补全（候选来自 sage.all），`Mod`/`RR` 补全候选列表里完全没有；跳转 Mod → all.pyi、RR → all.py。
+
+**机制定论（本地 SDK javap 实证 + 用户环境 ground truth 扫描）**：PyCharm 无导入名的补全来自 Python 插件的 **`PyClassNameCompletionContributor`**（"Include importable names in basic completion"，`PyCodeInsightSettings.INCLUDE_IMPORTABLE_NAMES_IN_BASIC_COMPLETION` 默认 true）：它扫 `PyExportedModuleAttributeIndex`（顶层 def/class/target）+ `PyModuleNameIndex`，**但 `createScope` 里与 `notScope(getScopeRestrictedByFileTypes(everythingScope, PyiFileType))` 求交——全部 `.pyi` 文件被排除**，只有真实 `.py` 模块的声明能进候选。用户 conda-sage 整棵树都是 stubgen 的 `.pyi`，名字只有在某个真实 `.py` 里有声明才"碰巧"补全：
+
+| 名字 | 真实 .py 声明 | 结果 |
+|---|---|---|
+| CC | stubgen 桥文件 `sage/rings/cc.py`（`CC = ComplexField()`） | ✅ 补全（"碰巧"） |
+| QQ | 纯 Python `sage/rings/rational_field.py`（`QQ = RationalField()`） | ✅ 补全 |
+| ZZ | 纯 Python `sage/rings/finite_rings/integer_mod_ring.py` + rational_field.py | ✅ 补全 |
+| RR | 仅 `sage/all.py`（被同目录 `all.pyi` 遮蔽）+ `real_mpfr.pyi`（纯 stub，无 .py） | ❌ 不补全 |
+| Mod | 只有 `all.pyi`/`integer_mod.pyi` 的 `def Mod(...)`，零 .py 声明 | ❌ 不补全 |
+
+**修复（插件侧，数据层不动）**：新增 `sugar/SageImplicitCompletionContributor.kt`——`completion.contributor` 注册 **language="Python" order="first"**（方言陷阱：PSI 元素语言恒为 Python，注册 Sage 永远不被咨询——v1.6.0 popup 教训），provider 门：`SageFileUtils.isSageFile` + 无显式 sage.all import + 非限定引用 + 非 target + 非 import 语句。数据源：`SageStubIndex.collectSageAllDeclarations(project)`（会话级缓存，isValid 复验）——all.pyi 的 `__all__` 列表 ∪ 顶层 attributes/functions/classes/from-import 别名，name → 声明元素。补全项：裸名插入（**不插 import**——sage 运行时注入命名空间，import 是多余且会触发插件的显式 import 门）、`withTypeText("sage.all")` 灰尾、元素图标（方法红 m 等）、priority -1.0（本地名优先）。空前缀不弹（~1300 项，`restartCompletionOnPrefixChange(longerThan(0))`）；Dumb 期间冷缓存跳过。共享门 `SageFileUtils.hasExplicitSageAllImport`（resolve provider 与 contributor 复用）。
+
+**验证步骤（用户侧）**：装 `build/distributions/sage-ide-support-1.7.6.zip` → 无 import 的 .sage 里输入 `Mod`/`RR`/`mo`/`rr` → 应弹出 "Mod sage.all"、"RR sage.all" 等候选（其余 ~1300 名同享）；`.py` 文件不受影响；有 `from sage.all import *` 的文件行为不变。注意 CC/QQ/ZZ 现在会同时有本插件的 "sage.all" 项与 PyCharm 自身的 "sage.rings.cc" 等项（无害重复）。
 
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
@@ -93,6 +111,7 @@ v1.2.0 组件：
 | SageTypeProvider | `type/SageTypeProvider.kt` | PyTypeProviderBase.getReferenceType：工厂目标 F ← context.getType(call)；生成元 a/x ← `_first_ngens` 元素类型。**v1.3.0 起无 getReturnType 补丁**——stub 层已带注解。**注册 order="first"**（EP 循环 Ref-非空即短路，last 会被前置 provider 的 Ref(null) 遮蔽） |
 | SageSugarAnalyzer | `sugar/SageSugarAnalyzer.kt` | 糖语句判定 = statement 直接子节点含 PyTokenTypes.LT 叶子 |
 | **隐式命名空间（v1.2.0）** | `sugar/SageReferenceResolveProvider.kt` + `sugar/SageStubIndex.kt` | **Pythonid.pyReferenceResolveProvider**。教训（血泪）：**PsiReferenceContributor 对 Python 引用无效**——检查/类型推断只看主引用，绝不再走 contributor 路线；provider 里不要调 reference.resolve()（递归）；不缓存 null |
+| **隐式命名空间补全（v1.7.6）** | `sugar/SageImplicitCompletionContributor.kt` | `completion.contributor` 注册 **language="Python"**（方言陷阱同 postfix）+ provider 内 SageFile 门；数据源 `SageStubIndex.collectSageAllDeclarations`（all.pyi 的 `__all__` ∪ 顶层声明）；裸名插入不插 import |
 | 运行配置 | `run/*` | WSL 直接调用（无 bash 包装）；Windows 路径 → /mnt/c 转换；Detect 按钮自动检测 |
 
 ## 构建/验证命令

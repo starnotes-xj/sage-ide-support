@@ -3,7 +3,6 @@ package com.starnotesxj.sageide.sugar
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyAssignmentStatement
-import com.jetbrains.python.psi.PyFromImportStatement
 import com.jetbrains.python.psi.PyQualifiedExpression
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.jetbrains.python.psi.impl.ResolveResultList
@@ -55,10 +54,7 @@ class SageReferenceResolveProvider : PyReferenceResolveProvider {
         // statement in the parse tree and must NOT disable the implicit
         // namespace — the `sage` command injects sage.all regardless, so
         // running works while a text-scan gate would leave GF/ZZ unresolved.
-        val hasExplicitImport =
-            PsiTreeUtil.collectElementsOfType(file, PyFromImportStatement::class.java)
-                .any { it.importSource?.asQualifiedName()?.toString() == "sage.all" }
-        if (hasExplicitImport) return emptyList()
+        if (SageFileUtils.hasExplicitSageAllImport(file)) return emptyList()
 
         // 1. Generator targets of the enclosing sugar statement (RHS-internal uses).
         val statement = PsiTreeUtil.getParentOfType(reference, PyAssignmentStatement::class.java)
