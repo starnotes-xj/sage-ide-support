@@ -358,6 +358,8 @@ cd G:\Projects\sage-ide-support
 
 **修复**：新增 `SageQuoteHandler : PythonQuoteHandler()`（`src/main/kotlin/com/starnotesxj/sageide/editor/SageQuoteHandler.kt`，无覆写、零逻辑重复），plugin.xml 注册 `<lang.quoteHandler language="Sage" implementationClass="...SageQuoteHandler"/>`——行为与 .py **逐字节一致**（成对插入、已有闭引号跳过、三引号补全，`MultiCharQuoteHandler` 继承）。`PythonQuoteHandler`/`BaseQuoteHandler` 在 `intellij.python.syntax.jar`（PythonCore 内，编译类路径已含；javap 实证公开无参构造）。版本升 1.7.5。
 
+**已发布（v1.7.5，2026-08-18）**：本地 buildPlugin 产物验证（zip 内 `SageQuoteHandler.class` + plugin.xml 注册项 ✓）→ commit `b243b1d`（quoteHandler）+ `b151b5a`（HANDOFF）→ push master + tag v1.7.5 → CI build(1m15s)+release(1m41s) 双绿一次成功（无 503）：商城 1.7.5 + GitHub Release [v1.7.5](https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.7.5)（zip 附件 sage-ide-support-1.7.5.zip）。
+
 ### 待 IDE 实测（用户侧）
 
 1. `e^254` 无错误、hover 类型为元素类（`__pow__` 链）；2. `x ^^ y`/`x ^^= y` 无语法错且按异或/异或赋值解析（**`^^=` 已在独立词法测试验证流正确，但请用户装新 zip 复测一次**——旧 17:10 zip 有惰性 advance bug）；3. bytes 上下文 `x ^ y` 仍标红且 quick fix 到 `^^`，`x ^= y`（bytes 上下文）标红且 quick fix 到 `^^=`；4. 后缀补全 popup 同时含 Sage 集与 Python 内建集；5. `R.<x> = GF(2)[]` 等糖语句不受影响。
