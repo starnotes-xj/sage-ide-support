@@ -161,11 +161,61 @@ object SageStubIndex {
             .forEach { candidates += it }
         PyClassNameIndex.find(importedName, project, GlobalSearchScope.allScope(project))
             .forEach { candidates += it }
-        return candidates.firstOrNull { candidate ->
+        val exact = candidates.firstOrNull { candidate ->
             val file = safeContainingFile(candidate) ?: return@firstOrNull false
             moduleQName != null &&
                 QualifiedNameFinder.findShortestImportableQName(file)?.toString() == moduleQName
         } ?: candidates.firstOrNull { isSageStubFile(safeContainingFile(it)) }
+        if (exact != null) return exact
+        // `X_with_category` is a RUNTIME-ONLY subclass name (created by the
+        // category machinery); the stubs only contain the plain class `X`
+        // (e.g. all.pyi's `_Type_CC` imports `ComplexField_class_with_category`
+        // while complex_mpfr.pyi declares `ComplexField_class`).  Retry with
+        // the suffix stripped.
+        if (importedName.endsWith("_with_category")) {
+            val stripped = importedName.removeSuffix("_with_category")
+            val strippedCandidates = ArrayList<PsiElement>()
+            PyFunctionNameIndex.find(stripped, project, GlobalSearchScope.allScope(project))
+                .forEach { strippedCandidates += it }
+            PyClassNameIndex.find(stripped, project, GlobalSearchScope.allScope(project))
+                .forEach { strippedCandidates += it }
+            return strippedCandidates.firstOrNull { candidate ->
+                val file = safeContainingFile(candidate) ?: return@firstOrNull false
+                moduleQName != null &&
+                    QualifiedNameFinder.findShortestImportableQName(file)?.toString() == moduleQName
+            } ?: strippedCandidates.firstOrNull { isSageStubFile(safeContainingFile(it)) }
+        }
+        return null
+    }
+
+    /**
+     * Follows a from-import alias of the generated all.pyi to its real class,
+     * used by the type provider to restore the type of factory attributes
+     * whose `_Type_*` annotation alias dangles (see [followImportAlias]).
+     */
+    fun findAliasClass(project: Project, moduleQName: String?, importedName: String): PyClass? =
+        followImportAlias(project, moduleQName, importedName) as? PyClass
+
+    private val entryTargetCache = java.util.concurrent.ConcurrentHashMap<String, PsiElement>()
+
+    /**
+     * For completion entries: follows a from-import alias (`factor`, `ECM`,
+     * `Integer`, ...) to its REAL declaration, so the entry carries the real
+     * icon (red f for functions) and documentation target.  Non-alias
+     * elements are returned unchanged.  Cached per name.
+     */
+    fun resolveEntryTarget(project: Project, name: String, element: PsiElement?): PsiElement? {
+        if (element !is PyImportElement) return element
+        entryTargetCache[name]?.let { return it.takeIf { psi -> psi.isValid } }
+        val statement = element.containingImportStatement as? PyFromImportStatement
+        val moduleQName = statement?.importSource?.asQualifiedName()?.toString()
+        val importedName = element.importedQName?.lastComponent ?: name
+        val target = followImportAlias(project, moduleQName, importedName)
+        if (target != null && target.isValid) {
+            entryTargetCache[name] = target
+            return target
+        }
+        return element
     }
 
     /**
@@ -187,12 +237,7 @@ object SageStubIndex {
     private fun computeIsCallable(project: Project, name: String, element: PsiElement?): Boolean {
         val target: PsiElement? = when (element) {
             is PyFunction, is PyClass -> element
-            is PyImportElement -> {
-                val statement = element.containingImportStatement as? PyFromImportStatement
-                val moduleQName = statement?.importSource?.asQualifiedName()?.toString()
-                val importedName = element.importedQName?.lastComponent ?: name
-                followImportAlias(project, moduleQName, importedName)
-            }
+            is PyImportElement -> resolveEntryTarget(project, name, element)
             is PyTargetExpression -> element
             else -> return false
         }

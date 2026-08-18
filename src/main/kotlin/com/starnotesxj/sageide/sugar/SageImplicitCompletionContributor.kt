@@ -114,6 +114,11 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     for ((name, element) in SageStubIndex.collectSageAllDeclarations(position.project)) {
                         if (!result.prefixMatcher.prefixMatches(name)) continue
                         val validElement = element?.takeIf { it.isValid }
+                        // From-import aliases (factor, ECM, Integer, ...) are
+                        // followed to their REAL declaration so the entry
+                        // carries the real icon (red f for functions) and
+                        // documentation target.
+                        val entryTarget = SageStubIndex.resolveEntryTarget(position.project, name, validElement)
                         // The builtins-entry pipeline (CompletionVariantsProcessor):
                         // smart pointer + icon + single-arg withTypeText — the
                         // only presentation route proven to render its tail in
@@ -125,12 +130,12 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         // (v1.7.6 shipped exactly that bug: the popup entries
                         // had no typeText and no insert handler, so neither the
                         // sage.all tail nor the () insertion ever appeared).
-                        var builder = if (validElement != null) {
-                            LookupElementBuilder.createWithSmartPointer(name, validElement)
+                        var builder = if (entryTarget != null) {
+                            LookupElementBuilder.createWithSmartPointer(name, entryTarget)
                         } else {
                             LookupElementBuilder.create(name)
                         }
-                        validElement?.getIcon(0)?.let { builder = builder.withIcon(it) }
+                        entryTarget?.getIcon(0)?.let { builder = builder.withIcon(it) }
                         builder = builder.withTypeText("sage.all")
                         val callable = SageStubIndex.isCallableDeclaration(position.project, name, validElement)
                         if (callable) {
@@ -141,7 +146,7 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         if (added <= 6) {
                             val presentation = LookupElementPresentation.renderElement(builder)
                             LOG.warn(
-                                "Sage completion entry: '$name' callable=$callable psi=${validElement?.javaClass?.simpleName} pres=$presentation",
+                                "Sage completion entry: '$name' callable=$callable psi=${entryTarget?.javaClass?.simpleName} pres=$presentation",
                             )
                         }
                     }

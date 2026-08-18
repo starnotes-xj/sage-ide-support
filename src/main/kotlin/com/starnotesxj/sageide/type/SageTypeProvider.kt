@@ -9,11 +9,13 @@ import com.jetbrains.python.psi.PyAssignmentStatement
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.types.PyCallableType
 import com.jetbrains.python.psi.types.PyClassType
+import com.jetbrains.python.psi.types.PyClassTypeImpl
 import com.jetbrains.python.psi.types.PyTupleType
 import com.jetbrains.python.psi.types.PyType
 import com.jetbrains.python.psi.types.PyTypeProviderBase
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sageide.sugar.SageFileUtils
+import com.starnotesxj.sageide.sugar.SageStubIndex
 import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
 import com.starnotesxj.sageide.sugar.SageSugarInfo
 
@@ -47,6 +49,20 @@ class SageTypeProvider : PyTypeProviderBase() {
         anchor: PsiElement?,
     ): Ref<PyType>? {
         val target = referenceTarget as? PyTargetExpression ?: return null
+        // Factory attributes in the generated sage/all.pyi whose `_Type_*`
+        // annotation alias dangles: `CC: _Type_CC` imports
+        // `ComplexField_class_with_category`, a RUNTIME-ONLY subclass name —
+        // the stubs only declare `ComplexField_class`, so the annotation
+        // fails to resolve and `CC` loses both its type (`CC()` untyped) and
+        // its __call__-based callability (no parens in completion).  Follow
+        // the alias (with the `_with_category` fallback) to the real class
+        // and return its INSTANCE type.  Only answers inside the sage stub
+        // tree; everywhere else the sugar handling below applies or null is
+        // returned.
+        if (SageStubIndex.isSageStubFile(target.containingFile)) {
+            val type = sageAllFactoryAttributeType(target) ?: return null
+            return Ref.create(type)
+        }
         if (!SageFileUtils.isSageFile(target.containingFile)) return null
         val statement = PsiTreeUtil.getParentOfType(target, PyAssignmentStatement::class.java) ?: return null
 
@@ -90,6 +106,33 @@ class SageTypeProvider : PyTypeProviderBase() {
         val callable = context.getType(firstNgens) as? PyCallableType ?: return null
         val returnType = callable.getReturnType(context) ?: return null
         return (returnType as? PyTupleType)?.getElementType(0) ?: returnType
+    }
+
+    /**
+     * The instance type of a `Name: _Type_Name` factory attribute in the
+     * generated `sage/all.pyi`, resolved by following the `_Type_Name`
+     * from-import alias to the real class (with the `_with_category`
+     * fallback).  Null for anything that is not such an attribute or whose
+     * alias cannot be followed.
+     */
+    private fun sageAllFactoryAttributeType(target: PyTargetExpression): PyType? {
+        val file = target.containingFile as? com.jetbrains.python.psi.PyFile ?: return null
+        val annotation = target.annotationValue as? com.jetbrains.python.psi.PyReferenceExpression ?: return null
+        val aliasName = annotation.referencedName ?: return null
+        if (!aliasName.startsWith("_Type_")) return null
+        for (fromImport in file.fromImports) {
+            for (importElement in fromImport.importElements) {
+                if (importElement.visibleName != aliasName) continue
+                val moduleQName = fromImport.importSource?.asQualifiedName()?.toString()
+                val importedName = importElement.importedQName?.lastComponent ?: aliasName
+                val cls = SageStubIndex.findAliasClass(target.project, moduleQName, importedName)
+                    ?: continue
+                if (!cls.isValid) continue
+                LOG.warn("Sage: factory attribute '${target.name}' typed as instance of ${cls.name}")
+                return PyClassTypeImpl(cls, false)
+            }
+        }
+        return null
     }
 
     companion object {
