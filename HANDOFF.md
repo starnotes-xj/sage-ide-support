@@ -210,6 +210,19 @@ def __mul__(self, other: T) -> T: ...          # T = TypeVar("T")
 
 **使用方式**：`sage-pycharm-stubgen conformance --runtime`（加 `--json` 可自动化）；curated 数据每次修改后跑一遍，mismatch>0 即报警。**这是「人工出错 → 机器兜底」的机制闭环**：以后任何 curated 返回类型与运行时不符都会在 conformance 阶段被抓住，而不是等用户撞到。**验证**：120 测试全绿（新增 split_union 平衡/嵌套泛型/union-in-generic 回归）；全量重生成安装核验：`__iter__`/multiplicative_generator union 含 IntegerMod_int、lift_x 仍为 field union。**用户侧**：Invalidate Caches 后 `F = GF(997)`（素数域）的 `F.multiplicative_generator()`/`a = F.gen()` 类型含 IntegerMod_int 成员（此前断的链补上）。
 
+## stubgen 0.8.4 第八修（2026-08-19）——`E(...)` 点构造与 `E.cardinality()` 断链：__call__ 返回升级 + 工厂类型精确到 finite_field + 方法别名 declare
+
+**用户报告两连**：① `G = E(x, y)`（点构造）后 `G.` 补全全空（只剩后缀模板）；② `E.cardinality()` 无提示。
+
+**根因①（`E(...)` → Any）**：`ell_generic.pyi` 的 `def __call__(self, *args, **kwds):` **无返回注解** → `E(1804, 5368)` → Any → G/point/bob 全断链。修：curated `EllipticCurve_generic.__call__` 条目（**return 机制**，方法已存在不能用 declare）→ `-> EllipticCurvePoint_field`（有限域/数域点共同基类，运行时探测核实）。
+**根因②（`E.cardinality()` 无提示，两层）**：
+- **工厂返回类型不精确**：factory_inference 探测 `EllipticCurve([0,0,1,-1,0])`（QQ）→ `_FactoryReturn_EllipticCurve = EllipticCurve_rational_field`；改探测为 GF 参数后共同基类 `EllipticCurve_field`——但 **cardinality/order/points/trace_of_frobenius/abelian_group 运行时只存在于 EllipticCurve_finite_field（QQ 曲线实测没有这些方法！）**，基类拿不到。**最终：探测只用 `_call(namespace["GF"](29), [2, 3])`（去掉 QQ）→ 工厂返回精确到 `EllipticCurve_finite_field`**——CTF 场景 100% 有限域，成员全齐；QQ 曲线场景失真但可接受（其方法本来 curated 也没覆盖）。
+- **方法别名被渲染成变量**：源码 `order = cardinality`、`rational_points = points`（类体别名赋值）→ stub 里是 `order = cardinality`（变量），curated 的 return 条目（order）无处应用 → **给 order/rational_points 条目加 declare**（类体去重自动删别名行、追加 `def order(...) -> Integer`/`def rational_points(...) -> Sequence[Any]`）。
+- 连带核验：点的 `order` 是真实 def（`additive_order = order` 别名指向它）→ `G.order()` 无需修；点 `additive_order`/`is_finite_order` 同款别名问题（×4 处）记已知项。
+- 修编辑事故一次：rational_points 插入时 old_string 未含 points 闭合行 → 残留 `},` 致 IndentationError → 已删（**教训：大文件多条目插入用「条目首行 + 完整块」做锚点，替换后立即 ast.parse**）。
+
+**验证**：120 全绿；installed 核验 `__call__ -> EllipticCurvePoint_field`、工厂返回 `EllipticCurve_finite_field`、`def order`/`def rational_points` 就位且别名行已删；conformance --runtime **571 条 0 mismatch**。**用户侧**：Invalidate Caches → `G.`（点）提示 order/xy、`E.` 提示 cardinality/order/points/trace_of_frobenius、`E(x, y)` 构造的 point/G/bob 全有类型。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
