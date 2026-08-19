@@ -194,6 +194,22 @@ def __mul__(self, other: T) -> T: ...          # T = TypeVar("T")
 
 **链路**：`Q_a.` → field 成员并集（xy/log/order/…）✓；`Q_a * n_b` → Point.__mul__ ✓；`n_b * Q_a` → Integer.__mul__ 泛型 overload → T=union ✓。**验证**：115 全绿；installed 核验 lift_x 返回 field union、基类 xy 在类体内、compile 通过。**教训**：成员补全缺失先查「类型的类层级 vs 方法挂载层级」，不要只盯着推断路径（overload/__mul__）——`PyUnionType` 并集、`PyBinaryExpressionImpl.getType → PyCallExpressionHelper.getCallType → multiResolveOperator + matchesByArgumentTypes` 的理论链在 fork 源码全部核实过。
 
+## stubgen 0.8.4 第七修（2026-08-19）——conformance 运行时精度校验（A 方案落地）：机器自动发现 curated 声明 vs 运行时的偏差
+
+**机制（`conformance --runtime`）**：对 curated 表每条带 `return` 的条目，**执行 doc 示例**（顺序 exec 到目标调用行，eval 目标调用），把返回值的运行时类型与声明注解核对（union 成员 / 泛型 origin+元素递归 / issubclass / 同模块类按 MRO 名兜底）。目标行选择带优先级（直接调用 > 赋值=调用 > 方法调用 > 任意），**排除包装调用（`list(v.items())`）与链式/索引（`Primes(...).next(500)`、`E.gens()[0]`）**，防探测到错误结果类型。无示例/探测失败记 skipped（绝不误报）。
+
+**首跑即收获（570 条探测）**：95 处 mismatch → 修核对器 4 个 bug（`split_union` 无脑拆 `|` 把 `list[Integer | int]` 拆坏→改平衡感知；嵌套泛型 `dict[tuple[int,int],Any]` 括号不匹配→`_split_generic` 平衡扫描；MRO 兜底被前置 `continue` 短路；目标行闭合括号 index 偏移）→ 87 → 修 curated 真 bug → 2 → 再修 → **0 mismatch**。**机器揪出的 curated 数据 bug（10+ 处，此前全靠用户撞）**：
+- `prime_range: list[int]` → **list[Integer]**（运行时 Integer，与 prime_divisors 一致）；
+- `generalised_log: list[Integer]` → **list[Integer | int]**（运行时混合）；
+- `Rational.as_integer_ratio: tuple[Integer, Integer]` → **tuple[int, int]**（Python 协议返回 int）；
+- `Matrix.left/right_nullity`、`hadamard_bound`、`eigenvalue_multiplicity`：Integer → **int**；`pivot_rows: tuple[Integer,...]` → **tuple[int,...]**（Sage 源码返回 Python int）；
+- `Matrix.eigenspaces_left/right/eigenvalues: list[Any]` → **Sequence[Any]**（运行时是 `Sequence_generic` 不是 list！）；
+- `Rational.squarefree_part: Rational` → **Integer**；`Ring.order: int` → **Integer**（运行时 GF(19).order() 是 Integer）；
+- **`FiniteField` 元素 union 缺 `IntegerMod_int`**（素数域 GF(p) 的元素类！givaro/ntl/pari 三件套只覆盖扩域）→ multiplicative_generator/random_element/`_first_ngens`/`__iter__` 全部补上。
+- **宽声明（Matrix/FreeModuleElement 返回基类）判为可接受**（基类 stub 方法齐全 + MRO 名兜底），不误报。
+
+**使用方式**：`sage-pycharm-stubgen conformance --runtime`（加 `--json` 可自动化）；curated 数据每次修改后跑一遍，mismatch>0 即报警。**这是「人工出错 → 机器兜底」的机制闭环**：以后任何 curated 返回类型与运行时不符都会在 conformance 阶段被抓住，而不是等用户撞到。**验证**：120 测试全绿（新增 split_union 平衡/嵌套泛型/union-in-generic 回归）；全量重生成安装核验：`__iter__`/multiplicative_generator union 含 IntegerMod_int、lift_x 仍为 field union。**用户侧**：Invalidate Caches 后 `F = GF(997)`（素数域）的 `F.multiplicative_generator()`/`a = F.gen()` 类型含 IntegerMod_int 成员（此前断的链补上）。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
