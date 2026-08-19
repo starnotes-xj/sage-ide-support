@@ -161,6 +161,27 @@
 
 **验证（用户侧）**：Invalidate Caches → 全树 13 个工厂（FreeAlgebra/NumberField/CyclotomicField/ResidueField/…）从任意模块 `from X import 工厂` 或隐式使用均带类型；`symbolic/callable.pyi` 的 `CallableSymbolicExpressionRing(...)` 返回 `_FactoryReturn_...`（SymbolicRing 家族）而非 Any。
 
+## stubgen 0.8.4 第五修（2026-08-19）——`n_b * Q_a`（系数在前）保持点类型：Integer.__mul__ overload 镜像 Sage coercion
+
+**用户诉求**：习惯写 `S = n_b * Q_a`（系数在前），`S = Q_a * n_b` 不习惯；要求 `S.` 提示 `xy()` 等点成员。附问：题目给的 `G = E(1804, 5368)` 是 ECDH **基点**——双方用它生成公钥（B 的公钥 = `n_b * G`），本题直接给了对方公钥 `Q_a` 所以 G 用不上。
+
+**方案（数据层通用规则）**：二元表达式静态类型由**左操作数**决定（平台机制），要改只能改 `Integer.__mul__` 的声明。Sage 运行时标量乘语义：`Integer * Integer`（含 `Integer * int`，coercion 折回 Integer）→ Integer；`Integer * 其他对象`（点/矩阵/多项式…）→ **右侧类型**（coercion 委托）。用 **overload 三连**精确镜像（`enhance_integer_stub` 的 `_INTEGER_ARITHMETIC_DUNDERS`）：
+```python
+@overload
+def __mul__(self, other: Integer) -> Integer: ...
+@overload
+def __mul__(self, other: int) -> Integer: ...
+@overload
+def __mul__(self, other: T) -> T: ...          # T = TypeVar("T")
+```
+效果：`n_b * Q_a` → 点（用户诉求 ✓，不再需要改写法）；`n_b * n_b`/`n_b * 3` → Integer（数论不退化 ✓）；`n_b * 1.5` → float（运行时 RealNumber，罕见、已知项）。`Q_a * n_b` 走 Point.__mul__（上轮 curated）不变。**只泛型化 __mul__**（标量乘语义明确），__add__/__sub__/__pow__ 保持现状（__pow__ 语义不同，指数不返回 other 类型）。
+
+**顺手修复两个既有隐患**：
+1. **`integer.pyi` 曾有 def+def 重复 `__mul__`**（enhance 插入的 `-> Integer` 版 + stubgen 原始无类型 `def __mul__(left, right)` 并存）——enhance 现在删除原始块（正则匹配到下一个同级 def，含 docstring 空行处理），overload 组成为唯一声明。
+2. **顺序 bug（必读）**：`enhance_integer_stub` 原在 `enrich_stubs` **之前**跑——enrich 会重写 import 区，**新增的 `from typing import Any, TypeVar, overload` 和 `T = TypeVar("T")` 被 enrich 静默丢掉**（overload 组插入了但 T 未定义 → 泛型失效，测试 stub 简化版查不出）。已移到 enrich **之后**（与 enhance_finite_field_stub 同批，其注释早有此坑记录）。**教训：任何要加 import 的 enhance 必须放在 enrich_stubs 之后。**
+
+**验证**：全量 **115 条全绿**（含 2 条更新/新增：overload 三连 + 原始块删除）；installed 核验：3 个 `__mul__` 声明、typing import/T 就位、原始块删除、`_mul_` 等完好、compile 通过。**用户侧**：Invalidate Caches → `S = n_b * Q_a` 后 `S.` 应提示 `xy()`（Q_a 是 `EllipticCurvePoint | list[...]` union 时 S 也是 union，xy/append 都提示；写 `Q_a = E.lift_x(4726)` 单点场景 S 成员含 xy）。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
