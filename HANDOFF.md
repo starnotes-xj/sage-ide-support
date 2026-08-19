@@ -223,6 +223,16 @@ def __mul__(self, other: T) -> T: ...          # T = TypeVar("T")
 
 **验证**：120 全绿；installed 核验 `__call__ -> EllipticCurvePoint_field`、工厂返回 `EllipticCurve_finite_field`、`def order`/`def rational_points` 就位且别名行已删；conformance --runtime **571 条 0 mismatch**。**用户侧**：Invalidate Caches → `G.`（点）提示 order/xy、`E.` 提示 cardinality/order/points/trace_of_frobenius、`E(x, y)` 构造的 point/G/bob 全有类型。
 
+## stubgen 0.8.4 第九修（2026-08-19）——方法别名机制化根治：`enhance_method_aliases` 全树转正数百处
+
+**用户问「同类型问题都修完了吗」→ 全树扫描揭示真相**：类体方法别名（`X = 同类方法名`，如 `order = cardinality`、`num_verts = order`、`additive_order = order`、`dict = monomial_coefficients`）**全树数百处**（graph/group/manifold/matrix/interfaces…几乎每个模块都有），此前只修了撞到的 2 处——**逐案修不完，必须通用规则**。
+
+**修复（`generator.enhance_method_aliases`，通用规则）**：任何 stub 类体 `X = Name(Y)`（Y 是同类 def、单行赋值）→ 替换为 `def X(<Y 的签名>) -> <Y 的返回注解>: ...`（签名/注解从被别名方法 ast.unparse 复制；**保留原行缩进**——嵌套类（Element 等 8/12 空格）必须保持，写死 4 空格曾致 `commutative_dga.pyi` 语法错、安装器 Refusing to install，教训）。效果：别名从「变量（v 图标、无参数、回车不加括号）」变「一等方法（f 图标、形参列表、返回类型）」，`E.order()`/`G.additive_order()`/`G.num_verts()` 等全部恢复。
+
+**验证**：2847 pyi 全编译 OK；**公开方法别名剩余 0**（数百处一次转正）；`def dict`/`def order`/`def num_verts`/`def additive_order`/`def cardinality` 抽查就位；conformance --runtime **571 条 0 mismatch**；121 测试全绿（新增嵌套类缩进回归）。
+
+**剩余已知项（非本轮范围）**：① **无注解 `def __call__`**（Parent 构造 `R(x)`）全树仍有数十处（EllipticCurve 已修；其余冷门类 CTF 杠杆低，需要时 curated return 逐个，conformance 保证正确性）；② 无 curated 条目的无注解方法（Sage 63,732 个无注解可调用项，见上游注解计划——6 波只覆盖核心工厂，长尾按需驱动）；③ 点的 `is_finite_order = has_finite_order` 等私有/下划线别名不在公开规则内（私有名补全不显示，无影响）。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
