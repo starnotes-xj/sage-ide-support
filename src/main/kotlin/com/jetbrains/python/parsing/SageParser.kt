@@ -38,8 +38,16 @@ class SageParser : PythonParser(), PsiParser {
         var lastAfterSemicolon = false
         while (!builder.eof()) {
             context.pushScope(context.emptyParsingScope())
+            // NOTE: parseStatement() (public) instead of parseSimpleStatement()
+            // (protected): with the 2026.2 split plugin layout the Python
+            // classes live in the python-ce plugin's own class loader, so a
+            // protected call from SageParser (our loader) crosses loaders and
+            // JVM access control rejects it (IllegalAccessError).  parseStatement
+            // is the public superset (it falls through to parseSimpleStatement
+            // for non-compound statements), so the post-semicolon branch keeps
+            // identical behaviour.
             if (lastAfterSemicolon) {
-                statementParser.parseSimpleStatement()
+                statementParser.parseStatement()
             }
             else if (looksLikeSugarStatement(builder)) {
                 parseSugarStatement(context, builder)

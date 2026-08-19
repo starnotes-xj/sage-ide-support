@@ -233,6 +233,16 @@ def __mul__(self, other: T) -> T: ...          # T = TypeVar("T")
 
 **剩余已知项（非本轮范围）**：① **无注解 `def __call__`**（Parent 构造 `R(x)`）全树仍有数十处（EllipticCurve 已修；其余冷门类 CTF 杠杆低，需要时 curated return 逐个，conformance 保证正确性）；② 无 curated 条目的无注解方法（Sage 63,732 个无注解可调用项，见上游注解计划——6 波只覆盖核心工厂，长尾按需驱动）；③ 点的 `is_finite_order = has_finite_order` 等私有/下划线别名不在公开规则内（私有名补全不显示，无影响）。
 
+## 插件 v1.7.8（2026-08-19）——PyCharm 2026.2 IllegalAccessError：跨 classloader 的 protected 调用
+
+**用户报错**：`java.lang.IllegalAccessError: class com.jetbrains.python.parsing.SageParser tried to access protected method 'void com.jetbrains.python.parsing.StatementParsing.parseSimpleStatement()'`（SageParser 在 PluginClassLoader @7a7094a4，StatementParsing 在 @118c4b62），打开/编辑 .sage 即炸（commit、folding、hover、backspace 全触发）。
+
+**根因（类加载隔离）**：用户环境已从 2026.1.4 升到 **PyCharm 2026.2**（idea.log 路径 PyCharm2026.2 实证）。2026.2 的 Python 插件拆分后，`StatementParsing` 由 **python-ce 插件自己的 PluginClassLoader** 加载；我们的 `SageParser` 永远在自己插件的 loader。**JVM 的 protected 访问检查按「runtime package = loader + 包名」判定**：跨 loader 的同包类不是同包 → `SageParser`（非 `StatementParsing` 子类）调用其 protected `parseSimpleStatement()` 被 JVM 拒绝。jar 核验：zip/jar 均未打包 Python 类（233 个类只有我们自己的），depends python 正常——纯跨 loader 问题。（2026.1 时代 Python 类碰巧同 loader 或检查宽松，所以 v1.2.0 起未暴露。）
+
+**修复（最小改动）**：`SageParser.parseRoot` 的**分号分支**改用 **public 的 `parseStatement()`**（fork 源码实证：`parseStatement()` 是 `parseSimpleStatement()` 的公开超集，处理复合语句关键字后对非复合语句原样落回 `parseSimpleStatement`，L143）——行为逐字节一致，零反射。public 跨 loader 调用 JVM 放行（L48 的 parseStatement 本来就没炸过）。全插件 grep 确认仅此一处 protected 跨 loader 调用。
+
+**验证**：buildPlugin 成功（zip 153,856B）+ verifyPlugin 261/262 Compatible。**用户侧**：装 `build/distributions/sage-ide-support-1.7.8.zip` → 重启 → 打开 test.sage 应无报错、糖语句/补全正常。发版流程：用户实测通过后 tag v1.7.8 + push（CI 双发布）。**教训（写入已知坑）**：跨插件引用**只能调 public**——protected/包可见成员在插件 classloader 隔离下运行时必炸（编译期 verifyPlugin 抓不到，只会在真实 IDE 解析时炸）。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。

@@ -2,10 +2,16 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.7.7</version>
+  <version>1.7.8</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.7.8 — Fixes IllegalAccessError on PyCharm 2026.2 (split plugin
+        layout): the sugar parser called the Python parser's protected
+        parseSimpleStatement across class loaders, which JVM access control
+        rejects; it now uses the public parseStatement (a superset that
+        falls through to the same method for non-compound statements), so
+        .sage parsing works again.</li>
     <li>1.7.7 — Mirrors the Sage preparser's numeric-literal conversion at the
         assignment boundary: the sage command wraps every integer literal as
         `Integer(...)` and every float as `RealNumber(...)` (verified against
