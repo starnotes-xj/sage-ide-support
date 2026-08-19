@@ -149,6 +149,18 @@
 
 **用户侧建议（标量乘写法）**：静态上**只有「点在前」能保持点类型**——把 `S = n_b * Q_a` 改写成 `S = Q_a * n_b`（Sage 运行时两者完全等价），配合本次 `__mul__` 声明，`S.` 即提示 `xy()` 等点成员、不再混入 Integer 成员；`n_b * Q_a` 静态恒为 Integer（左操作数决定，无法表达 coercion）。验证：Invalidate Caches 后 `S.` 应提示 xy()；`.print` 后缀 popup 里 `.isprintable()` 属 str 成员正常现象，可用 `.print` 模板（或给 decrypt_flag 加 `-> str` 注解消除误读）。
 
+## stubgen 0.8.4 第四修（2026-08-19）——工厂实例无类型彻底根治：通用规则 + sage 自带 pyi 接管
+
+**用户要求**：把所有「工厂实例无类型」一次性修复（不再逐个 curated）。
+
+**量化**：全树 13 处模块级 `X = <Xxx>Factory('...')` 赋值（FreeAlgebra/QuaternionAlgebra/IntegerModRing×2/DirichletGroup/FiniteField/ResidueField/FunctionField/CyclotomicField/InfinitePolynomialRing/PolynomialQuotientRing/TateAlgebra/CallableSymbolicExpressionRing），而 all.pyi 已有全部 60 个工厂的带类型声明（`def X(...) -> _FactoryReturn_X`，来自上游 `__call__` 注解优先 + factory_inference 运行时探测兜底）。
+
+**修复（`generator.enhance_factory_instances`，通用规则，零特判）**：模块级单 target 赋值 `X = <Ident>('...')` 且 X 在 all.pyi 有 `_FactoryReturn_X` 工厂声明 → 替换为 `from sage.all import X as X`（复用 factory_inference 全部成果）；无声明/多 target/多行一律保留。curated 已处理的 GF/EllipticCurve 天然不受影响（赋值已被去重删除）。回归测试 2 条（有声明转换/无声明跳过），全量 **114 条全绿**。13/13 转换完成。
+
+**连带发现（installer 行为坑，必读）**：安装核验发现 `symbolic/callable.pyi` 转换未生效——**sage 10.9 发行版自带 4 个手写 .pyi**（`misc/abstract_method.pyi`、`symbolic/callable.pyi`、`symbolic/function_factory.pyi`、`symbolic/operators.pyi`），installer 的「不覆盖非自有文件」保护（`destination.exists() and relative not in previously_owned` → preserve 跳过安装，日志 "Preserved existing stubs: N"）让我们的生成内容**从未装上**（manifest 无所有权 → 每轮都 preserve）。官方版同样有工厂无类型缺陷、且无中文文档。**处理**：`--install --overwrite-unowned`（或直接调 `install_stub_package(..., overwrite_unowned=True)`）接管 4 个文件（自动备份 `.sps-bak` 可回退）→ 并入 manifest → 后续安装正常覆盖。**经验：安装后必须 diff site-packages vs 生成输出**（hash 对比），"Preserved existing stubs: N" 非零时检查 N 个文件是否本次需要更新的。
+
+**验证（用户侧）**：Invalidate Caches → 全树 13 个工厂（FreeAlgebra/NumberField/CyclotomicField/ResidueField/…）从任意模块 `from X import 工厂` 或隐式使用均带类型；`symbolic/callable.pyi` 的 `CallableSymbolicExpressionRing(...)` 返回 `_FactoryReturn_...`（SymbolicRing 家族）而非 Any。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
