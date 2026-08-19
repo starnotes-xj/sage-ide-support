@@ -108,6 +108,19 @@
 
 **验证步骤（用户侧）**：装 zip → 重启 → test.sage 里 `ct = <巨整数面量>` 后 `ct.` 应弹出 `nth_root`；`n`/`e` 等字面量赋值目标同理；`prime_divisors` 链不回退（数据层）。**✅ 2026-08-19 用户确认通过；verifyPlugin 261/262 Compatible；v1.7.7 已 tag + push（CI 双发布）。**
 
+## stubgen 0.8.4（2026-08-19）——F.primitive_element 被误判成变量：curated declare 与 pyx 赋值行双声明
+
+**用户报告**：`F.primitive_element` 补全图标是 f（函数）但语义高亮是橙色（变量）；运行时 `print(F.primitive_element, primitive_root(p))` 输出 `Cached version of <cyfunction FiniteField.multiplicative_generator ...>`（`CachedFunction.__repr__`），加括号 `F.primitive_element()` 正常输出本原元——确为函数被误判成变量。
+
+**根因（数据层，全树唯一）**：`finite_field_base.pyx:743` 是类体赋值别名 `primitive_element = multiplicative_generator`（后者是 `@cached_method`）。stubgen-pyx 把它渲染成 `primitive_element = ...`（变量）；curated 表 `FiniteField.primitive_element` 又有 `declare: def primitive_element(self) -> Any`——enrich 阶段 `_apply_declarations` 的 `_declared_qualnames` 只收集 FunctionDef/ClassDef，**看不到赋值**，于是 def 被追加在类尾 → 同名双声明（变量 + 函数）：PyCharm 高亮解析到变量 → 橙色，补全命中函数 → f 图标。全树扫描（2837 个 .pyi，assign+def 同现检测）确认**仅此一处**（`__len__ = ...` 无 curated 项，不受影响）。
+
+**修复（stubgen，数据层 + 生成器通用规则，插件零改动）**：
+1. `docstring_enrich._apply_declarations`：插入 curated `declare` 前先删除同类同名类体赋值（Assign/AnnAssign 目标名匹配，多行 span 一并删；删除后重解析再算插入锚点）——**通用规则：curated 声明覆盖同名自动渲染赋值**，杜绝双声明整类 bug（铁律「通用规则禁止名字特判」落地）。
+2. curated `FiniteField.primitive_element` 返回类型 `Any` → 元素 union（`FiniteField_givaroElement | FiniteField_ntl_gf2eElement | FiniteFieldElement_pari_ffelt`，与 multiplicative_generator 一致；三 import 已在该 stub 顶部，无需新增）——`tools/build_supplemental_docs.py`（源）与 `supplemental_docs.py`（生成物）同步改。
+3. 回归测试 `test_curated_declare_replaces_same_named_class_assignment`（本地 unittest 全量 110 条全绿）。
+
+**验证（用户侧）**：WSL 全量重生成 + `--install`（修复后源码）已跑；同时已手工修补已装 stub（删 `primitive_element = ...` 行 + 返回类型改 union，parse 校验 + 无重复确认）→ PyCharm **Invalidate Caches** → `F.primitive_element` 应为函数色（与 `F.primitive_element()` 同色）、hover 显示元素 union 签名、Ctrl+Q 中文文档。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
