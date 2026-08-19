@@ -182,6 +182,18 @@ def __mul__(self, other: T) -> T: ...          # T = TypeVar("T")
 
 **验证**：全量 **115 条全绿**（含 2 条更新/新增：overload 三连 + 原始块删除）；installed 核验：3 个 `__mul__` 声明、typing import/T 就位、原始块删除、`_mul_` 等完好、compile 通过。**用户侧**：Invalidate Caches → `S = n_b * Q_a` 后 `S.` 应提示 `xy()`（Q_a 是 `EllipticCurvePoint | list[...]` union 时 S 也是 union，xy/append 都提示；写 `Q_a = E.lift_x(4726)` 单点场景 S 成员含 xy）。
 
+## stubgen 0.8.4 第六修（2026-08-19）——点成员补全缺失的真正根因：lift_x 返回基类而非 field 子类
+
+**用户实测（第五修后）**：`n_b * Q_a` 和 `Q_a * n_b` 都仍无 xy() 提示；Invalidate Caches 已做过、**hover 显示类型正常**（`EllipticCurvePoint | list[...]`）、但 **`Q_a.` 直接成员补全也没有 xy()** —— 一锤定音：问题**不在乘法推断**（`PyUnionType.getCompletionVariants` 源码实证 = **并集**，union 补全含所有成员），而在 **stub 的类结构**。
+
+**根因（数据层，与乘法推断无关）**：`ell_point.pyi` 里 **`xy`/`order`/`log` 等方法只声明在子类 `EllipticCurvePoint_field`**（L877 等），**基类 `EllipticCurvePoint`（L149）没有**；而 curated 的 `EllipticCurve_generic.lift_x` 返回类型写的是**基类** `EllipticCurvePoint | list[...]` → `Q_a` 静态类型是基类 union → 补全自然没有 xy。运行时 `E.lift_x` 返回的恰是 field 子类（xy/log/order/weil_pairing 全套）。前几轮（__mul__ declare、overload）数据都对，但 **Q_a 的类型本身指到了没有这些方法的基类**——所以「点在前面/系数在前」都无济于事。
+
+**修复（数据层，两处）**：
+1. **`lift_x` 返回类型升级**：`EllipticCurvePoint | list[EllipticCurvePoint]` → **`EllipticCurvePoint_field | list[EllipticCurvePoint_field]`**（imports 换 field 类）——有限域 CTF 主场景（GF(p) 曲线）运行时就是 field 点；QQ 场景略不准但罕见。
+2. **基类 `EllipticCurvePoint` 补 `xy` declare**（兜底：任何点类型表达式都提供 xy()；Sage 里所有点运行时都有 xy，经 category/子类）。
+
+**链路**：`Q_a.` → field 成员并集（xy/log/order/…）✓；`Q_a * n_b` → Point.__mul__ ✓；`n_b * Q_a` → Integer.__mul__ 泛型 overload → T=union ✓。**验证**：115 全绿；installed 核验 lift_x 返回 field union、基类 xy 在类体内、compile 通过。**教训**：成员补全缺失先查「类型的类层级 vs 方法挂载层级」，不要只盯着推断路径（overload/__mul__）——`PyUnionType` 并集、`PyBinaryExpressionImpl.getType → PyCallExpressionHelper.getCallType → multiResolveOperator + matchesByArgumentTypes` 的理论链在 fork 源码全部核实过。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
