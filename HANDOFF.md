@@ -106,7 +106,7 @@
 
 **白名单删除（铁律落地）**：`SageTypeProvider.getReturnType`（`INTEGER_LIST_FUNCTIONS` = prime_divisors/divisors/prime_range）整体删除——stubgen 0.8.3 `--include-py` 已给纯 Python 模块生成 stub（arith/misc.pyi 有 `def prime_divisors(n) -> list[Integer]:`），数据层自足；插件不再对函数名特判。
 
-**验证步骤（用户侧）**：装 zip → 重启 → test.sage 里 `ct = <巨整数面量>` 后 `ct.` 应弹出 `nth_root`；`n`/`e` 等字面量赋值目标同理；`prime_divisors` 链不回退（数据层）。通过后 verifyPlugin + tag v1.7.7 + push。
+**验证步骤（用户侧）**：装 zip → 重启 → test.sage 里 `ct = <巨整数面量>` 后 `ct.` 应弹出 `nth_root`；`n`/`e` 等字面量赋值目标同理；`prime_divisors` 链不回退（数据层）。**✅ 2026-08-19 用户确认通过；verifyPlugin 261/262 Compatible；v1.7.7 已 tag + push（CI 双发布）。**
 
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
