@@ -5,15 +5,13 @@ import com.intellij.openapi.util.RecursionManager
 import com.intellij.openapi.util.Ref
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
+import com.jetbrains.python.PyElementTypes
 import com.jetbrains.python.psi.PyAssignmentStatement
-import com.jetbrains.python.psi.PyCallable
-import com.jetbrains.python.psi.PyFunction
+import com.jetbrains.python.psi.PyNumericLiteralExpression
 import com.jetbrains.python.psi.PyTargetExpression
-import com.jetbrains.python.psi.impl.PyBuiltinCache
 import com.jetbrains.python.psi.types.PyCallableType
 import com.jetbrains.python.psi.types.PyClassType
 import com.jetbrains.python.psi.types.PyClassTypeImpl
-import com.jetbrains.python.psi.types.PyCollectionTypeImpl
 import com.jetbrains.python.psi.types.PyTupleType
 import com.jetbrains.python.psi.types.PyType
 import com.jetbrains.python.psi.types.PyTypeProviderBase
@@ -37,6 +35,24 @@ import com.starnotesxj.sageide.sugar.SageSugarInfo
  * uses `x`), so `context.getType(call)` can re-enter this provider; the recursion
  * guard and the per-statement cache break the cycle.
  *
+ * It also types two further cases by GENERAL preparse-semantics rules — never
+ * by name whitelists (project rule: type knowledge lives in the stub data
+ * layer; the plugin only mirrors the .sage language semantics the stubs
+ * cannot express):
+ *
+ * - `_Type_*` factory attributes of the generated sage/all.pyi whose alias
+ *   dangles (runtime-only `_with_category` subclass names) — followed to the
+ *   real class via the name indexes;
+ * - targets assigned a bare numeric literal: the Sage preparser wraps every
+ *   integer literal as `Integer(...)` and float as `RealNumber(...)`
+ *   (verified: `preparse("x = 5")` -> `x = Integer(5)`), so
+ *   `ct = 2432...` is an Integer at runtime — this provider gives the target
+ *   the converted instance type, which is what lets `ct.nth_root(3)`
+ *   complete.  (Literals in other positions keep Python types: a PSI
+ *   identifier's text must come from the document buffer, so the preparse
+ *   wrapping cannot be reproduced in the parse tree without rewriting the
+ *   file.)
+ *
  * NOTE (v1.3.0): the return-type patches for unannotated sage stub methods
  * (`from_integer` and friends) were REMOVED — the stubgen curated table now
  * annotates them directly (`FiniteField_givaroElement | ...`), so the type
@@ -46,29 +62,6 @@ import com.starnotesxj.sageide.sugar.SageSugarInfo
  * `.sage` files.
  */
 class SageTypeProvider : PyTypeProviderBase() {
-
-    /**
-     * Return types for a curated set of sage functions whose modules have NO
-     * generated stub (stubgen skips some pure-Python modules, e.g.
-     * `sage/arith/misc.py`), so their unannotated `def`s leave element chains
-     * like `for q in prime_divisors(p-1)` untyped and `q.` member completion
-     * empty.  This is the v1.2-era patch pattern, kept deliberately MINIMAL:
-     * every function that HAS a stub keeps its data-layer annotation
-     * (v1.3.0 principle) — this provider only answers for the un-stubbed
-     * sage SDK modules.
-     */
-    override fun getReturnType(callable: PyCallable, context: TypeEvalContext): Ref<PyType>? {
-        val function = callable as? PyFunction ?: return null
-        val file = function.containingFile ?: return null
-        if (SageStubIndex.isSageStubFile(file)) return null
-        if (!SageStubIndex.isSageSdkFile(file)) return null
-        val returnsIntegerList = function.name in INTEGER_LIST_FUNCTIONS
-        if (!returnsIntegerList) return null
-        val integerClass = SageStubIndex.findClass(function.project, "Integer") ?: return null
-        val listClass = PyBuiltinCache.getInstance(function).listType?.pyClass ?: return null
-        val elementType = PyClassTypeImpl(integerClass, false)
-        return Ref.create(PyCollectionTypeImpl(listClass, false, listOf(elementType)))
-    }
 
     override fun getReferenceType(
         referenceTarget: PsiElement,
@@ -91,24 +84,53 @@ class SageTypeProvider : PyTypeProviderBase() {
             return Ref.create(type)
         }
         if (!SageFileUtils.isSageFile(target.containingFile)) return null
-        val statement = PsiTreeUtil.getParentOfType(target, PyAssignmentStatement::class.java) ?: return null
+        val statement = PsiTreeUtil.getParentOfType(target, PyAssignmentStatement::class.java)
 
-        return RecursionManager.doPreventingRecursion(target, true) {
-            val info = SageSugarAnalyzer.analyze(statement) ?: return@doPreventingRecursion null
-            val factoryType = factoryType(statement, info, context)
-            LOG.warn(
-                "Sage: sugar target '${target.name}' factoryTarget='${info.factoryTarget.name}' " +
-                    "factoryType=${factoryType?.renderTypeName() ?: "null"} call=${info.call?.text?.take(60)}",
-            )
-            if (factoryType == null) return@doPreventingRecursion null
+        if (statement != null) {
+            val sugarResult = RecursionManager.doPreventingRecursion(target, true) {
+                val info = SageSugarAnalyzer.analyze(statement) ?: return@doPreventingRecursion null
+                val factoryType = factoryType(statement, info, context)
+                LOG.warn(
+                    "Sage: sugar target '${target.name}' factoryTarget='${info.factoryTarget.name}' " +
+                        "factoryType=${factoryType?.renderTypeName() ?: "null"} call=${info.call?.text?.take(60)}",
+                )
+                if (factoryType == null) return@doPreventingRecursion null
 
-            val type: PyType? = when {
-                target === info.factoryTarget -> factoryType
-                target in info.nameTargets -> generatorType(factoryType, context)
-                else -> null
+                val type: PyType? = when {
+                    target === info.factoryTarget -> factoryType
+                    target in info.nameTargets -> generatorType(factoryType, context)
+                    else -> null
+                }
+                type?.let { Ref.create(it) }
             }
-            type?.let { Ref.create(it) }
+            if (sugarResult != null) return sugarResult
         }
+
+        // The Sage preparser wraps EVERY numeric literal (verified against
+        // sage.repl.preparse: `x = 5` -> `x = Integer(5)`, `x = 1.5` ->
+        // `x = RealNumber('1.5')`), so `ct = 2432...` is a Sage Integer at
+        // runtime while the raw PSI literal types as Python int — which is
+        // why `ct.nth_root(3)` had no member completion.  Mirror the
+        // preparse conversion at the ASSIGNMENT boundary: a .sage target
+        // assigned a bare int/float literal gets the converted class type.
+        // This is a GENERAL rule (no name whitelist) and it is where the
+        // type actually flows onward; literals in other positions cannot be
+        // wrapped without changing the document text (a PSI identifier's
+        // text must come from the buffer), so they keep their Python types.
+        return literalAssignedType(target)
+    }
+
+    /** `x = <int literal>` -> Integer, `x = <float literal>` -> RealNumber (sage preparse semantics). */
+    private fun literalAssignedType(target: PyTargetExpression): Ref<PyType>? {
+        val assigned = target.findAssignedValue() as? PyNumericLiteralExpression ?: return null
+        val className = when {
+            assigned.isIntegerLiteral -> "Integer"
+            assigned.node?.elementType == PyElementTypes.FLOAT_LITERAL_EXPRESSION -> "RealNumber"
+            else -> return null
+        }
+        val cls = SageStubIndex.findClass(target.project, className) ?: return null
+        if (!cls.isValid) return null
+        return Ref.create(PyClassTypeImpl(cls, false))
     }
 
     private fun PyType.renderTypeName(): String =
@@ -169,9 +191,6 @@ class SageTypeProvider : PyTypeProviderBase() {
 
     companion object {
         private val FACTORY_TYPE_KEY = Key.create<PyType>("sageide.sugar.factoryType")
-
-        /** Sage functions (in un-stubbed modules) that return a list of Integers. */
-        private val INTEGER_LIST_FUNCTIONS = setOf("prime_divisors", "divisors", "prime_range")
 
         private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(SageTypeProvider::class.java)
     }

@@ -4,7 +4,15 @@
 
 用户目标：在 PyCharm 中编写 `.sage` 文件时，获得与 `.py` 文件**完全一致**的代码提示体验——语法糖（`R.<x> = GF(2)[]`）不报错、`F.`/`e.` 补全带彩色图标（红 m 方法标志）+ 类型文本 + 形参列表 + Ctrl+Q 中文文档，右键运行用 `sage` 命令（非 Python）。**保持独立的 Sage 文件类型（不是把 .sage 识别成 Python）。**
 
-## 当前状态（v1.7.6 / stubgen 0.8.2，2026-08-18）
+## 项目铁律（规则文档，接手必读，违反=返工）
+
+1. **类型知识住在数据层（stubgen stubs），插件不维护函数白名单**。发现某函数类型断链，先去 stubgen（curated 表 / 纯 Python stub 管线 / 桥文件）修数据；插件侧只允许两类补丁：① 镜像 .sage 语言语义本身（`^` 词法重映射、字面量赋值按 preparse 定型、隐式 sage.all 命名空间解析）——**必须写成通用规则，禁止名字特判**；② 从 stub 数据跟随到真实声明（别名跟随、`_Type_*` 悬空别名回退）。v1.7.6 期间插件的 `INTEGER_LIST_FUNCTIONS` 白名单已按此铁律**删除**（stubgen 0.8.3 `--include-py` 覆盖后数据层自足）。
+2. **修根因，不治标**。每个 bug 要追踪到平台机制/数据缺陷层：补全缺失→PyCharm importable-completion 排除 .pyi 的机制；类型断链→PyImportElement 不可被类型引擎推导；CC 无括号→`getAnnotationValue()` 返回 String 而非 PyExpression。不得用"加个特判名单"收场。
+3. **破坏性改动先对照 Jupyter/PyCharm .py 行为**（用户明确要求）：Jupyter 补全不自动加括号（jupyterlab/jupyterlab #9082 仍是开放特性请求），PyCharm 对局部变量补全也不加括号——所以 `F(h)`/`F(g)` 这类局部变量回车**不加**括号，保持现状。
+4. **诊断闭环用探针+日志，不许猜**：现象→idea.log 探针（WARN）→机制定位→最小修复→用户实测→探针清除。本仓库 .lexer-test/ 与用户 idea.log（`C:\Users\星记\AppData\Local\JetBrains\PyCharm2026.2\log\idea.log`）是主要取证途径；平台机制证据以 `G:\Projects\intellij-community-sage-pr`（fork，与 2026.2.1 SDK 字节码核对过）为准。
+5. **不缓存负面结果**（stub 索引可能晚到）；**LookupElementBuilder 不可变**（每个 with* 返回新实例，丢弃返回值=静默丢失尾标/处理器——v1.7.6 血泪）；平台 API 的返回类型以 fork 源码为准（`getAnnotationValue(): String`）。
+
+## 当前状态（v1.7.7 / stubgen 0.8.3，2026-08-19）
 
 （历史标题：v1.6.0 / stubgen 0.8.1，2026-08-17 晚。**stubgen 0.8.2 已发 PyPI**（2026-08-18）：RealField_class Parent 桥接（RR 可调用）+ `FiniteField.__iter__ -> Iterator[元素union]`（for 循环类型化）；commit `0b82efd`/`1e1daf1`/`01b1cc2`，tag v0.8.2，CI tests+publish 双绿。插件最新发布 v1.7.4。）
 
@@ -85,6 +93,20 @@
 **修复**：两处直接读注解文本 `target.annotationValue`（String），`__call__` 查找用 `TypeEvalContext.codeInsightFallback(project)` 非 null 上下文，containingFile 访问加异常保护。
 
 **全量排查（WSL 运行时真相 × 插件跟随逻辑）**：245 个 `_Type_*` 目标中 runtime-callable 而跟随漏网的仅 3 个：`e`（`_Type_e` → `E`——expression.pyi 未声明该实例名，符号常数按表达式替换调用；与 pi 不一致但属常数直觉，留待数据层）、`pari`（cypari2 在 sage 树外，插件全局索引能找到——审计假象）、`sage_globals`（builtins.function 别名）。别名侧 ~40 个漏跟均为 LazyImport/目录实例（polytopes、simplicial_complexes 等 catalog 加括号反而不对）与 stdlib/cysignals 审计假象。**无 CC 式工厂漏网**。探针日志已全部清除。
+
+## v1.7.7（2026-08-19）——字面量赋值按 preparse 定型（ct.nth_root 根因）+ 白名单删除
+
+**用户报告**：`ct = 2432...`（巨整数面量）后 `ct.` 无 `nth_root` 补全；并立下规则：不准维护白名单、要修根源、破坏性改动先对照 Jupyter。
+
+**根因（WSL 实证）**：Sage preparser 把**每一个**数字字面量包成 Sage 类型——`preparse('x = 5')` → `x = Integer(5)`、`preparse('x = 1.5')` → `x = RealNumber('1.5')`、`preparse('f(3)')` → `f(Integer(3))`。运行时 `ct` 是 Integer（所以代码能跑），静态看裸字面量是 Python int → `ct.` 只补 int 方法。
+
+**为何不在解析/词法层做完整包装（重要结论，写入铁律）**：把字面量包成 `Integer(<字面量>)` 需要合成 IDENT "Integer" 的 PSI 节点，而**标识符的文本必须来自文档缓冲区**（token 文本=缓冲片段），词法/解析层无法无中生有地造出名字文本——除非改写文件文本（插件从不做）。因此 preparse 语义在类型层镜像，选在**类型真正外流的边界**：**赋值目标**。`SageTypeProvider.literalAssignedType`：`.sage` 文件中 `x = <整数面量>` → Integer 实例类型、`x = <浮点面量>` → RealNumber（`PyNumericLiteralExpression.isIntegerLiteral` + FLOAT_LITERAL_EXPRESSION 判定；2026 SDK 已无 PyIntLiteralExpression/PyFloatLiteralExpression 接口）。**通用规则，零白名单**——`n = 1725...`、`e = 3`、`ct = ...` 一并生效。表达式内的字面量（`f(3)`）保持 Python 类型（已文档化）。
+
+**`F(h)`/`F(g)` 括号问题**：`F` 是局部变量（`F = GF(p)`），其补全来自 getVariants 局部变量路径；Jupyter 补全不自动加括号（jupyterlab/jupyterlab #9082 是开放特性请求），PyCharm .py 的局部变量补全同样不加——**不做**，与 Jupyter/PyCharm 行为一致。
+
+**白名单删除（铁律落地）**：`SageTypeProvider.getReturnType`（`INTEGER_LIST_FUNCTIONS` = prime_divisors/divisors/prime_range）整体删除——stubgen 0.8.3 `--include-py` 已给纯 Python 模块生成 stub（arith/misc.pyi 有 `def prime_divisors(n) -> list[Integer]:`），数据层自足；插件不再对函数名特判。
+
+**验证步骤（用户侧）**：装 zip → 重启 → test.sage 里 `ct = <巨整数面量>` 后 `ct.` 应弹出 `nth_root`；`n`/`e` 等字面量赋值目标同理；`prime_divisors` 链不回退（数据层）。通过后 verifyPlugin + tag v1.7.7 + push。
 
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 

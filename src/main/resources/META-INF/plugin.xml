@@ -2,10 +2,22 @@
   <id>com.starnotesxj.sageide</id>
   <name>Sage IDE Support</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
-  <version>1.7.6</version>
+  <version>1.7.7</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.7.7 — Mirrors the Sage preparser's numeric-literal conversion at the
+        assignment boundary: the sage command wraps every integer literal as
+        `Integer(...)` and every float as `RealNumber(...)` (verified against
+        `sage.repl.preparse`: `x = 5` → `x = Integer(5)`), so `ct = 2432...`
+        in a .sage file is a Sage Integer at runtime — and now the target is
+        typed accordingly, which is what lets `ct.nth_root(3)` complete.
+        This is a general preparse-semantics rule (no function whitelist —
+        the interim getReturnType patch was removed: type knowledge lives in
+        the stub data layer, which stubgen 0.8.3 extended to pure-Python
+        modules).  Literals in other positions keep their Python types: a PSI
+        identifier's text must come from the document buffer, so the wrapping
+        cannot be reproduced in the parse tree without rewriting the file.</li>
     <li>1.7.6 — The implicit sage.all namespace now completes in .sage files:
         typing an unqualified name (RR, Mod, ...) offers the whole injected
         namespace with a "sage.all" tail.  PyCharm's own importable-name
