@@ -119,7 +119,7 @@
 2. curated `FiniteField.primitive_element` 返回类型 `Any` → 元素 union（`FiniteField_givaroElement | FiniteField_ntl_gf2eElement | FiniteFieldElement_pari_ffelt`，与 multiplicative_generator 一致；三 import 已在该 stub 顶部，无需新增）——`tools/build_supplemental_docs.py`（源）与 `supplemental_docs.py`（生成物）同步改。
 3. 回归测试 `test_curated_declare_replaces_same_named_class_assignment`（本地 unittest 全量 110 条全绿）。
 
-**验证（用户侧）**：WSL 全量重生成 + `--install`（修复后源码）已跑；同时已手工修补已装 stub（删 `primitive_element = ...` 行 + 返回类型改 union，parse 校验 + 无重复确认）→ PyCharm **Invalidate Caches** → `F.primitive_element` 应为函数色（与 `F.primitive_element()` 同色）、hover 显示元素 union 签名、Ctrl+Q 中文文档。
+**验证（用户侧）**：WSL 用修复后源码全量重生成 + `--install --include-py` 已跑完（Discovered=Generated=2837, Failed=0，纯 Python stub 如 arith/misc.pyi 一并保留）；产物核验：`finite_field_base.pyi` 里 `primitive_element` 仅剩函数声明（返回元素 union）、AST 全树扫描 2847 个 pyi **零重复声明** → PyCharm **Invalidate Caches** → `F.primitive_element` 应为函数色（与 `F.primitive_element()` 同色）、hover 显示元素 union 签名、Ctrl+Q 中文文档。**已知后续项（同类别名、无 curated 项、非双声明）**：`quivers/paths.pyi` 的 `degree`/`length = __len__`、`reflection_group_element.pyi` 的 `matrix = to_matrix` 等仍渲染为变量（行为一致、无冲突），CTF 杠杆低；如用户需要，在 curated 表补 declare 即可走本规则修复。
 
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
