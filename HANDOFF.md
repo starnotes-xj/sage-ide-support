@@ -121,6 +121,20 @@
 
 **验证（用户侧）**：WSL 用修复后源码全量重生成 + `--install --include-py` 已跑完（Discovered=Generated=2837, Failed=0，纯 Python stub 如 arith/misc.pyi 一并保留）；产物核验：`finite_field_base.pyi` 里 `primitive_element` 仅剩函数声明（返回元素 union）、AST 全树扫描 2847 个 pyi **零重复声明** → PyCharm **Invalidate Caches** → `F.primitive_element` 应为函数色（与 `F.primitive_element()` 同色）、hover 显示元素 union 签名、Ctrl+Q 中文文档。**已知后续项（同类别名、无 curated 项、非双声明）**：`quivers/paths.pyi` 的 `degree`/`length = __len__`、`reflection_group_element.pyi` 的 `matrix = to_matrix` 等仍渲染为变量（行为一致、无冲突），CTF 杠杆低；如用户需要，在 curated 表补 declare 即可走本规则修复。
 
+## stubgen 0.8.4 第二修（2026-08-19）——LazyImport re-export 无类型：`from sage.graphs.strongly_regular_db import GF` 后 `F.` 补全消失
+
+**用户报告**：test.sage 同时有 `from Crypto.Util.number import long_to_bytes` 和 `from sage.graphs.strongly_regular_db import GF` 时，`F = GF(p)` 后 `F.` 无任何补全（`F.primitive_element()` 也提示不了）；删掉 strongly_regular_db 那行导入即恢复。
+
+**根因（数据层）**：`strongly_regular_db.pyx:45` 是 `GF = LazyImport('sage.rings.finite_rings.finite_field_constructor', 'GF')`——**它就是有限域 GF**（LazyImport 懒加载同一工厂，运行时与 `GF(p)` 完全等价，所以用户代码能跑）。stubgen-pyx 把 LazyImport 赋值**原样写进 stub**（`strongly_regular_db.pyi` 同款一行）→ `LazyImport` 实例零类型信息。PyCharm 解析显式导入的 `GF` 命中该**无类型变量**，主引用解析"成功" → **插件 provider 不兜底**（只在解析失败时介入，且「不得劫持显式 import」红线）→ `GF(p)` callee 无类型 → `F = GF(p)` 断链 → `F.` 空。删掉导入后 `GF` 无显式绑定 → 插件兜底解析到 all.pyi `def GF -> FiniteField` → 正常。全树同类 49 处模块级 `X = LazyImport(...)`。
+
+**修复（stubgen，数据层通用规则，插件零改动）**：
+1. **`generator.enhance_lazy_imports`（新）**：全树扫描模块级 `X = LazyImport('sage.mod', 'name')` → 换成 `from sage.mod import name as X`（re-export 语义忠实）。**安全网：先建「模块 → 顶层声明名」索引（def/class/赋值/import 别名），目标模块 stub 存在且声明了该名字才替换**——目标缺失（如 `sage.coding` 是排除生成的 `__init__`）或非 sage 模块（matplotlib）一律保留原样，**零红线回归**。47/49 处转换（`codes = LazyImport('sage.coding', ...)`、`to_hex = LazyImport('matplotlib.colors', ...)` 2 处按规则保留）。
+2. **curated 补 `finite_field_constructor.GF` 工厂声明**：该模块 stub 里 GF 是链式赋值 `GF = FiniteField = FiniteFieldFactory('FiniteField')`（`UniqueFactory.__call__` 无返回注解 → 即使 from-import 后 `GF(p)` 仍返回 Any）→ curated `declare: def GF(*args: Any, **kwargs: Any) -> _FieldBase`（仿 all.pyi 工厂声明；**`_FieldBase` 用别名**——模块内 `FiniteField` 名字被链式赋值占用，直接引用会错乱）+ `return` 同步改 `_FieldBase`。`tools/build_supplemental_docs.py`（源）与 `supplemental_docs.py`（生成物）同步。
+3. **`_apply_declarations` 模块级去重扩展**：curated declare 覆盖同名**模块级**赋值——单目标整行删；**链式赋值只裁剪目标名**（`GF = FiniteField = FiniteFieldFactory(...)` → `FiniteField = FiniteFieldFactory(...)`，不误删同链其他名字）。
+4. 回归测试 2 条：`test_lazy_imports_resolved_when_target_is_declared`（generator）+ `test_module_level_declare_trims_chain_assignment`（enrich）；全量 **112 条全绿**（含版本一致性：`__init__.py` `__version__` 与 pyproject 同步 0.8.4）。
+
+**验证（用户侧）**：WSL 全量重生成 + `--install --include-py`（2837/0 失败）产物核验：`strongly_regular_db.pyi:35` 变 `from sage.rings.finite_rings.finite_field_constructor import GF as GF` ✓、`finite_field_constructor.pyi:670` 变 `def GF(*args: Any, **kwargs: Any) -> _FieldBase` ✓（链式裁剪保留 `FiniteField = FiniteFieldFactory(...)`、`_FieldBase` import 在位）、剩余 LazyImport 仅 2 处按规则保留 ✓、AST 全树 2847 pyi 类成员**零重复** ✓ → PyCharm **Invalidate Caches** → 保留两行导入的 test.sage 里 `F.` 应恢复 `primitive_element` 等 FiniteField 成员补全。**已知后续项（预先存在、与本次无关）**：`quadratic_forms/genera/genus.pyi` 的 `genera = staticmethod(genera)`（py_renderer 原样保留源码模块级重绑定）属模块级双声明，CTF 杠杆低，需要时给 py_renderer 加「丢弃 `X = <wrapper>(X)` 自重绑定」规则。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
