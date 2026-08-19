@@ -135,6 +135,20 @@
 
 **验证（用户侧）**：WSL 全量重生成 + `--install --include-py`（2837/0 失败）产物核验：`strongly_regular_db.pyi:35` 变 `from sage.rings.finite_rings.finite_field_constructor import GF as GF` ✓、`finite_field_constructor.pyi:670` 变 `def GF(*args: Any, **kwargs: Any) -> _FieldBase` ✓（链式裁剪保留 `FiniteField = FiniteFieldFactory(...)`、`_FieldBase` import 在位）、剩余 LazyImport 仅 2 处按规则保留 ✓、AST 全树 2847 pyi 类成员**零重复** ✓ → PyCharm **Invalidate Caches** → 保留两行导入的 test.sage 里 `F.` 应恢复 `primitive_element` 等 FiniteField 成员补全。**已知后续项（预先存在、与本次无关）**：`quadratic_forms/genera/genus.pyi` 的 `genera = staticmethod(genera)`（py_renderer 原样保留源码模块级重绑定）属模块级双声明，CTF 杠杆低，需要时给 py_renderer 加「丢弃 `X = <wrapper>(X)` 自重绑定」规则。
 
+## stubgen 0.8.4 第三修（2026-08-19）——S. 补全显示 Integer 成员(S.inverse_mod/bit_length)而 S.xy() 不提示 + `.print` 后缀混入 .isprintable()
+
+**用户报告三现象**：① `S = n_b * Q_a`（Sage 椭圆曲线标量乘）后 `S.` 不提示 `xy()`；② `S.` 却提示 `S.inverse_mod(p)`、`S.bit_length()` 等 S 没有的属性；③ `decrypt_flag(int(shared_secret), iv, encrypted_flag)` 后 `.print` 后缀补全时弹出 `.isprintable()`。
+
+**现象①②定论（非 bug，类型系统天花板）**：`n_b = 6534` 在 .sage 运行时就是 `Integer`（preparser，v1.7.7 字面量定型正确）；二元表达式静态类型**由左侧操作数决定**：`n_b * Q_a` → `Integer.__mul__ -> Integer`（stub 数据）→ **S 静态 = Integer**——补全提示的 inverse_mod/bit_length 是 Integer 的**真实成员**，xy() 不在其中（诚实反映静态类型）。运行时返回点是 **Sage coercion**（Integer 乘点对象委托给点的 `_acted_upon_` action），静态类型系统无法表达这种动态分发——纯 Python 的 `int * obj` 同样静态返回 int（mypy/pyright 一致）。**不可修**：把 Integer.__mul__ 改成 Any/泛型 T 会污染更常见的数值算术提示（Integer*int 运行时是 Integer，T 方案会给 int）。用户 L44/45 的 `S.inverse_mod(p)`/`S.bit_length()` 是在 Integer 补全下写出的**运行时错误代码**（点没有这些方法，运行 AttributeError）。
+**现象③定论（非 bug，平台行为）**：`decrypt_flag` 无返回注解，PyCharm **从函数体推断返回类型**（L25/27 均 `return ...decode('ascii')`）→ str → `.isprintable()` 是 **str 的合法成员**，与后缀模板同屏是 PyCharm 正常行为（成员补全 + 后缀模板混合）。
+
+**顺带发现并修复的两个真实数据缺陷（同类问题）**：
+1. **`constructor.pyi:433` `EllipticCurve = EllipticCurveFactory('...')` 工厂实例赋值无类型**（与 finite_field_constructor.GF 同款缺陷，此前漏修）→ curated `declare: def EllipticCurve(*args: Any, **kwargs: Any) -> EllipticCurve_generic`（模块级单目标赋值整行删）；显式 `from sage.schemes.elliptic_curves.constructor import EllipticCurve` 场景不再断链（隐式场景走 all.pyi 工厂声明本就正常）。
+2. **`ell_point.pyi` 点类缺 `__mul__`**：Sage 标量乘经 coercion action `_acted_upon_` 实现（curated 早有该条目），但**二元表达式静态推断只看 `__mul__`/`__rmul__`** → `P * n` 也拿不到点类型 → curated 新增 `EllipticCurvePoint.__mul__` declare `def __mul__(self, n: Any) -> EllipticCurvePoint`。
+3. `tools/build_supplemental_docs.py` DECLARATIONS 同步两条；全量 112 测试全绿。
+
+**用户侧建议（标量乘写法）**：静态上**只有「点在前」能保持点类型**——把 `S = n_b * Q_a` 改写成 `S = Q_a * n_b`（Sage 运行时两者完全等价），配合本次 `__mul__` 声明，`S.` 即提示 `xy()` 等点成员、不再混入 Integer 成员；`n_b * Q_a` 静态恒为 Integer（左操作数决定，无法表达 coercion）。验证：Invalidate Caches 后 `S.` 应提示 xy()；`.print` 后缀 popup 里 `.isprintable()` 属 str 成员正常现象，可用 `.print` 模板（或给 decrypt_flag 加 `-> str` 注解消除误读）。
+
 ## 历史 bug 与根因（已定位，v1.2.0 修复）
 
 1. **`.sage` 文件中 `GF` 等未导入的 Sage 名字报"未解析引用"**（红线）。
