@@ -10,7 +10,7 @@ This repository is the standalone product line. The existing JetBrains plugin re
 
 ## Current status
 
-The repository is at **P0: repository and product skeleton**. The current source under `plugins/sage-core` is a migration baseline copied from the existing SageMath JetBrains plugin. It is not yet a finished standalone installer.
+The repository is at **P1: product skeleton and SageMath Runtime Manager foundation**. The current source under `plugins/sage-core` is a migration baseline copied from the existing SageMath JetBrains plugin; `core/runtime` now provides the local ZIP install/verification foundation. It is not yet a finished standalone installer.
 
 Read first:
 
@@ -21,12 +21,14 @@ Read first:
 
 ## Product principles
 
-1. Build a SageMath-first scientific IDE instead of cloning all of PyCharm.
+1. Build a complete SageMath-first IntelliJ product instead of cloning all of PyCharm.
 2. Treat CTF workflows as core product capabilities, not a late plugin collection.
-3. Keep SageMath as an external runtime first: native, WSL, Docker, Conda, and later SSH/HPC.
-4. Preserve existing Sage language behavior and tests before extracting platform-independent contracts.
-5. Keep `sage-ide-support` stable as a separate PyCharm plugin product.
-6. Do not bundle SageMath until runtime distribution, SBOM, source correspondence, and license review are complete.
+3. Provide a SageMath Runtime Manager like IDEA JDK and PyCharm Python SDK management.
+4. Keep SageMath execution outside the JVM, while making Runtime download/install/select a first-class IDE capability.
+5. Default CTF execution to unlimited time (`null`); require explicit deadlines when desired and keep cancellation/output limits.
+6. Preserve existing Sage language behavior and tests before extracting platform-independent contracts.
+7. Keep `sage-ide-support` stable as a separate PyCharm plugin product.
+8. Separate IDE distribution, SageMath Runtime distribution, SBOM, source correspondence, and license review.
 
 ## Build status
 

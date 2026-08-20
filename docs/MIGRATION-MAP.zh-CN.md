@@ -37,7 +37,7 @@
 
 - Kotlin JVM；
 - IntelliJ Platform Gradle Plugin；
-- JDK 21；
+- JDK 25；
 - `com.intellij.modules.python`；
 - PythonCore/Python PSI；
 - `com.jetbrains.python.*` API；

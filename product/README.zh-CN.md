@@ -8,7 +8,13 @@
 
 ## 上游 checkout
 
-当前本机上游 checkout：
+当前产品开发使用的官方干净 checkout：
+
+```text
+G:\Projects\intellij-community-sage-ide
+```
+
+现有 Sage PR/研究 checkout（不作为产品基线）：
 
 ```text
 G:\Projects\intellij-community-sage-pr
@@ -25,10 +31,10 @@ G:\Projects\intellij-community-sage-pr
 
 ```text
 upstream repository: https://github.com/JetBrains/intellij-community.git
-checkout path: G:\Projects\intellij-community-sage-pr
+checkout path: G:\Projects\intellij-community-sage-ide
 commit: <待冻结>
 branch/tag: <待冻结>
-JDK: 21
+JDK: 25
 host OS: <构建机>
 ```
 

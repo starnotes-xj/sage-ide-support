@@ -17,12 +17,12 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "25"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Compile model and Sage core
-        run: ./gradlew :core:model:compileKotlin :plugins:sage-core:compileKotlin --no-daemon
-      - name: Run model tests
-        run: ./gradlew :core:model:test -PrunModelTests=true --no-daemon
+      - name: Compile model, runtime, and Sage core
+        run: ./gradlew :core:model:compileKotlin :core:runtime:compileKotlin :core:runtime:compileTestKotlin :plugins:sage-core:compileKotlin --no-daemon
+      - name: Run model and runtime tests
+        run: ./gradlew :core:model:test :core:runtime:test -PrunModelTests=true -PrunRuntimeTests=true --no-daemon
       - name: Build Sage core plugin
         run: ./gradlew :plugins:sage-core:buildPlugin --no-daemon
       - uses: actions/upload-artifact@v4

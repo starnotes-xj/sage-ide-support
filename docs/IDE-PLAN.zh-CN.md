@@ -70,7 +70,7 @@ SageMath 官方资料说明 Sage 是集成 Python、Cython 和大量数学软件
 - [Launching SageMath](https://doc.sagemath.org/html/en/installation/launching.html)
 - [Sage Developer Guide](https://doc.sagemath.org/html/en/developer/index.html)
 
-因此，本产品默认采用“IDE 前端 + 外部 Sage Runtime”的边界。Native、WSL、Docker、Conda、SSH/HPC 通过统一适配器接入；不把 Sage 解释器和所有原生数学依赖直接嵌入 JVM 进程作为首要方案。
+因此，本产品采用“完整 IntelliJ IDE + IDE 管理的 Sage Runtime”的边界：Runtime 生命周期由 IDE 负责发现、下载、校验、安装、选择、切换和回滚，但 Sage 解释器及原生数学依赖仍在受控外部 Runtime 进程中运行。Native、WSL、Docker、Conda、SSH/HPC 通过统一适配器接入；不把 Sage 解释器和所有原生数学依赖直接嵌入 JVM 进程作为首要方案。
 
 ## 3. 产品范围
 
@@ -123,9 +123,22 @@ CTF 能力必须进入产品架构，而不是最后通过零散插件补充。
 
 这些功能优先以“调用本机工具、Sage API 或独立 adapter”的方式实现，避免在 IDE 核心中复制一套安全工具库。
 
-### 3.2 明确不作为首版目标
+### 3.2 完整 IDE 的首版定义
 
-- 首版不捆绑完整 SageMath 安装包；
+“完整 IDE”在本项目中不是把 SageMath 解释器塞进 JVM，而是交付完整的 IntelliJ 产品壳、内置 Sage 功能、可管理的 SageMath SDK/Runtime 和 CTF 工作台：
+
+- 产品启动器、项目模型、编辑器、索引、终端、Git、运行/调试和设置均由独立 IntelliJ 产品提供；
+- SageMath Runtime 由 IDE Catalog/Manager 下载、校验、安装、切换和验证；
+- Sage 运行通过已选 Runtime 执行，不把 Runtime 进程误当成插件开发时的外部手工依赖；
+- Runtime 可选随安装器提供，也可首次启动后下载；两种发行策略共享同一 Runtime Manager 协议；
+- CTF Profile 默认无限制运行，但保留显式取消、输出上限和用户可选 deadline；
+- 产品安装包、Runtime 安装包和许可证/SBOM 是独立交付物，分别审核。
+
+### 3.3 明确不作为首版目标
+
+- 首版不把 SageMath Runtime 硬编码进 IDE 安装器；
+- 产品必须提供类似 IDEA/PyCharm SDK 管理器的 SageMath Runtime Catalog、下载、校验、安装、切换和卸载入口；
+- 首版优先支持官方 HTTPS 归档的本机 Native Runtime，WSL、Docker/Podman 和 SSH/HPC 采用独立目标适配器；
 - 首版不承诺原生 Windows Sage 的完整支持，优先支持 Windows + WSL/容器；
 - 首版不追求覆盖 Sage 全部动态类型；
 - 首版不重写完整 Python/Cython 语言服务；
@@ -175,6 +188,22 @@ SageMath CTF IDE
 ```
 
 ### 4.1 运行时边界
+
+SageMath Runtime 不应只被当作用户手工安装的外部命令。完整 IDE 应像 IDEA 管理 JDK、PyCharm 管理 Python SDK 一样，提供 `SageMath Runtime Manager`：
+
+1. 从受信任的 HTTPS Catalog 展示 SageMath 版本、Python 版本、操作系统、CPU 架构、libc、大小和许可证信息；
+2. 下载到用户可写的 staging 目录，流式计算 SHA-256，校验大小与 manifest；
+3. 防止 Zip Slip、绝对路径、符号链接/设备文件、重复条目、超大归档和路径越界；
+4. 解压后执行 `sage --version` 与最小表达式 smoke probe；
+5. 通过版本目录和 current 指针原子切换，安装失败不能破坏正在使用的 Runtime；
+6. 在 Settings/Project SDK 页面选择、切换、验证和移除 Runtime；
+7. 对 Native、WSL、Docker/Podman、SSH/HPC 使用不同目标适配器，不能把远程容器镜像伪装成本地归档。
+
+当前实现边界：
+
+- `core:runtime`：JDK/Kotlin-only 的平台模型、Catalog、artifact 校验、下载和安全安装；
+- `plugins:sage-core`：IntelliJ Settings、Run Configuration 和 Runtime 服务适配器；
+- `product`：完整 IDE 默认 Runtime 管理入口、产品目录和发行策略。
 
 统一运行时契约需要表达：
 
@@ -381,7 +410,7 @@ P5 之前不承诺“一键安装即包含 SageMath”。
 
 | 维度 | 初始目标 |
 |---|---|
-| JVM | JDK 21 |
+| JVM | JDK 25 |
 | IntelliJ Platform | 一个固定上游 commit/发布版本 |
 | OS | Windows、Linux、macOS |
 | Windows Sage | WSL 优先，Native 标记实验性 |
@@ -395,7 +424,8 @@ Sage 和 CTF 项目会执行任意 Python/Cython/本地代码，因此产品必�
 
 - 明确工作区是可信代码边界；
 - 执行前显示目标、目录和环境；
-- 默认设置超时和输出上限；
+- 默认不设置自动执行 deadline（`null` 表示无限制），但默认设置输出上限；
+- UI 必须明确显示“无限制”，并提供用户取消和可选有限 deadline；
 - 对自动运行 notebook/外部 kernel 做显式提示；
 - 不把 flag、题目输入或 secrets 写入遥测；
 - 对远程/容器执行显示连接目标和挂载目录。
@@ -411,7 +441,7 @@ Sage 和 CTF 项目会执行任意 Python/Cython/本地代码，因此产品必�
 - 图标、模板、文档和第三方工具；
 - 插件 zip、IDE 安装器、更新包和源码归档。
 
-默认架构是外部 Sage Runtime；捆绑 Sage 前必须完成 SBOM、许可证清单、源码对应物和法律审查。外部进程边界降低集成风险，但不自动消除再分发义务。
+默认架构是 IDE 管理的外部 Sage Runtime：安装后可按需下载、校验、安装和切换，或由组织预置。若未来把 Sage Runtime 直接捆绑进发行版，仍必须完成 SBOM、许可证清单、源码对应物和法律审查；外部进程边界降低集成风险，但不自动消除再分发义务。
 
 ## 9. 当前迭代执行清单
 
@@ -431,7 +461,7 @@ Sage 和 CTF 项目会执行任意 Python/Cython/本地代码，因此产品必�
 
 - **为什么新建仓库**：现有插件仓库已经承担 Marketplace 发布、PyCharm 兼容矩阵和插件回归；直接把它改成独立产品会让发布、依赖和历史语义混在一起。
 - **为什么先迁移插件而不是重写**：插件当前已经实现 Sage 语义、CTF postfix 和运行配置；重写会重新引入已解决的平台兼容问题。
-- **为什么先外部 Runtime**：Sage 安装包含大量原生依赖，且官方安装路径存在平台差异；外部进程更容易支持 Native/WSL/Docker/远程目标并降低首版发行风险。
+- **为什么先采用外部进程 Runtime**：Sage 安装包含大量原生依赖，且官方安装路径存在平台差异；由 IDE 管理生命周期、由 Runtime 进程承载解释器，更容易支持 Native/WSL/Docker/远程目标并降低首版发行风险。
 - **为什么先抽 `core:model`**：防止产品层、CTF 层和 IntelliJ action 直接耦合，降低以后从开发实例迁移到安装版的沉默成本。
 
 ## 11. 参考资料

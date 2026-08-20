@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/JetBrains/intellij-community.git",
+  "checkoutPath": "G:\\Projects\\intellij-community-sage-ide",
+  "branchOrTag": "master",
+  "commit": null,
+  "cloneStatus": "官方 blobless/no-checkout clone 已取得候选 HEAD b0001cd6c53979b384def7a1e3febe061e2ef687，HEAD 与 upstream/master 一致，但工作树仍有大规模 staged 删除；在恢复并验证 clean working tree 前禁止冻结 commit。",
+  "buildNumber": null,
+  "jdk": "25",
+  "bazel": null,
+  "overlayRevision": null,
+  "policy": "在选择并验证官方基线前禁止构建发行版；现有 intellij-community-sage-pr 仅作研究参考。"
+}
