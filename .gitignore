@@ -1,0 +1,27 @@
+# Gradle / build outputs
+.gradle/
+.kotlin/
+build/
+**/build/
+.intellijPlatform/
+**/.intellijPlatform/
+
+# IDE metadata
+.idea/
+*.iml
+.vscode/
+
+# Product sandboxes and local upstream checkout pointers
+product/.sandbox/
+out/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Local Sage/CTF data
+*.sage-session
+.env.local
+
+# Ad-hoc lexer test outputs
+*.class

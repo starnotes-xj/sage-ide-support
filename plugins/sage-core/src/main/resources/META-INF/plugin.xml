@@ -1,0 +1,303 @@
+<idea-plugin>
+  <id>com.starnotesxj.sagemath.ctf.sage-core</id>
+  <name>SageMath Core</name>
+  <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-math-ctf-ide">starnotes-xj</vendor>
+  <version>0.1.0-dev</version>
+
+  <change-notes><![CDATA[
+  <ul>
+    <li>1.7.9 — Adds a Debug Sage Script action backed by PyCharm's native
+        Python debug executor. Native Sage launches preserve the .sage filename
+        through a preparser launcher for breakpoints and stack frames. WSL
+        launches activate the configured Conda environment, then run its Python
+        executable, and map the debug client through the WSL2 host gateway;
+        Docker debugging remains
+        unsupported until target-aware helper deployment and path mapping are
+        available.</li>
+    <li>1.7.8 — Fixes IllegalAccessError on PyCharm 2026.2 (split plugin
+        layout): the sugar parser called the Python parser's protected
+        parseSimpleStatement across class loaders, which JVM access control
+        rejects; it now uses the public parseStatement (a superset that
+        falls through to the same method for non-compound statements), so
+        .sage parsing works again.</li>
+    <li>1.7.7 — Mirrors the Sage preparser's numeric-literal conversion at the
+        assignment boundary: the sage command wraps every integer literal as
+        `Integer(...)` and every float as `RealNumber(...)` (verified against
+        `sage.repl.preparse`: `x = 5` → `x = Integer(5)`), so `ct = 2432...`
+        in a .sage file is a Sage Integer at runtime — and now the target is
+        typed accordingly, which is what lets `ct.nth_root(3)` complete.
+        This is a general preparse-semantics rule (no function whitelist —
+        the interim getReturnType patch was removed: type knowledge lives in
+        the stub data layer, which stubgen 0.8.3 extended to pure-Python
+        modules).  Literals in other positions keep their Python types: a PSI
+        identifier's text must come from the document buffer, so the wrapping
+        cannot be reproduced in the parse tree without rewriting the file.</li>
+    <li>1.7.6 — The implicit sage.all namespace now completes in .sage files:
+        typing an unqualified name (RR, Mod, ...) offers the whole injected
+        namespace with a "sage.all" tail.  PyCharm's own importable-name
+        completion only scans real .py modules (it excludes .pyi stubs), so
+        it happened to offer CC/QQ/ZZ (declared in the cc.py bridge file and
+        the pure-Python rational_field.py / integer_mod_ring.py) while RR and
+        Mod — declared only in the generated .pyi stubs — never appeared.
+        The plugin now fills the namespace itself, straight from the stub
+        data layer (sage/all.pyi's __all__ plus its top-level declarations),
+        inserting the bare name without an import (sage injects the
+        namespace at runtime).
+        Also fixes the type chain behind those names: from-import aliases
+        (`from sage.interfaces.ecm import ECM as ECM` — most of all.pyi) are
+        now followed to their real declaration (through the name indexes —
+        the import element's own reference resolves to nothing from inside
+        the stub tree), because PyCharm's type engine cannot derive a type
+        from an import element itself: `ecm = ECM()` was left untyped and
+        `ecm.` completed nothing without an explicit sage.all import.
+        Completion entries now also carry a fixed "sage.all" tail text and
+        callable names (functions, classes, factories like ZZ/QQ/RR/CC,
+        symbolic functions) insert `()` with the caret inside — the
+        `_Type_*` factory attributes are followed through the name indexes
+        (with a `_with_category` fallback for the runtime-only subclass
+        names) instead of relying on the type engine, and
+        `getAnnotationValue()` is read as the annotation text string that
+        this platform actually returns.  `for q in prime_divisors(p - 1)`
+        chains type correctly once the companion stubgen 0.8.3 stubs
+        (pure-Python modules included) are installed.</li>
+    <li>1.7.5 — Typing a quote character in .sage files now inserts the pair
+        ("", '' or triple-quoted) with the caret inside, exactly like .py
+        files: the quoteHandler extension point resolves handlers by the
+        language at the caret (the Sage dialect) without falling back to base
+        languages, so Python's own quote handler never applied to .sage
+        files; a Sage-registered handler now inherits its behavior.</li>
+    <li>1.7.4 — The implicit sage.all namespace now resolves sage.all module
+        declarations FIRST (top-level attributes and from-import aliases like
+        `N` = numerical_approx), before the global name indexes — single-letter
+        names previously collided with unrelated sage modules and produced
+        wrong call signatures ("unexpected argument" on N(1)).</li>
+    <li>1.7.3 — Locate the sage.all stub module through the function index
+        (GF anchor) instead of PyModuleNameIndex, which does not reliably
+        index .pyi stub modules; ZZ/QQ/RR/CC/SR now resolve without the
+        explicit import.</li>
+    <li>1.7.2 — Fix a regression in the implicit sage.all namespace: commenting
+        out `from sage.all import *` in a .sage file no longer leaves GF/ZZ/...
+        flagged as unresolved references (the explicit-import gate is now
+        PSI-based, so a commented-out import does not count).</li>
+    <li>1.7.1 — The New-menu entry text for the Sage file template is now
+        localized through the createFromTemplateActionReplacer pipeline:
+        "Sage 文件" on a zh-CN IDE, "Sage File" otherwise.</li>
+    <li>1.7.0 — "New → SageMath → Sage File" in the project view: create a fresh
+        .sage file from the right-click New menu (file template with a hint that
+        ^ is power / ^^ is XOR and sage.all is implicit).</li>
+    <li>1.6.6 — The settings-preview descriptions of the Sage postfix templates
+        are now in Chinese (matching the IDE language): every call-wrap key plus
+        the .b2i/.i2b conversions.</li>
+    <li>1.6.5 — Fix the settings page "Resource not found" error: every call-wrap
+        postfix template now ships its own description.html (the preview panel
+        resolves it as a static per-class resource and never consults the
+        template's getDescription() method), so clicking .ZZ/.CC/... no longer
+        logs a SEVERE error.</li>
+    <li>1.6.4 — The new-template editor's condition list is trimmed to the
+        Sage-accurate set: string / list / dict / set / tuple / non-None plus the
+        ready-made sage.all class conditions (Integer, Rational, RealNumber,
+        ComplexNumber, FinitePolyExtElement, Polynomial, Matrix, FreeModuleElement)
+        and the class chooser.  Python's number/iterable/boolean/exception categories
+        are not offered — they misjudge sage types (sage numbers don't inherit
+        builtins int/float/complex and sage containers don't inherit abc.Iterable).</li>
+    <li>1.6.3 — Fix the .b2i/.i2b expansions (the selected expression is now substituted
+        instead of the literal word "expr"); the settings preview of the call-wrap family
+        no longer shows an extra dot in the after state (per-key preview resources);
+        double-clicking a Sage template now opens the edit (rename) dialog like Python's
+        built-ins; the new-template editor offers a Sage-apt condition set (expression
+        kinds plus ready-made sage.all class conditions).</li>
+    <li>1.6.2 — Postfix Completion settings: the Sage templates now appear under their
+        own top-level "SageMathPostfix" group (registered under a Python-family
+        meta-language) instead of being nested under Python, and the "+" button can
+        create new Sage postfix templates (same editor as Python's, with
+        expression-type conditions; created templates apply in .sage files only).</li>
+    <li>1.6.1 — Fix the Sage postfix completion popup: SageFile now reports the Sage file
+        type (getFileType() override, mirroring the platform's PyiFile pattern), so the
+        postfix-applicability copy file is created as a SageFile and the .ZZ/.CC/... set
+        appears in .sage files.  The .b2i/.i2b keys now carry the platform-required leading
+        dot (.b2i/.i2b), fixing both their popup entries and expansion.</li>
+    <li>1.6.0 — Full caret lexical remapping to Sage preparse semantics: ^ parses as power
+        (e^254 now follows the __pow__ type chain), ^= as power assignment, ^^ as bitwise
+        XOR and ^^= as XOR assignment — all while the on-screen text never changes.  The
+        misused-^ inspection now targets these remapped forms and its ^= quick fix writes
+        ^^= directly.  The postfix provider now returns only the Sage template set;
+        Python's built-in postfix templates are collected automatically through the
+        base-language chain.</li>
+    <li>1.5.0 — Sage postfix completion: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/.vector/.matrix,
+        plus CTF number theory (.euler_phi, .carmichael_lambda, .divisors, .number_of_divisors,
+        .prime_factors, .squarefree_part, .next_prime, .random_prime, .primitive_root, .factorial,
+        .numerator, .denominator, .continued_fraction, .cyclotomic_polynomial, .sage_eval) and
+        bytes/int conversion (.b2i, .i2b); Python's built-in postfix set stays available.
+        New inspection: flags ^ / ^= in unambiguous bytes contexts (Sage power vs Python XOR)
+        with a quick fix to ^^.  The Sage lexer now merges the ^^ pair into one XOR token,
+        so the correct Sage XOR spelling no longer shows a parser error.</li>
+    <li>1.4.1 — Fix PsiInvalidElementAccessException on PyCharm 2026.2: stale stub-index
+        elements are re-validated and never dereferenced through a dropped AST node.</li>
+    <li>1.4.0 — Supports the whole PyCharm 2026 release year (261–263); GitHub Actions CI
+        builds the plugin and attaches tagged releases.</li>
+    <li>1.3.2 — The project tree shows the Sage icon for .sage files (file PSI override).</li>
+  </ul>
+  ]]></change-notes>
+
+  <description><![CDATA[
+  First-class Sage file support in PyCharm: <code>.sage</code> files are recognized
+  as their own "Sage" file type (Python language intelligence underneath) with full
+  Sage preparse-sugar semantics.
+  <ul>
+    <li>Registers a dedicated <code>Sage</code> file type for <code>*.sage</code> with all
+        Python indexing, inspections and completion.</li>
+    <li>Types Sage generator statements (<code>F.&lt;a&gt; = GF(2^8, ...)</code>,
+        <code>R.&lt;x&gt; = GF(2)[]</code>): <code>F</code> receives the constructor's stub return
+        type, <code>a</code>/<code>x</code> receive the element type from
+        <code>_first_ngens</code>.</li>
+    <li>Resolves generator references inside sugar statements (e.g. <code>x</code> in
+        <code>modulus=x^8 + ...</code> navigates to its declaration).</li>
+    <li>Suppresses parser-error squiggles on sugar statements only, keeping genuine errors red.</li>
+  </ul>
+  Requires the Python Community Edition plugin and the Sage type stubs installed by
+  <code>sage-pycharm-stubgen --install</code> in the WSL Sage environment (configured as the project SDK).
+  If <code>.sage</code> was manually associated with another type in Settings | Editor | File Types,
+  remove that association so this plugin's Sage file type applies.
+  ]]></description>
+
+  <depends>com.intellij.modules.python</depends>
+
+  <idea-version since-build="261" until-build="263.*"/>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Dedicated Sage file type with its own dialect language: the Sage parser
+         understands generator sugar statements, everything else is Python. -->
+    <fileType name="Sage"
+              language="Sage"
+              extensions="sage"
+              implementationClass="com.starnotesxj.sageide.sugar.SageFileType"
+              fieldName="INSTANCE"/>
+
+    <!-- The Sage dialect parser: a Python parser extended with generator sugar. -->
+    <lang.parserDefinition language="Sage"
+                           implementationClass="com.starnotesxj.sageide.parser.SageParserDefinition"/>
+
+    <!-- Typing a quote in .sage files now inserts the pair ("", '') exactly
+         like .py files: the quoteHandler extension point resolves the handler
+         for the language at the caret (the Sage dialect) without falling back
+         to base languages, so Python's handler — registered for "Python" only —
+         never fired in .sage files.  Subclassing PythonQuoteHandler inherits
+         its behavior (pair insertion, closing-quote skipping, triple quotes)
+         unchanged. -->
+    <lang.quoteHandler language="Sage"
+                       implementationClass="com.starnotesxj.sageide.editor.SageQuoteHandler"/>
+
+    <!-- Defensive: if a sugar statement ever falls back to the error-recovered
+         Python tree, suppress the parser-error squiggles on exactly that statement. -->
+    <highlightErrorFilter implementation="com.starnotesxj.sageide.highlight.SageSugarErrorFilter"/>
+
+    <!-- The one silently-breaking Sage/Python difference: in .sage, ^ is
+         exponentiation and ^= is power assignment, so Python XOR must be
+         written ^^ / ^^=.  The lexer remaps these to the preparse semantics;
+         this inspection flags ^ / ^= only in unambiguous bytes contexts
+         (bytes literal/call, bytes-annotated names, or feeding bytes(...));
+         sage power math is never flagged. -->
+    <localInspection language="Sage"
+                     groupName="SageMath"
+                     displayName="Misused ^ operator (Sage power vs Python XOR)"
+                     enabledByDefault="true"
+                     level="ERROR"
+                     implementationClass="com.starnotesxj.sageide.highlight.SageXorInspection"/>
+
+    <!-- Project view icon: the tree resolves file icons through the
+         fileIconProvider chain, where a Python presentation can win for
+         Python-dialect files (Sage is a dialect of Python).  Answer first
+         with the Sage icon for .sage files; other files are untouched. -->
+    <fileIconProvider implementation="com.starnotesxj.sageide.sugar.SageFileIconProvider" order="first"/>
+    <iconProvider implementation="com.starnotesxj.sageide.sugar.SageElementIconProvider" order="first"/>
+
+    <!-- Sage run configurations: execute through the `sage` command (native or WSL),
+         with a gutter run icon, instead of a Python interpreter.  The configuration
+         also implements Python's DebugAwareConfiguration so PyCharm's native
+         Python debug executor can attach pydevd for native Sage launches. -->
+    <configurationType implementation="com.starnotesxj.sageide.run.SageRunConfigurationType"/>
+    <runConfigurationProducer implementation="com.starnotesxj.sageide.run.SageRunConfigurationProducer"/>
+    <runLineMarkerContributor language="Sage"
+                              implementationClass="com.starnotesxj.sageide.run.SageRunLineMarkerContributor"/>
+
+    <!-- Shared Sage execution settings (Settings | Tools | SageMath). -->
+    <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRunSettings"/>
+    <applicationConfigurable parentId="tools"
+                             id="com.starnotesxj.sageide.run.SageRunSettingsConfigurable"
+                             displayName="SageMath"
+                             instance="com.starnotesxj.sageide.run.SageRunSettingsConfigurable"/>
+
+    <!-- Common Sage constructs as live templates (polynomial ring, number field, ...). -->
+    <defaultLiveTemplates file="liveTemplates/Sage.xml"/>
+
+    <!-- Implicit sage.all namespace completion for .sage files WITHOUT an
+         explicit `from sage.all import ...` (see SageImplicitCompletionContributor
+         for the full root-cause write-up: PyCharm's own importable-name
+         completion excludes .pyi stubs, so RR/Mod — declared only in the
+         generated stubs — never completed while CC/QQ/ZZ did via their real
+         .py bridge/source files).
+
+         WHY language="Python": every Python PSI element type reports
+         PythonLanguage, so completion contributors are collected per the
+         language at the caret — which is PYTHON even in .sage files.  A
+         contributor registered for the Sage dialect would never be consulted
+         (the v1.6.0 postfix-popup trap).  The provider gates on the
+         containing file being a .sage file, so plain .py files are
+         untouched. -->
+    <completion.contributor language="Python"
+                            order="first"
+                            implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
+
+    <!-- "New -> SageMath -> Sage File" in the project view: the fileTemplates/
+         resource "Sage File.sage.ft" is loaded as a default template by the
+         platform loader, and this group EP exposes it in the New menu. -->
+    <fileTemplateGroup implementation="com.starnotesxj.sageide.sugar.SageFileTemplatesFactory"/>
+    <!-- The New-menu pipeline for file templates shows FileTemplate.getName()
+         (the resource name "Sage File"), which cannot be localized; this
+         replacer swaps in an action with the localized text (Sage 文件 /
+         Sage File) while creating through the same template. -->
+    <createFromTemplateActionReplacer implementation="com.starnotesxj.sageide.sugar.SageCreateFromTemplateActionReplacer"/>
+
+    <!-- Sage postfix templates: .ZZ/.QQ/.RR/.CC/.SR/.Integer/.N/.factor/.show/
+         .vector/.matrix wrap the expression into the corresponding sage.all call.
+
+         WHY language="SageMathPostfix" (a meta-language matching the Python
+         family, not "Sage" and not "Python"): every Python PSI element type
+         reports PythonLanguage (PyElementType hardcodes PythonFileType's
+         language), so PsiUtilCore.getLanguageAtOffset resolves .sage files as
+         PYTHON — the completion machinery therefore collects postfix providers
+         via allForLanguage(Python) and never sees a provider registered for a
+         concrete non-Python language.  Registering under the SageMathPostfix
+         meta-language makes Python-keyed lookups collect us (LanguageExtension
+         consults matching meta-languages), AND the settings tree — which groups
+         providers by their registration key — shows us under our own top-level
+         "SageMathPostfix" node instead of nesting us under Python.  Each
+         template's isApplicable gates on the containing file being a SageFile,
+         so nothing leaks into plain .py files. -->
+    <codeInsight.template.postfixTemplateProvider language="SageMathPostfix"
+                                                  implementationClass="com.starnotesxj.sageide.sugar.SagePostfixTemplateProvider"/>
+    <!-- The (deprecated) direct metaLanguage EP: MetaLanguageProvider does not
+         exist in PyCharm 2026.1, so this is the only form compatible with
+         261–263. -->
+    <metaLanguage implementation="com.starnotesxj.sageide.sugar.SagePostfixLanguage"/>
+  </extensions>
+
+  <extensions defaultExtensionNs="Pythonid">
+    <!-- Types the factory target (F) and the generator targets (a/x) of
+         F.<a> = Constructor(...) statements.  Return types for sage stub methods
+         are NOT patched here since v1.3.0 — the stubgen curated table annotates
+         them directly, keeping type knowledge in the stub data layer.
+         order="first": the type-provider EP loops (getReferenceType / getReturnType /
+         getCallType) stop at the FIRST provider returning a non-null Ref — even when
+         the Ref's content is null — so a later-registered provider can be shadowed by
+         an earlier one.  This provider answers only for sugar targets in .sage files
+         (null everywhere else), so being consulted first never disturbs the other
+         providers while making our results immune to their Ref-shadows. -->
+    <typeProvider implementation="com.starnotesxj.sageide.type.SageTypeProvider" order="first"/>
+    <!-- The implicit sage.all namespace (.sage files get it injected at runtime)
+         plus generator references inside sugar statements: consulted by PyReferenceImpl
+         whenever ordinary Python resolution fails.  (Replaces the PsiReferenceContributor
+         of <=1.1.x, which the inspection and type inference never consulted.) -->
+    <pyReferenceResolveProvider implementation="com.starnotesxj.sageide.sugar.SageReferenceResolveProvider"/>
+  </extensions>
+</idea-plugin>

@@ -1,0 +1,18 @@
+Sage IDE Support
+
+Third-party material incorporated into this plugin:
+
+1. The SageMath icosahedron logo (src/main/resources/icons/sagemath.png,
+   src/main/resources/icons/sagemath@2x.png) is the official SageMath
+   logo, licensed under CC-BY-SA-4.0
+   (https://creativecommons.org/licenses/by-sa/4.0/).
+   Obtained from the community plugin renpe/intellij-sagemath
+   (https://github.com/renpe/intellij-sagemath), which also ships it
+   under CC-BY-SA-4.0.
+
+2. The Sage run-configuration design and the live templates under
+   src/main/resources/liveTemplates/Sage.xml are derived from the
+   community plugin renpe/intellij-sagemath
+   (https://github.com/renpe/intellij-sagemath), licensed under the
+   Apache License, Version 2.0
+   (https://www.apache.org/licenses/LICENSE-2.0).

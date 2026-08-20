@@ -1,0 +1,2 @@
+# Sage file: plain Python + the implicit sage.all namespace.
+# ^ is power (preparsed to **); Python XOR is written ^^.

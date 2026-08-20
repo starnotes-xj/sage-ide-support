@@ -1,0 +1,7 @@
+{
+  "name": "CTF Crypto",
+  "flagPattern": "flag\\{[^\\r\\n}]+}",
+  "timeoutMillis": 30000,
+  "maxOutputBytes": 1048576,
+  "notes": "Default profile for SageMath number theory and cryptography challenges."
+}

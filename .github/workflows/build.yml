@@ -1,0 +1,32 @@
+name: standalone-ide-build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile model and Sage core
+        run: ./gradlew :core:model:compileKotlin :plugins:sage-core:compileKotlin --no-daemon
+      - name: Run model tests
+        run: ./gradlew :core:model:test -PrunModelTests=true --no-daemon
+      - name: Build Sage core plugin
+        run: ./gradlew :plugins:sage-core:buildPlugin --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sage-core-plugin
+          path: plugins/sage-core/build/distributions/*.zip
+          if-no-files-found: error

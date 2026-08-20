@@ -1,0 +1,1 @@
+int(<spot>expr</spot>).to_bytes(<len>, "big")
