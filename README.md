@@ -7,6 +7,10 @@
 
 ![Sage IDE demo](docs/demo.gif)
 
+> **Install from the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/33595-sage-ide-support)**:
+> Settings → Plugins → search "Sage IDE Support" (or install the zip from a
+> [GitHub release](https://github.com/starnotes-xj/sage-ide-support/releases)).
+
 First-class `.sage` file support in PyCharm — the same code-insight experience
 as `.py` files, while keeping `.sage` as its **own file type** (not "Python
 with a different extension"):

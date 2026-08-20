@@ -6,6 +6,10 @@
 
 ![Sage IDE 演示](docs/demo.gif)
 
+> **从 [JetBrains 插件商城](https://plugins.jetbrains.com/plugin/33595-sage-ide-support) 安装**：
+> Settings → Plugins → 搜索 "Sage IDE Support"（或从
+> [GitHub Release](https://github.com/starnotes-xj/sage-ide-support/releases) 下载 zip 安装）。
+
 在 PyCharm 中获得一等公民级别的 `.sage` 文件支持——与 `.py` 文件完全一致的
 代码提示体验，同时保持 `.sage` 是**独立的文件类型**（不是"换了扩展名的
 Python"）：
