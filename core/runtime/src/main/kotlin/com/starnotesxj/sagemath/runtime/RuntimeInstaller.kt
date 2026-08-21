@@ -481,6 +481,13 @@ class ZipRuntimeInstaller(
     }
 
     private fun forceDirectory(path: Path) {
+        if (PlatformDetector.detect().os == OperatingSystem.WINDOWS) {
+            // Java NIO cannot reliably open a directory as a FileChannel on
+            // Windows. The files and publication pointer are forced
+            // separately; the atomic directory moves provide the remaining
+            // publication boundary on this platform.
+            return
+        }
         runCatching {
             FileChannel.open(path, StandardOpenOption.READ).use { it.force(true) }
         }.getOrElse { error ->

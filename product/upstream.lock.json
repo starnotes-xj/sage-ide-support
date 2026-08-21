@@ -2,11 +2,12 @@
   "repository": "https://github.com/JetBrains/intellij-community.git",
   "checkoutPath": "G:\\Projects\\intellij-community-sage-ide",
   "branchOrTag": "master",
-  "commit": null,
-  "cloneStatus": "官方 blobless/no-checkout clone 已取得候选 HEAD b0001cd6c53979b384def7a1e3febe061e2ef687，HEAD 与 upstream/master 一致，但工作树仍有大规模 staged 删除；在恢复并验证 clean working tree 前禁止冻结 commit。",
-  "buildNumber": null,
+  "commit": "b0001cd6c53979b384def7a1e3febe061e2ef687",
+  "cloneStatus": "官方 checkout 已恢复并验证 clean；staging overlay 只通过 git worktree 临时应用产品文件和 JPS 元数据过滤，不修改官方工作树。",
+  "buildNumber": "263.SNAPSHOT",
   "jdk": "25",
-  "bazel": null,
-  "overlayRevision": null,
-  "policy": "在选择并验证官方基线前禁止构建发行版；现有 intellij-community-sage-pr 仅作研究参考。"
+  "bazel": "9.1.0-jb_20260505_126",
+  "bazelisk": "1.29.0",
+  "overlayRevision": "sage-community-overlay-v1",
+  "policy": "产品构建必须从固定 commit 的 clean 官方 checkout 创建 staging tree；SageMath Core 作为产品外部插件注入，后续迁移为正式 JPS/Bazel bundled plugin。"
 }

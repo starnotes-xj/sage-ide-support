@@ -60,8 +60,10 @@ class FileRuntimeManifestVerifier(
                 if (Files.isSymbolicLink(path)) {
                     problems += "Unexpected symbolic link: $relative"
                 }
-                else if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) && relative !in manifestPaths) {
-                    problems += "Unexpected runtime file: $relative"
+                else if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+                    if (relative !in manifestPaths) {
+                        problems += "Unexpected runtime file: $relative"
+                    }
                 }
                 else if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
                     problems += "Unexpected runtime filesystem entry: $relative"

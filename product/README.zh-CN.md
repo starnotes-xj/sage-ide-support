@@ -38,6 +38,16 @@ JDK: 25
 host OS: <构建机>
 ```
 
+### Gradle 模块构建基线
+
+IntelliJ Community 的主 IDE/安装器构建入口是 Bazel/Bazelisk，不是根 Gradle 工程；其 checkout 中用于构建依赖和辅助开发项目的官方 wrapper 记录为 **Gradle 8.14.5-all**。但本仓库要求 Gradle 主进程也使用 JDK 25，实测当前 Kotlin DSL/Kotlin 2.3.0 组合需要 Gradle **9.6.0**，因此本项目 wrapper 使用 JetBrains 官方 Gradle 分发源：
+
+```text
+distributionUrl=https://cache-redirector.jetbrains.com/services.gradle.org/distributions/gradle-9.6.0-bin.zip
+```
+
+Windows 下 `gradlew.bat` 默认将 `GRADLE_USER_HOME` 放到仓库内的 ASCII 路径 `.gradle-user-home`，避免中文用户目录破坏 Gradle test worker 的 `@argfile`。Gradle 主进程和各 Kotlin 模块的 `jvmToolchain` 都使用 JDK 25。不要把该 Gradle wrapper 误称为完整 Community IDE 构建；完整 IDE 仍按上游 `bazel run //build:idea_community` 和 `installers.cmd` 流程。
+
 ## 产品接入策略
 
 推荐新建一个上游 product overlay，而不是修改 IntelliJ IDEA Community 的身份：

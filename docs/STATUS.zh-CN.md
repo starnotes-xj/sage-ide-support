@@ -2,63 +2,65 @@
 
 ## 当前阶段
 
-P1：完整 IDE 产品基础设施与 SageMath Runtime Manager 原型。
+P1：基于 IntelliJ Community 官方 Bazel/Bazelisk 与 installer 流程的独立 IDE 产品接入。
+
+## 工程关系
+
+最终目标只有一个 SageMath CTF IDE，但工程拆分为：
+
+- `G:\Projects\sage-math-ctf-ide`：产品代码、SageMath Core、Runtime、overlay 和构建编排；
+- `G:\Projects\intellij-community-sage-ide`：固定 SHA 的 IntelliJ/PyCharm Community 官方上游底座，只读、保持 clean；
+- `G:\Projects\sage-ide-support`：独立旧插件仓库，不修改；
+- `G:\Projects\intellij-community-sage-pr`：研究/PR checkout，不作为发行基线。
 
 ## 已完成
 
-- 已确认 `G:\Projects\sage-ide-support` 是独立的 JetBrains 插件仓库；
-- 已创建独立产品仓库 `G:\Projects\sage-math-ctf-ide`；
-- 已将现有插件代码复制到 `plugins/sage-core` 作为迁移基线；
-- 已写入产品计划、CTF 范围和迁移地图；
-- 已核对 IntelliJ Platform、IntelliJ Community 和 SageMath 官方构建资料；
-- 已确认 IntelliJ Community 当前使用 Bazel/installer 入口，产品构建不能假设是普通插件 Gradle 打包；
-- 已把产品目标升级为完整 IDE，并加入可下载/校验/安装/切换 SageMath Runtime 的设计；
-- 已将 `core:model` 默认 CTF 超时改为 `null`（无限制），正数才启用 deadline；
-- 已新增 `core:runtime` 的平台模型、Catalog、HTTPS/SHA-256 下载、强制 manifest、ZIP 安全安装、immutable versions/current 指针和 Runtime Manager 原型；
-- 已建立官方 Community checkout 目标 `G:\Projects\intellij-community-sage-ide` 的独立目录约定，与 `-pr` 研究 checkout 分离；blobless/no-checkout clone 已取得候选 HEAD `b0001cd6c53979b384def7a1e3febe061e2ef687`，但当前 Git 状态存在大规模 staged 删除，尚未达到 clean 产品基线，故未冻结 commit；
-- 已创建 `HANDOFF.md` 和 `product/upstream.lock.json`。
+- 已确认完整产品主流程必须使用官方 Community Bazel/Bazelisk 与 installer，而不是 Gradle-only packaging；
+- 已冻结官方 upstream：`b0001cd6c53979b384def7a1e3febe061e2ef687`；
+- 已冻结 Bazelisk `1.29.0`、JetBrains Bazel `9.1.0-jb_20260505_126`、JDK 25、build number `263.SNAPSHOT`；
+- 已成功构建 Sage Core ZIP：`plugins/sage-core/build/distributions/sage-core-0.1.0-dev.zip`；
+- 已确认 PyCharm Community 已经内置 Python Core、HTML/XML、Git、Terminal、Markdown 等产品插件；SageMath Core 采用同一产品内置插件体验；
+- 已创建独立 Sage product properties，复用 `PyCharmPropertiesBase`，定义 Sage 产品 code、launcher、应用描述、产品布局和外部插件注入；
+- 已创建 staging-only 脚本：`prepare-upstream-staging.ps1`、`apply-overlay.ps1`、`stage-sage-plugin.ps1`、`repair-modules-xml.ps1`、`prune-missing-android-labels.ps1`、`verify-upstream-staging.ps1`、`build-upstream-staged.ps1`；
+- 已创建 Sage 专用 Bazel dev target `//build:sage_math` 和 installer target `//python/build:sage_i_build_target` 的 staging 接入逻辑；
+- 已确认官方 checkout 的中文用户目录会触发 Bazel/JDK 25 内部编码崩溃，构建脚本固定使用 ASCII `-Duser.home`、临时目录和 Bazel output root；
+- 已确认上游 `.idea/modules.xml` 存在约 289 个失效生成 `.iml` 条目，且生成的 Bazel BUILD 还引用缺失 Android 源码树；staging 脚本只过滤这些明确缺失输入并记录 manifest，官方 checkout 保持 clean；
+- 已通过 Gradle 9.6.0 + JDK 25 验证 core:model、core:runtime 测试与 Sage Core Kotlin 编译/插件打包。
 
-## 尚未完成
+## 当前仍需验证
 
-- Runtime Catalog/manifest JSON 序列化、签名与远程 manifest 下载；当前本地 sidecar 已有完整无依赖 codec、大小/记录限制和 locator 全量文件校验，但尚未形成签名信任链；
-- `sage --version` / `1+1` Runtime probe；
-- IntelliJ Settings/Project SDK Runtime adapter；
-- Community product properties/layout/plugin injection；
-- product run/build scripts；
-- 完整 IDE 开发实例和安装器；
-- Runtime 测试在当前 Windows Gradle worker 环境执行；本轮 Java25 测试源码编译通过，但测试执行仍受 worker 启动问题阻塞；
-- 官方 Community checkout 已有候选完整 SHA，但必须清理 staged 删除并重新验证 clean working tree；因此 upstream lock 的 commit 仍为 null，build number/Bazel 与产品 overlay 仍未冻结。
+- staging overlay 的 Bazel target analysis/query（`bazel query //build:sage_math` 已通过）；
+- Sage product properties 在上游 Bazel classpath 中的真实编译；
+- `bazel run //build:sage_math` 开发实例（已进入真实构建，尚未确认产物）；
+- `bazel run //python/build:sage_i_build_target -- -Dintellij.build.target.os=current` 当前平台安装器；
+- 生成安装包中的 `plugins/sage-core`、产品描述、启动器和许可证文件；
+- SageMath Runtime 与第三方数学库的完整许可证/SBOM 审计；
+- SageMath Core 从外部插件注入迁移为正式 Community JPS/Bazel bundled plugin。
 
-## 验证环境记录
+## 重要技术约束
 
-- `./gradlew projects --no-daemon`：通过；
-- `:core:model:compileKotlin`：通过；
-- 本机 Gradle test worker 在 Windows 上以 `ClassNotFoundException: worker.org.gradle.process.internal.worker.GradleWorkerMain` 失败；测试任务通过 `-PrunModelTests=true` 显式开启，默认关闭，CI 需要开启并作为权威结果；
-- `:plugins:sage-core:compileKotlin`：首个产品基线验证已通过；本轮改动后需再次运行；
-- `:core:runtime:compileKotlin` 与 `:core:runtime:compileTestKotlin`：通过；
-- `:core:runtime:test -PrunRuntimeTests=true`：测试代码编译通过，但当前 Windows Gradle worker 仍以 `ClassNotFoundException: worker.org.gradle.process.internal.worker.GradleWorkerMain` 失败；
-- `:core:model:test -PrunModelTests=true`：同一 Gradle worker 环境问题失败，不能归因于模型编译。
+1. 不修改 `G:\Projects\sage-ide-support`；
+2. 不把完整 IntelliJ Community 源码复制进产品仓库；
+3. 不在官方 checkout 直接应用或提交产品 overlay；
+4. 不把 Sage Core ZIP 单独称为完整 IDE；
+5. 直接运行上游 `//build:idea_community` 或原始 PyCharm installer 不会选择 Sage 产品，必须使用 staging 生成的 Sage target；
+6. Runtime 是否捆绑进安装器必须等许可证/SBOM 审计后决定；
+7. Pro 只能包含 Sage 自有商业代码或明确授权组件，不得复制 JetBrains Ultimate/PyCharm Professional 闭源模块。
 
-## 当前硬约束
+## 已知阻塞与风险
 
-1. 不修改源仓库 `G:\Projects\sage-ide-support`；
-2. 不把整个 IntelliJ Community 源码复制进产品仓库；
-3. Runtime 必须由 IDE 管理生命周期，但 IDE 安装器是否捆绑 Runtime 需独立完成许可证/SBOM 审计后决定；
-4. 不把 CTF 能力做成只能依赖 PyCharm 的功能；
-5. 先通过可测试的模块边界降低迁移成本，再接真实产品构建。
+- 上游生成 JPS metadata 与 checkout 文件快照不一致；当前只能通过 staging-only 明确过滤解决；
+- `SageMathCommunityProperties` 当前是产品迁移阶段的源级 overlay，不是官方上游模块；
+- Sage plugin descriptor 依赖 `com.intellij.modules.python`，必须在 PyCharm Community 产品布局中验证；
+- 当前应用图标仍复用 PyCharm Community 资源路径，正式发行前必须提供 SageMath 自有品牌资源；
+- 当前 product target 和 installer target 是 staging 动态注入，随上游 BUILD/registry 格式变化，需要固定 commit 校验；
+- JDK/Bazel 外部依赖下载、Windows 长路径、磁盘空间和构建时间仍可能影响完整安装器验证。
 
 ## 下一轮验收
 
-- `gradlew projects` 能识别新模块；
-- `gradlew :core:model:test` 通过；
-- `gradlew :plugins:sage-core:compileKotlin` 或等价构建成功；
-- `git status` 只显示产品仓库自身文件；
-- 计划和迁移地图中的链接有效。
-
-## 已知风险
-
-- 当前 Sage core 大量依赖 `com.jetbrains.python.*`；
-- 当前调试实现依赖 PyCharm Python debugger；
-- 目标独立产品的 Python/Jupyter/Debugger 模块集合尚未冻结；
-- 官方 Community checkout 目标为 `G:\Projects\intellij-community-sage-ide`，当前 `intellij-community-sage-pr` 仅为研究/PR 参考；官方 clone 已取得 `b0001cd6c53979b384def7a1e3febe061e2ef687`，但工作树存在大规模 staged 删除，清理并复核前禁止作为 clean 产品基线；
-- 目标仓库初始复制不等于已经完成独立 IDE 产品构建。
+- `git -C G:\Projects\intellij-community-sage-ide status --porcelain` 为空；
+- `product/upstream.lock.json` 与实际 HEAD、Bazel/JDK 版本一致；
+- staging verify 通过且 filter manifest 可追溯；
+- Sage-specific Bazel target 至少完成 analysis/query；
+- Gradle 插件构建与现有 core 测试继续通过；
+- 如资源允许，完成当前平台开发实例和 installer；否则保留完整失败日志和最小恢复步骤。
