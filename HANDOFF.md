@@ -268,3 +268,27 @@
 - 当前 manifest 仍然是 checked-in fixture provenance，不是真实 Sage runtime/stubgen artifact；未发现可确认的真实 Sage `.pyi` 输入，因此本轮没有伪造真实导入结果。
 - 本轮未修改 bundled JSON、插件源码、product、installer、release 或官方 checkout；未执行 product fresh build、installer smoke、release audit 或 FinalCheck。
 - 本轮新增错误和真实 exit code 均已在前置增量中记录；最终工作区保持未提交状态。
+- 本轮新错误记录：新增 tree digest/provenance 回归后运行 `python -m unittest tools/sage-api-index/test_generate.py`，真实 exit code `1`；generator 尚未输出 `treeDigest/fileCount`，且 provenance 尚未 fail-closed 校验，导致 3 failures、2 errors。已记录后只读取并修复对应 manifest normalize 范围。
+- 本轮新错误记录：补充 tree metadata 输出后再次运行同一命令，真实 exit code `1`；生成 index 的 sources 仍缺少 treeDigest，且旧缺失路径测试的 provenance 缺少 source 字段，先触发 provenance 校验。已记录后读取最小 metadata 构造和测试 fixture 范围修复。
+
+## 本轮增量：source tree digest 与 provenance fail-closed 契约（2026-08-22）
+
+### 实现
+
+- `tools/sage-api-index/generate.py` 新增确定性 tree digest：按相对路径排序，纳入 `.pyi/.py` 文件内容 SHA-256，输出 `treeDigest`、`fileCount`、`files`。
+- manifest 声明 `treeDigest` 时严格校验内容和文件集合漂移；未声明时仍兼容，并在生成 index 中输出实际 digest。
+- provenance.kind 限制为 `FIXTURE`、`RUNTIME`、`STUBGEN`，且 `generator`、`source` 必须为非空字符串；不允许静默降级输入来源。
+- `tools/sage-api-index/test_generate.py` 新增稳定 digest、正确声明、内容漂移、文件集合漂移和非法 provenance 回归；仍未增加单函数特例。
+
+### Fresh 验证（真实 exit code）
+
+- `python -m unittest tools/sage-api-index/test_generate.py`：exit code `0`，16 tests completed，0 failures。
+- `python -m py_compile tools/sage-api-index/generate.py tools/sage-api-index/test_generate.py`：exit code `0`。
+- `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`：exit code `0`，BUILD SUCCESSFUL；6 actionable tasks up-to-date。
+- `git diff --check`：exit code `0`；仅有既有 LF/CRLF warning。
+
+### 未完成与剩余风险
+
+- 当前 checked-in manifest 仍是 `FIXTURE`，不是真实 Sage runtime/stubgen artifact；本轮未伪造真实 runtime 证据。
+- 本轮未修改 bundled JSON、插件源码、product、installer、release 或官方 checkout；未执行 product fresh build、installer smoke、release audit 或 FinalCheck。
+- 本轮代码与测试尚未提交；下一步可在审阅后提交本切片。

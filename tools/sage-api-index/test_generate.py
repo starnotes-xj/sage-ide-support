@@ -23,7 +23,7 @@ class ManifestContractTest(unittest.TestCase):
                 "artifactId": "fixture-contract",
                 "sageVersion": "10.6",
                 "pythonVersion": "3.11",
-                "provenance": {"kind": "FIXTURE", "generator": "test"},
+                "provenance": {"kind": "FIXTURE", "generator": "test", "source": "test"},
                 "sources": [{"root": "missing-stubs", "kind": "FIXTURE", "locator": "fixture-contract/10.6"}],
             }), encoding="utf-8")
             result = subprocess.run([
@@ -78,6 +78,116 @@ class ManifestContractTest(unittest.TestCase):
             factory = names[("sage.matrix.matrix.matrix", "FUNCTION")]
             self.assertEqual(factory["signatures"][0]["returnType"], {"state": "KNOWN", "expression": "sage.matrix.matrix.Matrix"})
             self.assertTrue(all(source["digest"] for entry in index["entries"] for source in entry["sources"]))
+
+    def test_manifest_tree_digest_is_stable_and_rejects_content_drift(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            shutil.copytree(ROOT / "fixtures" / "sage", source / "sage")
+            manifest = root / "manifest.json"
+            output = root / "index.json"
+            manifest_data = {
+                "artifactId": "fixture-tree-digest",
+                "sageVersion": "10.6",
+                "pythonVersion": "3.11",
+                "provenance": {"kind": "FIXTURE", "generator": "test_generate", "source": "checked-in"},
+                "sources": [{"root": "stubs", "kind": "FIXTURE", "locator": "fixture-tree-digest/10.6"}],
+            }
+            manifest.write_text(json.dumps(manifest_data), encoding="utf-8")
+            command = [
+                sys.executable, str(GENERATOR),
+                "--source-manifest", str(manifest),
+                "--source-base", str(root),
+                "--sage-version", "10.6",
+                "--python-version", "3.11",
+                "--output", str(output),
+                "--expected", str(ROOT / "expected-high-value.json"),
+                "--allow-missing",
+            ]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            first_index = json.loads(output.read_text(encoding="utf-8"))
+            source_metadata = first_index["sources"][0]
+            self.assertEqual(source_metadata["fileCount"], len(source_metadata["files"]))
+            self.assertTrue(source_metadata["treeDigest"])
+
+            manifest_data["sources"][0]["treeDigest"] = source_metadata["treeDigest"]
+            manifest.write_text(json.dumps(manifest_data), encoding="utf-8")
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            second_index = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(second_index["sources"][0]["treeDigest"], source_metadata["treeDigest"])
+
+            target = next(source.glob("**/*.pyi"))
+            target.write_text(target.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
+            drifted = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(drifted.returncode, 2)
+            self.assertIn("tree digest mismatch", drifted.stderr)
+
+    def test_manifest_tree_digest_rejects_file_set_drift(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            shutil.copytree(ROOT / "fixtures" / "sage", source / "sage")
+            manifest = root / "manifest.json"
+            output = root / "index.json"
+            manifest_data = {
+                "artifactId": "fixture-file-set",
+                "sageVersion": "10.6",
+                "pythonVersion": "3.11",
+                "provenance": {"kind": "FIXTURE", "generator": "test_generate", "source": "checked-in"},
+                "sources": [{"root": "stubs", "kind": "FIXTURE", "locator": "fixture-file-set/10.6"}],
+            }
+            manifest.write_text(json.dumps(manifest_data), encoding="utf-8")
+            command = [
+                sys.executable, str(GENERATOR),
+                "--source-manifest", str(manifest),
+                "--source-base", str(root),
+                "--sage-version", "10.6",
+                "--python-version", "3.11",
+                "--output", str(output),
+                "--allow-missing",
+            ]
+            initial = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(initial.returncode, 0, initial.stderr)
+            generated = json.loads(output.read_text(encoding="utf-8"))
+            manifest_data["sources"][0]["treeDigest"] = generated["sources"][0]["treeDigest"]
+            manifest.write_text(json.dumps(manifest_data), encoding="utf-8")
+            (source / "sage" / "added.pyi").write_text("def added() -> int: ...\n", encoding="utf-8")
+            drifted = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(drifted.returncode, 2)
+            self.assertIn("tree digest mismatch", drifted.stderr)
+
+    def test_manifest_provenance_rejects_unknown_or_incomplete_values(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            shutil.copytree(ROOT / "fixtures" / "sage", source / "sage")
+            cases = [
+                ({"kind": "NOT_A_REAL_SOURCE", "generator": "test", "source": "checked-in"}, "provenance.kind"),
+                ({"kind": "FIXTURE", "generator": "", "source": "checked-in"}, "provenance.generator"),
+                ({"kind": "FIXTURE", "generator": "test", "source": ""}, "provenance.source"),
+            ]
+            for provenance, expected_error in cases:
+                with self.subTest(provenance=provenance):
+                    manifest = root / "manifest.json"
+                    manifest.write_text(json.dumps({
+                        "artifactId": "fixture-provenance",
+                        "sageVersion": "10.6",
+                        "pythonVersion": "3.11",
+                        "provenance": provenance,
+                        "sources": [{"root": "stubs", "kind": "FIXTURE", "locator": "fixture-provenance/10.6"}],
+                    }), encoding="utf-8")
+                    result = subprocess.run([
+                        sys.executable, str(GENERATOR),
+                        "--source-manifest", str(manifest),
+                        "--source-base", str(root),
+                        "--sage-version", "10.6",
+                        "--python-version", "3.11",
+                        "--output", str(root / "index.json"),
+                    ], capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn(expected_error, result.stderr)
 
 class GeneratorTest(unittest.TestCase):
     def run_generator(self, source, expected, output, coverage, previous=None, diff=None):

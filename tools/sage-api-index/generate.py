@@ -239,7 +239,14 @@ def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_versio
     index = {"schemaVersion": SCHEMA_VERSION, "sageVersion": sage_version, "pythonVersion": python_version, "generatorVersion": GENERATOR_VERSION, "sourceDigests": source_digests(entries), "entries": entries}
     if metadata:
         index = {**metadata, **index}
-        index["sources"] = [{"kind": source["kind"], "locator": source["locator"], "files": sorted({item["locator"].split(":")[0] for entry in entries for item in entry["sources"] if item["kind"] == source["extractorKind"] and item["locator"].startswith(source["locator"] + "/")})} for source in metadata.get("sourceSpecs", [])]
+        index["sources"] = []
+        for source in metadata.get("sourceSpecs", []):
+            source_spec = SourceSpec(Path("."), source["extractorKind"], source["locator"])
+            source_files = sorted({item["locator"].split(":")[0] for entry in entries for item in entry["sources"] if item["kind"] == source["extractorKind"] and item["locator"].startswith(source["locator"] + "/")})
+            source_data = {"kind": source["kind"], "locator": source["locator"], "fileCount": len(source_files), "files": source_files}
+            if source.get("treeDigest"):
+                source_data["treeDigest"] = source["treeDigest"]
+            index["sources"].append(source_data)
     return index, sorted(diagnostics, key=lambda item: (item["qualifiedName"], item["kind"]))
 
 def conflicting_signatures(signatures: list[dict[str, Any]]) -> bool:
@@ -387,6 +394,25 @@ def diff_indexes(previous: dict[str, Any], current: dict[str, Any]) -> dict[str,
 def discover(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*") if path.suffix in {".pyi", ".py"} and path.is_file())
 
+def tree_metadata(spec: SourceSpec, paths: list[Path]) -> dict[str, Any]:
+    files = []
+    for path in paths:
+        relative = path.relative_to(spec.root).as_posix()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        files.append({"path": relative, "digest": digest})
+    files.sort(key=lambda item: item["path"])
+    payload = json.dumps(files, sort_keys=True, separators=(",", ":"))
+    return {"fileCount": len(files), "files": [item["path"] for item in files], "treeDigest": hashlib.sha256(payload.encode("utf-8")).hexdigest()}
+
+def validate_provenance(value: Any) -> None:
+    if not isinstance(value, dict):
+        raise ValueError("source manifest provenance must be a nonempty object")
+    if value.get("kind") not in {"FIXTURE", "RUNTIME", "STUBGEN"}:
+        raise ValueError("source manifest provenance.kind is invalid")
+    for field in ("generator", "source"):
+        if not isinstance(value.get(field), str) or not value[field].strip():
+            raise ValueError(f"source manifest provenance.{field} must be a nonblank string")
+
 def parse_source_manifest(path: Path, source_base: Path | None = None) -> tuple[list[SourceSpec], dict[str, Any]]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(value, list):
@@ -400,10 +426,9 @@ def parse_source_manifest(path: Path, source_base: Path | None = None) -> tuple[
         for field in ("artifactId", "sageVersion", "pythonVersion"):
             if not isinstance(value[field], str) or not value[field].strip():
                 raise ValueError(f"source manifest {field} must be a nonblank string")
-        if not isinstance(value["provenance"], dict) or not value["provenance"]:
-            raise ValueError("source manifest provenance must be a nonempty object")
+        validate_provenance(value["provenance"])
         items = value["sources"]
-        metadata = {"artifactId": value["artifactId"], "sageVersion": value["sageVersion"], "pythonVersion": value["pythonVersion"], "provenance": value["provenance"], "sourceManifest": path.name, "sourceSpecs": [{"kind": item.get("kind"), "extractorKind": "STUB" if item.get("kind") == "FIXTURE" else item.get("kind"), "locator": item.get("locator")} for item in items if isinstance(item, dict)]}
+        metadata = {"artifactId": value["artifactId"], "sageVersion": value["sageVersion"], "pythonVersion": value["pythonVersion"], "provenance": value["provenance"], "sourceManifest": path.name, "sourceSpecs": [{"kind": item.get("kind"), "extractorKind": "STUB" if item.get("kind") == "FIXTURE" else item.get("kind"), "locator": item.get("locator"), "treeDigest": item.get("treeDigest")} for item in items if isinstance(item, dict)]}
     else:
         raise ValueError("source manifest must be a JSON array or artifact object")
     if not isinstance(items, list) or not items:
@@ -426,7 +451,16 @@ def parse_source_manifest(path: Path, source_base: Path | None = None) -> tuple[
         source_root = source_root.resolve()
         if not source_root.is_dir():
             raise ValueError(f"source manifest root does not exist: {source_root}")
-        specs.append(SourceSpec(source_root, "STUB" if kind == "FIXTURE" else kind, locator, module_prefix))
+        declared_digest = item.get("treeDigest")
+        if declared_digest is not None and (not isinstance(declared_digest, str) or not is_sha256(declared_digest)):
+            raise ValueError(f"source manifest entry {index}.treeDigest is invalid")
+        spec = SourceSpec(source_root, "STUB" if kind == "FIXTURE" else kind, locator, module_prefix)
+        actual = tree_metadata(spec, discover(source_root))["treeDigest"]
+        if declared_digest is not None and actual != declared_digest:
+            raise ValueError(f"source manifest entry {index} tree digest mismatch: expected {declared_digest}, got {actual}")
+        if metadata:
+            metadata["sourceSpecs"][index]["treeDigest"] = actual
+        specs.append(spec)
     return specs, metadata
 
 def build(args: argparse.Namespace) -> int:
