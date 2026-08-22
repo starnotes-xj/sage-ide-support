@@ -9,7 +9,7 @@
 当前判断：
 
 - **P1 Community 产品接入/Windows 构建链：已完成开发基线，尚未完成最终发行门。** Community overlay、Sage product properties、Sage Core bundled plugin、Windows x64/aarch64 installer、sidecar、法律文件 overlay、x64 安装/启动/卸载 smoke 和 FinalCheck 都有历史验证证据。
-- **Sage API 智能：基础链路已运行，尚未完成产品闭环。** 已有版本化模型、Python stdlib AST generator、validated loader/query、factory return type 和矩阵成员补全；真实 Sage 10.9 stubgen 已完成可审计导入，但 bundled index 尚未替换为真实全量 artifact。
+- **Sage API importer/index integration：本轮收尾验证完成，但不代表 Sage 全量代码智能或正式发行完成。** 已有版本化模型、Python stdlib AST generator、validated loader/query、factory return type 和矩阵成员补全；实际 Sage 10.9 artifact 的无 `--allow-conflicts` fresh generator recheck 已通过，但 bundled index 尚未替换为真实全量 artifact。
 - **P2 CTF MVP：尚未完成。** CTF tools、Challenge Profile UI、运行历史、flag/evidence 工作流仍待实现。
 - **Runtime Manager：基础能力存在，产品 UI/adapter 闭环未完成。**
 - **发行：Windows 构建链已验证，但不能称为正式 release。** 签名、法律审批、Linux/macOS、真实 arm64 主机 smoke 和自动更新仍未完成。
@@ -57,7 +57,7 @@
 
 - stub files `2839`；generation report `discovered/generated=2837/2837`、`failed=0`；
 - expected `6/6` 命中，`coverage.scope=SCOPED`、ratio `1.0`、missing `0`；
-- fresh generator recheck 重建 `84159` entries、`24` diagnostics，`conflicts=0`、`isComplete=true`；`24` 条为 duplicate diagnostics，不是冲突；这不是全 API 覆盖证明。
+- final fresh generator recheck（无 `--allow-conflicts`）重建 `84159` entries、`24` diagnostics，`coverage.scope=SCOPED`、expected `6/6`、`coverageRatio=1.0`、`conflicts=0`、`isComplete=true`；`24` 条为 duplicate diagnostics，不是冲突；这不是 Sage 全量代码智能证明。
 
 显式 replay 结果：`build/sage-api-real/replay-scoped`，`probeMode=REPLAY`，probeDigest 与 LIVE 相同。Replay 只用于本机恢复/调试；probeDigest 是 canonical consistency digest，不是签名、来源真实性证明或 release attestation。
 
@@ -102,8 +102,9 @@
 
 - `python -m unittest tools.sage-api-index.test_import_wsl_artifact tools.sage-api-index.test_generate`：51 tests，exit `0`；新增 overload implementation fallback、decorator alias、Literal 域和五个真实冲突形状回归。
 - `python -m py_compile tools/sage-api-index/import_wsl_artifact.py tools/sage-api-index/test_import_wsl_artifact.py tools/sage-api-index/generate.py tools/sage-api-index/test_generate.py`：exit `0`。
-- `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`：`BUILD SUCCESSFUL`。
-- 两次默认 LIVE full：exit `0`，deterministic fields 一致。
+- `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`：`BUILD SUCCESSFUL`；本轮没有修改 `core:sage-api`，该测试用于最终消费链回归确认。
+- final fresh generator recheck 使用实际 WSL Sage 10.9 manifest、未传 `--allow-conflicts`：exit `0`，`sources=2839`、`rawSymbols=84187`、`entries=84159`、`diagnostics=24`、`coverage.scope=SCOPED`、expected `6/6`、`coverageRatio=1.0`、`conflicts=0`、`isComplete=true`。
+- `git diff --name-only` 与 staged 文件清单只包含本次 importer/index integration 和文档文件；没有 bundled index、plugin、product、installer、release 文件。
 - 显式 replay scoped import：exit `0`，`REPLAY` 边界可审计。
 - `git diff --check`：exit `0`。
 - 本轮 conflict 诊断保留原 Dynamic merge 与 fail-closed gate，新增 deterministic `sourceDigest`/`sourceDigests`、声明计数、distinct signature 计数和排序后的 `signatureKeys`；fresh Sage 10.9 recheck 重建 `84159` entries/`24` diagnostics，`conflicts=0`、`isComplete=true`，24 条均为 duplicate diagnostics。
@@ -112,7 +113,7 @@
 
 ## 7. 下一步
 
-下一切片优先做 **conflict-free Sage 10.9 artifact 的可消费 index 质量门**：扩大人工 expected contract、补全参数/文档 provenance，并保持 Unknown/Dynamic 与未证明域重叠的 fail-closed 规则；不得为单个函数增加 Kotlin 特例，不得直接把 84159 entries 的 ignored index 当作 bundled/release artifact。完成后重新运行与本阶段相关的 core/plugin 测试；若进入产品发布阶段，必须另行执行 fresh product build、x64/arm64 smoke、release audit 和 `verify-upstream-staging.ps1 -FinalCheck`。
+本轮最终 handoff：Sage API importer/index integration 已完成验证，停止继续扩大 overload 规则。实际 Sage 10.9 artifact 已在无 `--allow-conflicts` 条件下通过 fresh generator recheck；这不代表 Sage 全量代码智能、bundled index 替换、产品完成或正式发行完成。后续若继续开发，应另行扩大人工 expected contract、补全参数/文档 provenance，并保持 Unknown/Dynamic 与未证明域重叠的 fail-closed 规则；不得把 ignored `84159` entries 直接当作 bundled/release artifact。产品阶段仍需另行执行 fresh product build、x64/arm64 smoke、release audit 和 `verify-upstream-staging.ps1 -FinalCheck`。
 
 ## 8. 参考
 
