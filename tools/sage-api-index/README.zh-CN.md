@@ -73,7 +73,7 @@ python tools/sage-api-index/generate.py `
 }]
 ```
 
-Run it with `--source-manifest manifest.json` instead of `--source-root`. Every extracted entry keeps the source kind, locator, and SHA-256 digest. Duplicate declarations are normalized; conflicting signatures become Dynamic and remain visible in diagnostics. Conflict diagnostics also expose deterministic `sourceDigest`/`sourceDigests`, declaration and distinct-signature counts, plus sorted canonical `signatureKeys`; these fields explain same-file repeated declarations without changing the fail-closed conflict gate or Dynamic merge behavior.
+Run it with `--source-manifest manifest.json` instead of `--source-root`. Every extracted entry keeps the source kind, locator, and SHA-256 digest. A same-name group containing `@overload` declarations exposes only those overload variants; the paired implementation declaration is treated as an implementation detail and is not emitted as a third signature. This applies to `typing.overload`, `typing_extensions.overload`, and imported aliases. Receiver annotations on `self`/`cls` are intentionally omitted from the public parameter list, so receiver-specialized overloads remain conservative until the schema has a persistent receiver-domain field. Literal/wide overlap, unknown types, and ordinary duplicate declarations are not guessed away: without an overload group, conflicting signatures become Dynamic and remain visible in diagnostics. Conflict diagnostics expose deterministic `sourceDigest`/`sourceDigests`, declaration and distinct-signature counts, plus sorted canonical `signatureKeys`.
 
 ## Reports
 

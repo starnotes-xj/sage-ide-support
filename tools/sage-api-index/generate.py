@@ -29,6 +29,7 @@ class RawSymbol:
     kind: str
     source: SourceRef
     signatures: list[dict[str, Any]] = field(default_factory=list)
+    declaration_role: str = "ORDINARY"
     value_type: dict[str, Any] | None = None
     parents: list[str] = field(default_factory=list)
     protocols: list[str] = field(default_factory=list)
@@ -64,9 +65,13 @@ class AstExtractor:
         source = SourceRef(self.source_kind, locator, digest)
         imports = self.collect_imports(tree)
         imports.update({node.name: f"{module}.{node.name}" for node in tree.body if isinstance(node, ast.ClassDef)})
+        roles = declaration_roles(tree.body, imports)
         symbols: list[RawSymbol] = [RawSymbol(module, "MODULE", source, confidence="HIGH")]
         for node in tree.body:
-            symbols.extend(self.extract_top_level(node, module, imports, source))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                symbols.append(self.function_symbol(node, module, None, imports, source, "FUNCTION", roles.get(id(node))))
+            else:
+                symbols.extend(self.extract_top_level(node, module, imports, source))
         return sorted(symbols, key=lambda item: (item.qualified_name, KIND_ORDER[item.kind], item.source.locator))
 
     def module_name(self, path: Path) -> str:
@@ -116,17 +121,20 @@ class AstExtractor:
     def class_symbols(self, node: ast.ClassDef, module: str, imports: dict[str, str], source: SourceRef) -> list[RawSymbol]:
         qualified = f"{module}.{node.name}"
         result = [RawSymbol(qualified, "CLASS", source_at(source, node.lineno), parents=[annotation_text(base, imports) for base in node.bases if annotation_text(base, imports)], documentation=doc(node), confidence="HIGH")]
+        roles = declaration_roles(node.body, imports)
         for member in node.body:
             if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 kind = "PROPERTY" if any(isinstance(item, ast.Name) and item.id == "property" for item in member.decorator_list) else "METHOD"
-                result.append(self.function_symbol(member, module, node.name, imports, source, kind))
+                result.append(self.function_symbol(member, module, node.name, imports, source, kind, roles.get(id(member))))
             elif isinstance(member, ast.AnnAssign) and isinstance(member.target, ast.Name):
                 result.append(RawSymbol(f"{qualified}.{member.target.id}", "PROPERTY", source_at(source, member.lineno), value_type=type_ref(member.annotation, imports), documentation=doc(member), confidence="MEDIUM"))
         return result
 
-    def function_symbol(self, node: ast.FunctionDef | ast.AsyncFunctionDef, module: str, owner: str | None, imports: dict[str, str], source: SourceRef, kind: str) -> RawSymbol:
+    def function_symbol(self, node: ast.FunctionDef | ast.AsyncFunctionDef, module: str, owner: str | None, imports: dict[str, str], source: SourceRef, kind: str, role: str | None = None) -> RawSymbol:
         qualified = ".".join(part for part in (module, owner, node.name) if part)
-        return RawSymbol(qualified, kind, source_at(source, node.lineno), signatures=[signature_for(node, imports)], documentation=doc(node), confidence="HIGH")
+        signature = signature_for(node, imports, owner is not None)
+        declaration_role_value = role or declaration_role(node, imports)
+        return RawSymbol(qualified, kind, source_at(source, node.lineno), signatures=[signature], declaration_role=declaration_role_value, documentation=doc(node), confidence="HIGH")
 
 def source_at(source: SourceRef, line: int) -> SourceRef:
     return SourceRef(source.kind, f"{source.locator}:{line}", source.digest)
@@ -177,11 +185,45 @@ def default_text(node: ast.AST | None) -> str | None:
     except Exception:
         return None
 
-def signature_for(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str]) -> dict[str, Any]:
+def decorator_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = decorator_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    if isinstance(node, ast.Call):
+        return decorator_name(node.func)
+    return None
+
+def declaration_role(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str]) -> str:
+    overload_names = {"overload", "typing.overload", "typing_extensions.overload"}
+    return "OVERLOAD" if any((imports.get(name) or name) in overload_names for name in (decorator_name(item) or "" for item in node.decorator_list)) else "ORDINARY"
+
+def declaration_roles(nodes: list[ast.stmt], imports: dict[str, str]) -> dict[int, str]:
+    roles: dict[int, str] = {}
+    overload_names = {
+        node.name
+        for node in nodes
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and declaration_role(node, imports) == "OVERLOAD"
+    }
+    seen_overload: set[str] = set()
+    for node in nodes:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        role = declaration_role(node, imports)
+        if role == "OVERLOAD":
+            seen_overload.add(node.name)
+        elif node.name in overload_names and node.name in seen_overload:
+            role = "IMPLEMENTATION"
+        roles[id(node)] = role
+    return roles
+
+
+def signature_for(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], is_method: bool = False) -> dict[str, Any]:
     args = node.args
     positional = list(args.posonlyargs) + list(args.args)
     defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
-    parameters = [parameter_for(argument, default, imports, False, False) for argument, default in zip(positional, defaults) if argument.arg not in {"self", "cls"}]
+    parameters = [parameter_for(argument, default, imports, False, False) for argument, default in zip(positional, defaults) if not (is_method and argument.arg in {"self", "cls"})]
     if args.vararg:
         parameters.append(parameter_for(args.vararg, None, imports, False, True))
     parameters.extend(parameter_for(argument, default, imports, True, False) for argument, default in zip(args.kwonlyargs, args.kw_defaults))
@@ -209,12 +251,7 @@ def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_versio
     diagnostics: list[dict[str, Any]] = []
     for key in sorted(grouped, key=lambda item: (item[0], KIND_ORDER[item[1]])):
         candidates = sorted(grouped[key], key=lambda item: (item.source.kind, item.source.locator))
-        signatures: list[dict[str, Any]] = []
-        for candidate in candidates:
-            for signature in candidate.signatures:
-                if signature_key(signature) not in {signature_key(item) for item in signatures}:
-                    signatures.append(signature)
-        conflict = conflicting_signatures(signatures)
+        signatures, conflict = merge_candidate_signatures(candidates)
         if len(candidates) > 1:
             diagnostic = {"kind": "CONFLICT" if conflict else "DUPLICATE", "qualifiedName": key[0], "message": "Conflicting declarations were merged as dynamic" if conflict else "Duplicate declarations were merged", "sources": [candidate.source.json() for candidate in candidates]}
             if conflict:
@@ -269,6 +306,50 @@ def conflicting_signatures(signatures: list[dict[str, Any]]) -> bool:
         names = tuple(parameter["name"] for parameter in signature.get("parameters", []))
         groups.setdefault(names, set()).add(json.dumps(signature.get("returnType", {}), sort_keys=True))
     return any(len(values) > 1 for values in groups.values())
+
+def same_call_shape(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    def shape(signature: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            {key: parameter.get(key) for key in ("name", "defaultValue", "optional", "keywordOnly", "variadic")}
+            for parameter in signature.get("parameters", [])
+        ]
+    return shape(left) == shape(right)
+
+def signature_is_untyped_implementation(signature: dict[str, Any], known_signatures: list[dict[str, Any]]) -> bool:
+    return (
+        signature.get("returnType", {}).get("state") == "UNKNOWN"
+        and not any(parameter.get("type", {}).get("state") == "KNOWN" for parameter in signature.get("parameters", []))
+        and any(same_call_shape(signature, known) for known in known_signatures)
+    )
+
+def merge_candidate_signatures(candidates: list[RawSymbol]) -> tuple[list[dict[str, Any]], bool]:
+    """Expose overload declarations and discard their paired implementation."""
+    if not candidates:
+        return [], False
+    ordered = sorted(candidates, key=lambda item: source_line(item.source.locator))
+    typed = [item for item in ordered if item.declaration_role == "OVERLOAD"]
+    if typed:
+        return unique_signatures(typed), False
+    signatures = unique_signatures(candidates)
+    signatures = [signature for signature in signatures if not signature_is_untyped_implementation(signature, signatures)]
+    if not signatures:
+        signatures = unique_signatures(candidates)
+    return signatures, conflicting_signatures(signatures)
+
+def unique_signatures(candidates: list[RawSymbol]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for candidate in sorted(candidates, key=lambda item: source_line(item.source.locator)):
+        for signature in candidate.signatures:
+            key = signature_key(signature)
+            if key not in seen:
+                seen.add(key)
+                result.append(signature)
+    return result
+
+def source_line(locator: str) -> int:
+    suffix = locator.rsplit(":", 1)[-1]
+    return int(suffix) if suffix.isdigit() else 0
 
 def source_digests(entries: list[dict[str, Any]]) -> dict[str, str]:
     result = {}

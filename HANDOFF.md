@@ -57,7 +57,7 @@
 
 - stub files `2839`；generation report `discovered/generated=2837/2837`、`failed=0`；
 - expected `6/6` 命中，`coverage.scope=SCOPED`、ratio `1.0`、missing `0`；
-- conflicts `5`，所以 `isComplete=false`；这不是全 API 覆盖证明。
+- fresh generator recheck 重建 `84159` entries、`24` diagnostics，`conflicts=0`、`isComplete=true`；`24` 条为 duplicate diagnostics，不是冲突；这不是全 API 覆盖证明。
 
 显式 replay 结果：`build/sage-api-real/replay-scoped`，`probeMode=REPLAY`，probeDigest 与 LIVE 相同。Replay 只用于本机恢复/调试；probeDigest 是 canonical consistency digest，不是签名、来源真实性证明或 release attestation。
 
@@ -65,7 +65,7 @@
 
 ### 最高优先级：Sage 全量代码智能
 
-1. 将真实 Sage 10.9 artifact 继续处理为可消费的版本化 API/type/document index；先解决 5 个 conflicts，再扩大人工 expected 集合并定义真实覆盖门。
+1. 将已完成 conflict-free 的真实 Sage 10.9 artifact 继续处理为可消费的版本化 API/type/document index；扩大人工 expected 集合并定义真实覆盖门。
 2. 接入签名和文档来源，补全参数提示、文档提示、跳转、source-map、重命名和诊断。
 3. 实现通用类型传播：factory/constructor、方法链、parent/mixin/category、运算结果和 Unknown/Dynamic 安全边界。
 4. 解开 `plugins:sage-core` test classpath 的本地 PyCharm module descriptor `module/namespace` 解析阻塞，取得真实 completion/type integration test 证据。
@@ -100,19 +100,19 @@
 
 ## 6. 最近切片验证
 
-- `python -m unittest tools.sage-api-index.test_import_wsl_artifact tools.sage-api-index.test_generate`：47 tests，exit `0`。
+- `python -m unittest tools.sage-api-index.test_import_wsl_artifact tools.sage-api-index.test_generate`：51 tests，exit `0`；新增 overload implementation fallback、decorator alias、Literal 域和五个真实冲突形状回归。
 - `python -m py_compile tools/sage-api-index/import_wsl_artifact.py tools/sage-api-index/test_import_wsl_artifact.py tools/sage-api-index/generate.py tools/sage-api-index/test_generate.py`：exit `0`。
 - `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`：`BUILD SUCCESSFUL`。
 - 两次默认 LIVE full：exit `0`，deterministic fields 一致。
 - 显式 replay scoped import：exit `0`，`REPLAY` 边界可审计。
 - `git diff --check`：exit `0`。
-- 本轮 conflict 诊断保留原 Dynamic merge 与 fail-closed gate，新增 deterministic `sourceDigest`/`sourceDigests`、声明计数、distinct signature 计数和排序后的 `signatureKeys`；真实 10.9 conflict recheck 重建 `84159` entries/`24` diagnostics，5 个 conflicts 均包含这些字段，但仍未被标记为已解决。
+- 本轮 conflict 诊断保留原 Dynamic merge 与 fail-closed gate，新增 deterministic `sourceDigest`/`sourceDigests`、声明计数、distinct signature 计数和排序后的 `signatureKeys`；fresh Sage 10.9 recheck 重建 `84159` entries/`24` diagnostics，`conflicts=0`、`isComplete=true`，24 条均为 duplicate diagnostics。
 - core normalizer 红测首次运行 `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain` 真实 exit `1`：25 tests 中 5 个新增 overload 规则测试失败，暴露旧实现只按参数名分组，未能区分可证明不相交类型，也未能对 Unknown、Literal/宽类型和歧义 arity fail closed；记录此失败后再修复。
 - 首次实现通用 predicate 后 core 测试仍真实 exit `1`：25 tests 中已有基线 `normalizerBuildsVersionedIndexFromRuntimeSources` 与 `extractorParsesClassesMethodsPropertiesAliasesAndOverloads` 失败，说明规则过窄/改变了既有 overload 兼容行为；新增测试未失败。已记录，先恢复既有行为，再收紧仅针对真实冲突的安全判定。
 
 ## 7. 下一步
 
-下一切片优先做 **真实 Sage 10.9 conflicts 定位与可消费 index 的最小闭环**：先为 5 个 conflict 建立可复现诊断/回归，再选择通用合并规则；不得为单个函数增加 Kotlin 特例，不得直接把 84159 entries 的 ignored index 当作 bundled/release artifact。完成后重新运行与本阶段相关的 core/plugin 测试；若进入产品发布阶段，必须另行执行 fresh product build、x64/arm64 smoke、release audit 和 `verify-upstream-staging.ps1 -FinalCheck`。
+下一切片优先做 **conflict-free Sage 10.9 artifact 的可消费 index 质量门**：扩大人工 expected contract、补全参数/文档 provenance，并保持 Unknown/Dynamic 与未证明域重叠的 fail-closed 规则；不得为单个函数增加 Kotlin 特例，不得直接把 84159 entries 的 ignored index 当作 bundled/release artifact。完成后重新运行与本阶段相关的 core/plugin 测试；若进入产品发布阶段，必须另行执行 fresh product build、x64/arm64 smoke、release audit 和 `verify-upstream-staging.ps1 -FinalCheck`。
 
 ## 8. 参考
 

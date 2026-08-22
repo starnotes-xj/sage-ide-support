@@ -5,8 +5,8 @@
 ## 当前已完成
 
 - 真实 Sage 10.9 / Python 3.13.15 / sage-pycharm-stubgen 0.8.3 的 WSL artifact 已有可审计 LIVE/replay 证据。
-- 非空 `expected-sage-10.9.json` contract 命中 6/6，记录为 `coverage.scope=SCOPED`；真实 generator 仍报告 5 个 conflicts，`isComplete=false`。
-- conflict 诊断现在保留 Dynamic merge 和 fail-closed gate，并输出确定性的：
+- 非空 `expected-sage-10.9.json` contract 命中 6/6，记录为 `coverage.scope=SCOPED`；五个 Sage 10.9 generator conflicts 已通过通用 overload/实现声明规则消除，fresh recheck 为 `conflicts=0`、`isComplete=true`。
+- conflict 诊断仍保留 Dynamic merge 和 fail-closed gate，并输出确定性的：
   - `sourceDigest` / `sourceDigests`；
   - `declarationCount`；
   - `distinctSignatureCount`；
@@ -36,6 +36,6 @@
 - 先运行 conflict regression red test，再运行：
   `python -m unittest tools.sage-api-index.test_import_wsl_artifact tools.sage-api-index.test_generate`
 - 运行四文件 `python -m py_compile` 和 `git diff --check`。
-- 对既有真实 artifact 做 generator recheck，确认 5 个 conflicts 都包含可解释且 deterministic 的诊断字段；这不是 fresh LIVE 证明。
+- 对 ignored `build/sage-api-real/` 做 fresh generator recheck，确认 `84159` entries、`conflicts=0`、`isComplete=true`、24 条 duplicate diagnostics；这不是 fresh LIVE 证明。
 - 若切片触及 `core:sage-api` 消费契约，再运行 `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`。
 - 不在本轮宣称 Sage 全量覆盖、产品完成或正式发行；fresh product/installer/release audit 另行执行。

@@ -477,6 +477,177 @@ class GeneratorTest(unittest.TestCase):
             self.assertEqual(len(conflict["signatureKeys"]), 2)
             self.assertEqual(conflict["signatureKeys"], sorted(conflict["signatureKeys"]))
 
+    def test_real_overload_and_implementation_patterns_have_no_conflicts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            source.mkdir()
+            (source / "sage.pyi").write_text(
+                """from typing import Literal, overload
+
+class DiffForm: ...
+class TensorField: ...
+class ScalarField: ...
+class ContinuousMap: ...
+class DiffMap: ...
+class GlobalCputime: ...
+class Integer:
+    @overload
+    def __neg__(self) -> Integer: ...
+    def __neg__(self): ...
+
+class PseudoRiemannianMetric:
+    @overload
+    def volume_form(self) -> DiffForm: ...
+    @overload
+    def volume_form(self, contra: int) -> TensorField: ...
+    def volume_form(self, contra=0): ...
+
+class VectorFieldModule:
+    @overload
+    def alternating_form(self, degree: Literal[0], name=None, latex_name=None) -> ScalarField: ...
+    def alternating_form(self, degree: int, name=None, latex_name=None) -> DiffForm: ...
+
+class TopologicalManifold: ...
+class DifferentiableManifold(TopologicalManifold): ...
+class Manifold:
+    @overload
+    def identity_map(self: TopologicalManifold) -> ContinuousMap: ...
+    @overload
+    def identity_map(self: DifferentiableManifold) -> DiffMap: ...
+    def identity_map(self): ...
+
+@overload
+def cputime(t: float = 0, subprocesses: bool = False) -> float: ...
+@overload
+def cputime(t: GlobalCputime, subprocesses: bool) -> GlobalCputime: ...
+def cputime(t: float | GlobalCputime = 0, subprocesses: bool = False) -> float | GlobalCputime: ...
+""",
+                encoding="utf-8",
+            )
+            expected = root / "expected.json"
+            expected.write_text("[]", encoding="utf-8")
+            output, report_path = root / "index.json", root / "coverage.json"
+            completed = self.run_generator(source, expected, output, report_path)
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["conflicts"], [])
+            entries = {(entry["qualifiedName"], entry["kind"]): entry for entry in index["entries"]}
+            self.assertEqual(
+                {(diagnostic["qualifiedName"], diagnostic["kind"]) for diagnostic in report["diagnostics"]},
+                {
+                    ("sage.Integer.__neg__", "DUPLICATE"),
+                    ("sage.PseudoRiemannianMetric.volume_form", "DUPLICATE"),
+                    ("sage.VectorFieldModule.alternating_form", "DUPLICATE"),
+                    ("sage.Manifold.identity_map", "DUPLICATE"),
+                    ("sage.cputime", "DUPLICATE"),
+                },
+            )
+            expected_shapes = {
+                ("sage.Integer.__neg__", "METHOD"): (1, {"sage.Integer"}),
+                ("sage.PseudoRiemannianMetric.volume_form", "METHOD"): (2, {"sage.DiffForm", "sage.TensorField"}),
+                ("sage.VectorFieldModule.alternating_form", "METHOD"): (1, {"sage.ScalarField"}),
+                ("sage.Manifold.identity_map", "METHOD"): (2, {"sage.ContinuousMap", "sage.DiffMap"}),
+                ("sage.cputime", "FUNCTION"): (2, {"float", "sage.GlobalCputime"}),
+            }
+            for key, (signature_count, return_types) in expected_shapes.items():
+                with self.subTest(key=key):
+                    entry = entries[key]
+                    self.assertEqual(entry["dynamicity"], "STATIC")
+                    self.assertEqual(len(entry["signatures"]), signature_count)
+                    self.assertEqual(
+                        {signature["returnType"]["expression"] for signature in entry["signatures"]},
+                        return_types,
+                    )
+
+    def test_overload_implementation_fallbacks_are_not_exposed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            source.mkdir()
+            (source / "sage.pyi").write_text(
+                """from typing import overload
+
+@overload
+def typed(value: int) -> int: ...
+def typed(value: int | str) -> int | str: ...
+
+@overload
+def untyped(value: int) -> int: ...
+def untyped(value): ...
+
+def duplicate(value: int) -> int: ...
+def duplicate(value: int) -> str: ...
+""",
+                encoding="utf-8",
+            )
+            expected = root / "expected.json"
+            expected.write_text("[]", encoding="utf-8")
+            output, report_path = root / "index.json", root / "coverage.json"
+            completed = self.run_generator(source, expected, output, report_path)
+            self.assertEqual(completed.returncode, 3, completed.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            typed = next(entry for entry in index["entries"] if entry["qualifiedName"] == "sage.typed")
+            untyped = next(entry for entry in index["entries"] if entry["qualifiedName"] == "sage.untyped")
+            duplicate = next(entry for entry in index["entries"] if entry["qualifiedName"] == "sage.duplicate")
+            self.assertEqual(len(typed["signatures"]), 1)
+            self.assertEqual(len(untyped["signatures"]), 1)
+            self.assertEqual(typed["dynamicity"], "STATIC")
+            self.assertEqual(untyped["dynamicity"], "STATIC")
+            self.assertEqual(duplicate["dynamicity"], "DYNAMIC")
+            self.assertEqual([item["qualifiedName"] for item in report["conflicts"]], ["sage.duplicate"])
+
+    def test_overload_decorator_aliases_are_recognized(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            source.mkdir()
+            (source / "sage.pyi").write_text(
+                """from typing_extensions import overload as ov
+
+@ov
+def aliased(value: int) -> int: ...
+def aliased(value: int | str) -> int | str: ...
+""",
+                encoding="utf-8",
+            )
+            expected = root / "expected.json"
+            expected.write_text("[]", encoding="utf-8")
+            output, report_path = root / "index.json", root / "coverage.json"
+            completed = self.run_generator(source, expected, output, report_path)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            entry = next(item for item in index["entries"] if item["qualifiedName"] == "sage.aliased")
+            self.assertEqual(len(entry["signatures"]), 1)
+            self.assertEqual(entry["signatures"][0]["returnType"]["expression"], "int")
+
+    def test_literal_domains_remain_visible_without_widening(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            source.mkdir()
+            (source / "sage.pyi").write_text(
+                """from typing import Literal, overload
+
+@overload
+def literal(value: Literal[0]) -> int: ...
+@overload
+def literal(value: Literal[1]) -> str: ...
+""",
+                encoding="utf-8",
+            )
+            expected = root / "expected.json"
+            expected.write_text("[]", encoding="utf-8")
+            output, report_path = root / "index.json", root / "coverage.json"
+            completed = self.run_generator(source, expected, output, report_path)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            entry = next(item for item in json.loads(output.read_text(encoding="utf-8"))["entries"] if item["qualifiedName"] == "sage.literal")
+            self.assertEqual([item["type"]["expression"] for item in entry["signatures"][0]["parameters"]], ["typing.Literal[0]"])
+            self.assertEqual({item["returnType"]["expression"] for item in entry["signatures"]}, {"int", "str"})
+
     def test_diff_reports_added_removed_and_changed_symbols(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
