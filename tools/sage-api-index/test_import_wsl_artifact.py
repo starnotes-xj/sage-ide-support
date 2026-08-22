@@ -254,6 +254,173 @@ class ImportWslArtifactTest(unittest.TestCase):
             self.assertIn("--coverage-output", command)
             self.assertNotIn("--diagnostics-output", command)
 
+    def test_probe_only_writes_a_live_envelope_without_generator(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            probe_json = root / "probe.json"
+            args = importer.parser().parse_args([
+                "--distro", "Ubuntu",
+                "--conda", "/opt/conda/bin/conda",
+                "--conda-env", "sage",
+                "--probe-only",
+                "--probe-json", str(probe_json),
+                "--probe-timeout", "7",
+            ])
+            with mock.patch.object(importer, "probe_runtime", return_value=self.probe()) as probe_runtime:
+                envelope = importer.run_probe_only(args)
+            probe_runtime.assert_called_once_with(
+                "Ubuntu", "/opt/conda/bin/conda", "sage", timeout=7.0
+            )
+            self.assertEqual(envelope["schema"], 1)
+            self.assertEqual(envelope["mode"], "LIVE")
+            self.assertEqual(envelope["distro"], "Ubuntu")
+            self.assertEqual(envelope["conda"], "/opt/conda/bin/conda")
+            self.assertEqual(envelope["env"], "sage")
+            self.assertEqual(envelope["command"], importer.probe_command("Ubuntu", "/opt/conda/bin/conda", "sage"))
+            self.assertEqual(envelope["probe"], self.probe())
+            self.assertEqual(envelope["probeDigest"], importer.probe_digest(envelope))
+            self.assertEqual(
+                json.loads(probe_json.read_text(encoding="utf-8")),
+                envelope,
+            )
+
+    def test_probe_replay_rejects_unbound_or_tampered_envelopes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            probe_json = root / "probe.json"
+            envelope = importer.make_probe_envelope(
+                "Ubuntu", "/opt/conda/bin/conda", "sage", self.probe()
+            )
+            probe_json.write_text(json.dumps(envelope), encoding="utf-8")
+            for changes, expected in [
+                ({"mode": "REPLAY"}, "mode"),
+                ({"probeDigest": "0" * 64}, "digest"),
+                ({"command": ["wsl"]}, "command"),
+            ]:
+                with self.subTest(changes=changes):
+                    changed = json.loads(json.dumps(envelope))
+                    changed.update(changes)
+                    probe_json.write_text(json.dumps(changed), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, expected):
+                        importer.load_probe_replay(
+                            probe_json, "Ubuntu", "/opt/conda/bin/conda", "sage"
+                        )
+            probe_json.write_text(json.dumps(envelope), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "distro"):
+                importer.load_probe_replay(
+                    probe_json, "Other", "/opt/conda/bin/conda", "sage"
+                )
+            with self.assertRaisesRegex(ValueError, "allow-probe-replay"):
+                importer.resolve_probe(
+                    argparse.Namespace(
+                        distro="Ubuntu", conda="/opt/conda/bin/conda", conda_env="sage",
+                        probe_json=probe_json, allow_probe_replay=False,
+                        probe_only=False, probe_timeout=7.0,
+                    )
+                )
+
+    def test_parser_timeout_defaults_and_cli_overrides_are_stable(self):
+        defaults = importer.parser().parse_args([
+            "--probe-only", "--probe-json", "probe.json",
+        ])
+        self.assertEqual(defaults.probe_timeout, 900.0)
+        self.assertEqual(defaults.generator_timeout, 900.0)
+        overrides = importer.parser().parse_args([
+            "--probe-only", "--probe-json", "probe.json",
+            "--probe-timeout", "4.5", "--generator-timeout", "6.5",
+        ])
+        self.assertEqual(overrides.probe_timeout, 4.5)
+        self.assertEqual(overrides.generator_timeout, 6.5)
+
+    def test_generator_timeout_writes_receipt_and_main_returns_two(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stubs = root / "stubs"
+            stubs.mkdir()
+            report = self.report(
+                stubs, output_root=str(stubs), sage_package=self.probe()["sagePackage"],
+                discovered=0, generated=0,
+            )
+            with (
+                mock.patch.object(importer, "probe_runtime", return_value=self.probe()),
+                mock.patch.object(
+                    importer.subprocess,
+                    "run",
+                    side_effect=subprocess.TimeoutExpired(["python", "generate.py"], 6.5),
+                ) as run,
+                mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            ):
+                code = importer.main([
+                    "--source-root", str(stubs),
+                    "--generation-report", str(report),
+                    "--output-dir", str(root / "out"),
+                    "--generator-timeout", "6.5",
+                ])
+            self.assertEqual(code, 2)
+            self.assertNotIn("Traceback", stderr.getvalue())
+            self.assertEqual(run.call_args.kwargs["timeout"], 6.5)
+            receipt = json.loads((root / "out" / "artifact-receipt.json").read_text(encoding="utf-8"))
+            self.assertEqual(receipt["generator"]["status"], "timeout")
+            self.assertEqual(receipt["generator"]["timeoutSeconds"], 6.5)
+            self.assertIsNone(receipt["generator"]["returncode"])
+
+    def test_probe_timeout_is_passed_and_reported_stably(self):
+        import subprocess
+
+        with mock.patch.object(
+            importer.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(["wsl"], 3.5),
+        ) as run:
+            with self.assertRaisesRegex(ValueError, "timed out"):
+                importer.probe_runtime("Ubuntu", "/opt/conda/bin/conda", "sage", timeout=3.5)
+        self.assertEqual(run.call_args.kwargs["timeout"], 3.5)
+
+    def test_live_and_replay_receipts_record_probe_mode_and_digest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stubs = root / "stubs"
+            (stubs / "sage").mkdir(parents=True)
+            (stubs / "sage" / "__init__.pyi").write_text("def version() -> str: ...\n", encoding="utf-8")
+            report = self.report(
+                stubs, output_root=str(stubs), sage_package=self.probe()["sagePackage"],
+                discovered=1, generated=1,
+            )
+            def fake_generator(command, **kwargs):
+                coverage_path = Path(command[command.index("--coverage-output") + 1])
+                coverage_path.parent.mkdir(parents=True, exist_ok=True)
+                coverage_path.write_text(json.dumps({"diagnostics": [], "conflicts": []}), encoding="utf-8")
+                return mock.Mock(returncode=0, stdout="{}\n", stderr="")
+            base = dict(
+                distro="Ubuntu", conda="/opt/conda/bin/conda", conda_env="sage",
+                source_root=stubs, generation_report=report, expected=None,
+                generator=Path("generate.py"), python=Path(sys.executable),
+                probe_only=False, probe_json=None, allow_probe_replay=False, probe_timeout=7.0,
+            )
+            with (
+                mock.patch.object(importer, "probe_runtime", return_value=self.probe()),
+                mock.patch.object(importer.subprocess, "run", side_effect=fake_generator),
+            ):
+                live = importer.run_import(argparse.Namespace(output_dir=root / "live", **base))
+            envelope = importer.make_probe_envelope(
+                "Ubuntu", "/opt/conda/bin/conda", "sage", self.probe()
+            )
+            probe_json = root / "probe.json"
+            probe_json.write_text(json.dumps(envelope), encoding="utf-8")
+            replay_base = dict(base)
+            replay_base.update(
+                probe_json=probe_json, allow_probe_replay=True,
+            )
+            with mock.patch.object(importer.subprocess, "run", side_effect=fake_generator):
+                replay = importer.run_import(argparse.Namespace(output_dir=root / "replay", **replay_base))
+            self.assertEqual(live["probeMode"], "LIVE")
+            self.assertEqual(replay["probeMode"], "REPLAY")
+            self.assertEqual(live["probeDigest"], envelope["probeDigest"])
+            self.assertEqual(replay["probeDigest"], envelope["probeDigest"])
+            self.assertEqual(replay["probePath"], str(probe_json.resolve()))
+
 
 if __name__ == "__main__":
     unittest.main()

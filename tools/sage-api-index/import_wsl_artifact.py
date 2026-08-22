@@ -144,20 +144,114 @@ def validate_generation_report(
         raise ValueError(f"stub file count {stub_file_count} is less than generated {report['generated']}")
 
 
-def probe_runtime(distro: str, conda: str, conda_env: str) -> dict[str, Any]:
-    result = subprocess.run(
-        probe_command(distro, conda, conda_env),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+def probe_runtime(
+    distro: str, conda: str, conda_env: str, *, timeout: float | None = 900.0
+) -> dict[str, Any]:
+    try:
+        result = subprocess.run(
+            probe_command(distro, conda, conda_env),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ValueError(f"WSL Sage runtime probe timed out after {timeout:g}s") from error
     if result.returncode != 0:
         raise ValueError(f"WSL Sage runtime probe failed ({result.returncode}): {result.stderr.strip()}")
     lines = [line.strip() for line in result.stdout.splitlines() if line.strip().startswith("{")]
     if len(lines) != 1:
         raise ValueError("WSL Sage runtime probe did not emit exactly one JSON object")
     return validate_probe(json.loads(lines[0]))
+
+
+def canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def probe_digest(envelope: dict[str, Any]) -> str:
+    unsigned = {key: value for key, value in envelope.items() if key != "probeDigest"}
+    return hashlib.sha256(canonical_json(unsigned).encode("utf-8")).hexdigest()
+
+
+def make_probe_envelope(distro: str, conda: str, conda_env: str, probe: dict[str, Any]) -> dict[str, Any]:
+    envelope = {
+        "schema": 1,
+        "mode": "LIVE",
+        "command": probe_command(distro, conda, conda_env),
+        "distro": distro,
+        "conda": conda,
+        "env": conda_env,
+        "probe": validate_probe(probe),
+    }
+    envelope["probeDigest"] = probe_digest(envelope)
+    return envelope
+
+
+def write_probe_envelope(path: Path, envelope: dict[str, Any]) -> None:
+    write_json(path, envelope)
+
+
+def load_probe_replay(path: Path, distro: str, conda: str, conda_env: str) -> dict[str, Any]:
+    try:
+        envelope = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"probe replay cannot be read: {error}") from error
+    if not isinstance(envelope, dict) or envelope.get("schema") != 1:
+        raise ValueError("probe replay schema is invalid")
+    required_keys = {"schema", "mode", "command", "distro", "conda", "env", "probe", "probeDigest"}
+    if set(envelope) != required_keys:
+        raise ValueError("probe replay fields are invalid")
+    if envelope.get("mode") != "LIVE":
+        raise ValueError("probe replay mode must be LIVE")
+    if envelope.get("distro") != distro:
+        raise ValueError("probe replay distro does not match")
+    if envelope.get("conda") != conda:
+        raise ValueError("probe replay conda does not match")
+    if envelope.get("env") != conda_env:
+        raise ValueError("probe replay env does not match")
+    if envelope.get("command") != probe_command(distro, conda, conda_env):
+        raise ValueError("probe replay command does not match")
+    validate_probe(envelope.get("probe"))
+    if envelope.get("probeDigest") != probe_digest(envelope):
+        raise ValueError("probe replay digest is invalid")
+    return envelope
+
+
+def run_probe_only(args: argparse.Namespace) -> dict[str, Any]:
+    if args.probe_json is None:
+        raise ValueError("--probe-only requires --probe-json")
+    timeout = getattr(args, "probe_timeout", 900.0)
+    if not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise ValueError("--probe-timeout must be positive")
+    probe = probe_runtime(args.distro, args.conda, args.conda_env, timeout=timeout)
+    envelope = make_probe_envelope(args.distro, args.conda, args.conda_env, probe)
+    write_probe_envelope(args.probe_json.resolve(), envelope)
+    return envelope
+
+
+def resolve_probe(args: argparse.Namespace) -> tuple[dict[str, Any], str, str | None, str]:
+    probe_only = bool(getattr(args, "probe_only", False))
+    probe_json = getattr(args, "probe_json", None)
+    allow_replay = bool(getattr(args, "allow_probe_replay", False))
+    timeout = getattr(args, "probe_timeout", 900.0)
+    if probe_only:
+        raise ValueError("probe-only does not resolve an import probe")
+    if allow_replay and probe_json is None:
+        raise ValueError("--allow-probe-replay requires --probe-json")
+    if probe_json is not None:
+        if not allow_replay:
+            raise ValueError("--probe-json for import requires --allow-probe-replay")
+        envelope = load_probe_replay(probe_json.resolve(), args.distro, args.conda, args.conda_env)
+        return envelope["probe"], "REPLAY", str(probe_json.resolve()), envelope["probeDigest"]
+    envelope = make_probe_envelope(
+        args.distro,
+        args.conda,
+        args.conda_env,
+        probe_runtime(args.distro, args.conda, args.conda_env, timeout=timeout),
+    )
+    return envelope["probe"], "LIVE", None, envelope["probeDigest"]
 
 
 def python_minor(version: str) -> str:
@@ -241,20 +335,35 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def run_import(args: argparse.Namespace) -> dict[str, Any]:
-    source_root = args.source_root.resolve()
-    report_path = args.generation_report.resolve()
+    source_root_arg = getattr(args, "source_root", None)
+    report_arg = getattr(args, "generation_report", None)
+    if source_root_arg is None or report_arg is None:
+        raise ValueError("import requires --source-root and --generation-report")
+    source_root = source_root_arg.resolve()
+    report_path = report_arg.resolve()
     if not source_root.is_dir():
         raise ValueError(f"stub source root does not exist: {source_root}")
+    probe_timeout = getattr(args, "probe_timeout", 900.0)
+    generator_timeout = getattr(args, "generator_timeout", 900.0)
+    if not isinstance(probe_timeout, (int, float)) or probe_timeout <= 0:
+        raise ValueError("--probe-timeout must be positive")
+    if not isinstance(generator_timeout, (int, float)) or generator_timeout <= 0:
+        raise ValueError("--generator-timeout must be positive")
     if not report_path.is_file():
         raise ValueError(f"generation report does not exist: {report_path}")
     if report_path.parent != source_root:
         raise ValueError("generation report must be inside the stub source root")
-    probe = probe_runtime(args.distro, args.conda, args.conda_env)
+    probe, probe_mode, probe_path, probe_digest_value = resolve_probe(args)
     report = json.loads(report_path.read_text(encoding="utf-8"))
     manifest, receipt = build_artifacts(
         probe=probe, report=report, source_root=source_root, report_path=report_path,
         distro=args.distro, conda=args.conda, conda_env=args.conda_env,
     )
+    receipt["probeMode"] = probe_mode
+    receipt["probeDigest"] = probe_digest_value
+    receipt["probeTimeoutSeconds"] = getattr(args, "probe_timeout", 900.0)
+    if probe_path is not None:
+        receipt["probePath"] = probe_path
     output = args.output_dir.resolve()
     manifest_path = output / "source-manifest.json"
     receipt_path = output / "artifact-receipt.json"
@@ -274,16 +383,37 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
         "--raw-output", str(raw_path),
         "--allow-missing", "--allow-conflicts",
     ]
-    if args.expected:
-        command.extend(["--expected", str(args.expected.resolve())])
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    expected = getattr(args, "expected", None)
+    if expected:
+        command.extend(["--expected", str(expected.resolve())])
+    generator_timeout = getattr(args, "generator_timeout", 900.0)
+    receipt["generator"] = {
+        "command": command,
+        "timeoutSeconds": generator_timeout,
+        "status": "running",
+        "returncode": None,
+        "outputs": {"index": str(index_path), "coverage": str(coverage_path), "raw": str(raw_path)},
+    }
+    write_json(receipt_path, receipt)
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=generator_timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        receipt["generator"]["status"] = "timeout"
+        write_json(receipt_path, receipt)
+        raise ValueError(
+            f"Sage API generator timed out after {generator_timeout:g}s"
+        ) from error
     if result.returncode != 0:
+        receipt["generator"]["status"] = "failed"
+        receipt["generator"]["returncode"] = result.returncode
+        write_json(receipt_path, receipt)
         raise ValueError(f"Sage API generator failed ({result.returncode}): {result.stderr.strip() or result.stdout.strip()}")
     summary = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
     if not isinstance(summary, dict):
@@ -297,6 +427,9 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("Sage API coverage diagnostics must be arrays")
     receipt["generator"] = {
         "command": command,
+        "timeoutSeconds": generator_timeout,
+        "status": "completed",
+        "returncode": result.returncode,
         "summary": summary,
         "diagnostics": {"count": len(diagnostics), "conflictCount": len(conflicts)},
         "outputs": {"index": str(index_path), "coverage": str(coverage_path), "raw": str(raw_path)},
@@ -311,18 +444,30 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--distro", default="Ubuntu")
     result.add_argument("--conda", default="/home/starnotes/miniconda3/bin/conda")
     result.add_argument("--conda-env", default="sage")
-    result.add_argument("--source-root", type=Path, required=True)
-    result.add_argument("--generation-report", type=Path, required=True)
+    result.add_argument("--source-root", type=Path)
+    result.add_argument("--generation-report", type=Path)
     result.add_argument("--output-dir", type=Path, default=Path("build/sage-api-real"))
     result.add_argument("--expected", type=Path)
     result.add_argument("--generator", type=Path, default=base / "generate.py")
     result.add_argument("--python", type=Path, default=Path(sys.executable))
+    result.add_argument("--probe-only", action="store_true")
+    result.add_argument("--probe-json", type=Path)
+    result.add_argument("--allow-probe-replay", action="store_true")
+    result.add_argument("--probe-timeout", type=float, default=900.0)
+    result.add_argument("--generator-timeout", type=float, default=900.0)
     return result
 
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        receipt = run_import(parser().parse_args(argv))
+        args = parser().parse_args(argv)
+        if args.probe_only:
+            if args.allow_probe_replay:
+                raise ValueError("--probe-only cannot be combined with --allow-probe-replay")
+            envelope = run_probe_only(args)
+            print(json.dumps(envelope, ensure_ascii=False, sort_keys=True))
+            return 0
+        receipt = run_import(args)
         print(json.dumps({
             "artifactId": receipt["artifactId"],
             "sageVersion": receipt["runtime"]["sageVersion"],
@@ -331,6 +476,8 @@ def main(argv: list[str] | None = None) -> int:
             "stubFileCount": receipt["stubFileCount"],
             "treeDigest": receipt["treeDigest"],
             "output": receipt["generator"]["outputs"]["index"],
+            "probeMode": receipt["probeMode"],
+            "probeDigest": receipt["probeDigest"],
         }, sort_keys=True))
         return 0
     except (OSError, ValueError, json.JSONDecodeError) as error:

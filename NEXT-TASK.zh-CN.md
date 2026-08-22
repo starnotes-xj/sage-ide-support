@@ -1,7 +1,9 @@
-# 下一轮任务：接入 WSL Conda SageMath 10.9 的真实 stubgen artifact
+# 下一轮任务：审计 probe checkpoint 与真实 artifact replay 证据
 
-> 限定切片：把本机 WSL Ubuntu 中现有 Sage 10.9 / Python 3.13 / sage-pycharm-stubgen 0.8.3 产物变成可重建、可审计的本地 artifact 并生成真实 API index；完成后停止，不更新 bundled resource，不进入 product/installer/release。
-> 必须先写失败回归测试，再实现最小通用采集/导入工具；每次失败先记录 HANDOFF.md。
+> 上一轮已实现本地 WSL probe checkpoint、显式 timeout 和 fail-closed replay；下一轮先复核 fresh probe/replay 证据，再决定是否推进真实 artifact 的可审计消费。不得把 replay 或 ignored build 产物宣称为 release/bundled 支持。
+
+> 限定切片：复核本机 WSL Ubuntu 中现有 Sage 10.9 / Python 3.13 / sage-pycharm-stubgen 0.8.3 的 LIVE probe checkpoint 与显式 replay 恢复边界；若执行真实 generator，仍只写 ignored `build/sage-api-real/`，完成后停止，不更新 bundled resource，不进入 product/installer/release。
+> 必须先写失败回归测试，再实现最小通用审计修正；每次失败先记录 HANDOFF.md。
 
 ## 已确认真实环境
 
@@ -15,7 +17,7 @@
 
 ## 目标
 
-新增一个 stdlib-only 的本地 artifact importer：从显式 WSL distro、Conda 路径/环境和 stub root 读取真实版本、stubgen package metadata 与 generation report；在仓库 `build/` 下生成 source manifest、artifact receipt、真实 Sage API index、coverage 与 diagnostics。任何版本/报告/文件数量不一致都 fail-closed。
+复核 importer 的两条边界：默认路径必须执行有界 LIVE probe；只有显式 `--allow-probe-replay` 才能读取 importer 生成的 LIVE envelope。验证 schema、精确 WSL/Conda/env command identity、canonical probeDigest、receipt 的 probeMode/digest 和 generator timeout 执行状态；不把 checkpoint 当作签名或 release attestation。
 
 ## 高价值范围
 

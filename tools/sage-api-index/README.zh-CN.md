@@ -30,6 +30,10 @@ python tools/sage-api-index/import_wsl_artifact.py `
   --output-dir build/sage-api-real
 ```
 
+The importer accepts `--probe-timeout` and `--generator-timeout` (both default to 900 seconds) so WSL probing and generator execution have explicit bounds. To create a bounded live checkpoint without invoking the generator, use `--probe-only --probe-json build/sage-api-real/probe.json`; the envelope records the exact command, `mode=LIVE`, runtime probe, and canonical `probeDigest`.
+
+A captured envelope is usable only with explicit `--allow-probe-replay`; the importer checks its schema, LIVE mode, distro/Conda/environment binding, exact command identity, and digest. Replay is a local recovery/debug boundary, not a release attestation; the default import path still performs a live probe.
+
 The importer requires `failed == 0`, `generated == discovered`, matching Sage/package versions, and at least `generated` `.pyi` files. Sage stubgen may add aggregate files such as `all.pyi` and `__init__.pyi`; extra `.pyi` files are allowed and included in `sourceFileCount` and `treeDigest`. It writes an auditable `STUBGEN` manifest and receipt before invoking the existing generator. The currently verified local environment is Sage 10.9, Python 3.13.15, and sage-pycharm-stubgen 0.8.3. These facts describe this machine artifact, not a bundled or release support guarantee.
 
 ## Generate from one root
