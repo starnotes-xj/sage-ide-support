@@ -1,24 +1,28 @@
 {
   "schemaVersion": 1,
-  "sageVersion": "10.6",
-  "pythonVersion": "3.11",
-  "stubgen": {
-    "name": "sage-pycharm-stubgen",
-    "version": "pending-runtime-export",
-    "source": "runtime-or-user-supplied-pyi"
+  "bundledBaseline": {
+    "sageVersion": "10.6",
+    "pythonVersion": "3.11",
+    "provenance": "FIXTURE",
+    "status": "checked-in fixture contract; not real runtime coverage"
   },
-  "sources": [
+  "verifiedLocalArtifacts": [
     {
-      "kind": "STUB",
-      "locator": "runtime-export/**/*.pyi"
-    },
-    {
-      "kind": "SIGNATURE",
-      "locator": "pending-stubgen-signature-export"
-    },
-    {
-      "kind": "DOCUMENTATION",
-      "locator": "pending-sage-documentation-export"
+      "environment": "WSL Ubuntu / Conda env sage",
+      "sageVersion": "10.9",
+      "pythonVersion": "3.13.15",
+      "stubgen": {
+        "name": "sage-pycharm-stubgen",
+        "version": "0.8.3",
+        "license": "GPL-3.0-only"
+      },
+      "sourceKind": "STUBGEN",
+      "reportContract": {
+        "discovered": 2837,
+        "generated": 2837,
+        "failed": 0
+      },
+      "status": "local auditable artifact; not bundled or committed"
     }
   ],
   "generatorVersion": "sage-api-index-py/0.1"

@@ -179,6 +179,31 @@ class ManifestContractTest(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(output.read_bytes(), second_output.read_bytes())
 
+    def test_manifest_contract_accepts_stubgen_source_without_downgrading_metadata(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            source.mkdir()
+            (source / "sage.pyi").write_text("def version() -> str: ...\n", encoding="utf-8")
+            manifest = root / "manifest.json"
+            output = root / "index.json"
+            manifest.write_text(json.dumps({
+                "artifactId": "stubgen-real-contract",
+                "sageVersion": "10.9",
+                "pythonVersion": "3.13",
+                "provenance": {"kind": "STUBGEN", "generator": "sage-pycharm-stubgen/0.8.3", "source": "wsl:Ubuntu"},
+                "sources": [{"root": "stubs", "kind": "STUBGEN", "locator": "sage-pycharm-stubgen/10.9"}],
+            }), encoding="utf-8")
+            result = subprocess.run([
+                sys.executable, str(GENERATOR), "--source-manifest", str(manifest),
+                "--source-base", str(root), "--sage-version", "10.9", "--python-version", "3.13",
+                "--output", str(output), "--allow-missing",
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(index["sources"][0]["kind"], "STUBGEN")
+            self.assertTrue(all(source["kind"] == "STUB" for entry in index["entries"] for source in entry["sources"]))
+
     def test_manifest_contract_requires_identity_and_provenance(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -582,6 +607,22 @@ class GeneratorTest(unittest.TestCase):
             command = [sys.executable, str(GENERATOR), "--source-root", str(source), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(output), "--expected", str(expected), "--allow-missing", "--min-coverage", "0.5"]
             result = subprocess.run(command, check=False, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_annotated_class_property_does_not_request_an_ast_docstring(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "module.pyi").write_text(
+                "class Holder:\n    value: int\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run([
+                sys.executable, str(GENERATOR), "--source-root", str(root),
+                "--sage-version", "10.9", "--python-version", "3.13",
+                "--output", str(root / "index.json"), "--allow-missing",
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            index = json.loads((root / "index.json").read_text(encoding="utf-8"))
+            self.assertTrue(any(entry["qualifiedName"] == "module.Holder.value" for entry in index["entries"]))
 
     def test_rejects_empty_source_root(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -132,6 +132,8 @@ def source_at(source: SourceRef, line: int) -> SourceRef:
     return SourceRef(source.kind, f"{source.locator}:{line}", source.digest)
 
 def doc(node: ast.AST) -> dict[str, Any] | None:
+    if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        return None
     value = ast.get_docstring(node, clean=False)
     if not value:
         return None
@@ -441,7 +443,7 @@ def parse_source_manifest(path: Path, source_base: Path | None = None) -> tuple[
         kind = item.get("kind")
         locator = item.get("locator")
         module_prefix = item.get("modulePrefix", "")
-        valid_kinds = {"FIXTURE", "RUNTIME", "STUB", "SIGNATURE", "DOCUMENTATION", "USER_STUB", "PROBE"}
+        valid_kinds = {"FIXTURE", "RUNTIME", "STUBGEN", "STUB", "SIGNATURE", "DOCUMENTATION", "USER_STUB", "PROBE"}
         if not isinstance(root, str) or not root.strip() or not isinstance(kind, str) or kind not in valid_kinds or not isinstance(locator, str) or not locator.strip() or not isinstance(module_prefix, str):
             raise ValueError(f"source manifest entry {index} requires root, valid kind, locator, and optional modulePrefix")
         source_root = Path(root)
@@ -453,7 +455,7 @@ def parse_source_manifest(path: Path, source_base: Path | None = None) -> tuple[
         declared_digest = item.get("treeDigest")
         if declared_digest is not None and (not isinstance(declared_digest, str) or not is_sha256(declared_digest)):
             raise ValueError(f"source manifest entry {index}.treeDigest is invalid")
-        spec = SourceSpec(source_root, "STUB" if kind == "FIXTURE" else kind, locator, module_prefix)
+        spec = SourceSpec(source_root, "STUB" if kind in {"FIXTURE", "STUBGEN"} else kind, locator, module_prefix)
         actual_metadata = tree_metadata(spec, discover(source_root))
         actual = actual_metadata["treeDigest"]
         if declared_digest is not None and actual != declared_digest:
