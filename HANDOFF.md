@@ -39,7 +39,7 @@
 
 ### 真实 Sage 10.9 artifact 导入
 
-最近提交：`1e1ba42 Make Sage 10.9 importer coverage evidence auditable`。
+真实 Sage 10.9 artifact 证据基线提交：`1e1ba42 Make Sage 10.9 importer coverage evidence auditable`。
 
 人工维护 contract：`tools/sage-api-index/expected-sage-10.9.json`，绑定：
 
@@ -88,7 +88,7 @@
 
 历史 hardened audit：`errors=0`、`warnings=8`、`passed=false`。已验证 sidecar、SPDX JSON 可解析、法律文件存在和 x64 smoke；但 4 个 EXE 未签名、SPDX 仍有 WIP/NOASSERTION、存在 deprecated `GPL-2.0` 法律事项。因此不能称为正式 release-ready。
 
-已验证代码基线为 `1e1ba42`；`.agent-teams/` 是本地协作归档，不应提交。后续代码切片若改变该基线，必须同步更新本节。
+已验证代码基线包含 `1e1ba42` 的 importer slice 与本轮 conflicts diagnostic slice；`.agent-teams/` 是本地协作归档，不应提交。
 
 ## 5. 仓库与实现边界
 
@@ -100,12 +100,13 @@
 
 ## 6. 最近切片验证
 
-- `python -m unittest tools/sage-api-index/test_import_wsl_artifact.py tools/sage-api-index/test_generate.py`：47 tests，exit `0`。
+- `python -m unittest tools.sage-api-index.test_import_wsl_artifact tools.sage-api-index.test_generate`：47 tests，exit `0`。
 - `python -m py_compile tools/sage-api-index/import_wsl_artifact.py tools/sage-api-index/test_import_wsl_artifact.py tools/sage-api-index/generate.py tools/sage-api-index/test_generate.py`：exit `0`。
 - `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`：`BUILD SUCCESSFUL`。
 - 两次默认 LIVE full：exit `0`，deterministic fields 一致。
 - 显式 replay scoped import：exit `0`，`REPLAY` 边界可审计。
 - `git diff --check`：exit `0`。
+- 本轮 conflict 诊断保留原 Dynamic merge 与 fail-closed gate，新增 deterministic `sourceDigest`/`sourceDigests`、声明计数、distinct signature 计数和排序后的 `signatureKeys`；真实 10.9 conflict recheck 重建 `84159` entries/`24` diagnostics，5 个 conflicts 均包含这些字段，但仍未被标记为已解决。
 
 ## 7. 下一步
 

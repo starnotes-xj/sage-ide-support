@@ -216,7 +216,10 @@ def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_versio
                     signatures.append(signature)
         conflict = conflicting_signatures(signatures)
         if len(candidates) > 1:
-            diagnostics.append({"kind": "CONFLICT" if conflict else "DUPLICATE", "qualifiedName": key[0], "message": "Conflicting declarations were merged as dynamic" if conflict else "Duplicate declarations were merged", "sources": [candidate.source.json() for candidate in candidates]})
+            diagnostic = {"kind": "CONFLICT" if conflict else "DUPLICATE", "qualifiedName": key[0], "message": "Conflicting declarations were merged as dynamic" if conflict else "Duplicate declarations were merged", "sources": [candidate.source.json() for candidate in candidates]}
+            if conflict:
+                diagnostic.update(conflict_metadata(candidates, signatures))
+            diagnostics.append(diagnostic)
         if conflict:
             signatures = [{"parameters": [], "returnType": {"state": "DYNAMIC", "expression": None}}]
         dynamicity = "DYNAMIC" if conflict or any(item.dynamicity == "DYNAMIC" for item in candidates) else ("UNKNOWN" if any(item.dynamicity == "UNKNOWN" for item in candidates) else "STATIC")
@@ -249,6 +252,16 @@ def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_versio
                 source_data["treeDigest"] = source["treeDigest"]
             index["sources"].append(source_data)
     return index, sorted(diagnostics, key=lambda item: (item["qualifiedName"], item["kind"]))
+
+def conflict_metadata(candidates: list[RawSymbol], signatures: list[dict[str, Any]]) -> dict[str, Any]:
+    digests = sorted({candidate.source.digest for candidate in candidates})
+    return {
+        "sourceDigest": digests[0] if len(digests) == 1 else None,
+        "sourceDigests": digests,
+        "declarationCount": len(candidates),
+        "distinctSignatureCount": len({signature_key(signature) for signature in signatures}),
+        "signatureKeys": sorted(signature_key(signature) for signature in signatures),
+    }
 
 def conflicting_signatures(signatures: list[dict[str, Any]]) -> bool:
     groups: dict[tuple[str, ...], set[str]] = {}

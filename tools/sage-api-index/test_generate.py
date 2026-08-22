@@ -470,6 +470,12 @@ class GeneratorTest(unittest.TestCase):
             self.assertEqual(factory["dynamicity"], "DYNAMIC")
             self.assertEqual(factory["signatures"][0]["returnType"]["state"], "DYNAMIC")
             self.assertEqual(len(report["conflicts"]), 1)
+            conflict = report["conflicts"][0]
+            self.assertEqual(conflict["sourceDigest"], factory["sources"][0]["digest"])
+            self.assertEqual(conflict["declarationCount"], 2)
+            self.assertEqual(conflict["distinctSignatureCount"], 2)
+            self.assertEqual(len(conflict["signatureKeys"]), 2)
+            self.assertEqual(conflict["signatureKeys"], sorted(conflict["signatureKeys"]))
 
     def test_diff_reports_added_removed_and_changed_symbols(self):
         with tempfile.TemporaryDirectory() as temp:

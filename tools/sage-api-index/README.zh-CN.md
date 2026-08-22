@@ -73,7 +73,7 @@ python tools/sage-api-index/generate.py `
 }]
 ```
 
-Run it with `--source-manifest manifest.json` instead of `--source-root`. Every extracted entry keeps the source kind, locator, and SHA-256 digest. Duplicate declarations are normalized; conflicting signatures become Dynamic and remain visible in diagnostics.
+Run it with `--source-manifest manifest.json` instead of `--source-root`. Every extracted entry keeps the source kind, locator, and SHA-256 digest. Duplicate declarations are normalized; conflicting signatures become Dynamic and remain visible in diagnostics. Conflict diagnostics also expose deterministic `sourceDigest`/`sourceDigests`, declaration and distinct-signature counts, plus sorted canonical `signatureKeys`; these fields explain same-file repeated declarations without changing the fail-closed conflict gate or Dynamic merge behavior.
 
 ## Reports
 
