@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "wsl-ubuntu-sage-10.9-stubgen-0.8.3",
+  "sageVersion": "10.9",
+  "pythonVersion": "3.13",
+  "stubgen": {
+    "name": "sage-pycharm-stubgen",
+    "version": "0.8.3"
+  },
+  "provenance": {
+    "kind": "STUBGEN",
+    "generator": "sage-pycharm-stubgen/0.8.3",
+    "source": "wsl:Ubuntu:/home/starnotes/miniconda3/bin/conda:env=sage"
+  },
+  "probeDigest": "44945e3f7571bcbc1a558b3af389a3e80cb472f39893373b5d913ad16e56bc9c",
+  "treeDigest": "69d0524a1e588dc31553a5ba3dff2c86f803d1ec5b8bbd44a0aff9392584e066",
+  "symbols": [
+    {
+      "qualifiedName": "sage.arith.misc.factor",
+      "kind": "FUNCTION"
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix2.Matrix",
+      "kind": "CLASS"
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix2.Matrix.determinant",
+      "kind": "METHOD"
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix2.Matrix.solve_right",
+      "kind": "METHOD"
+    },
+    {
+      "qualifiedName": "sage.rings.finite_rings.finite_field_base.FiniteField.gen",
+      "kind": "METHOD"
+    },
+    {
+      "qualifiedName": "sage.rings.polynomial.polynomial_ring.PolynomialRing_generic.gen",
+      "kind": "METHOD"
+    }
+  ],
+  "expectedDigest": "58be913245b0c6acd752332c9f3f1c4ea4e5594b03415d49220b96fcd9b4fcfd"
+}

@@ -1,4 +1,4 @@
-# 下一轮任务：审计 probe checkpoint 与真实 artifact replay 证据
+# 下一轮任务：独立证明 Sage 10.9 LIVE full 可重复性与覆盖门控
 
 > 上一轮已实现本地 WSL probe checkpoint、显式 timeout 和 fail-closed replay；下一轮先复核 fresh probe/replay 证据，再决定是否推进真实 artifact 的可审计消费。不得把 replay 或 ignored build 产物宣称为 release/bundled 支持。
 
@@ -47,6 +47,19 @@
 - 对真实 WSL artifact 执行 importer，读取真实命令 exit code 和输出摘要。
 - `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`。
 - `git diff --check`，更新 HANDOFF 后停止。
+
+## 本轮已完成切片增量
+
+- importer 已增加 artifact-bound expected contract 校验、canonical expectedDigest、`SCOPED`/`UNSCOPED` coverage 摘要和 returncode=0 后置失败终态。
+- `expected-sage-10.9.json` 是人工维护的非空本地 contract；不得复用 Sage 10.6 `expected-high-value.json`，也不得从当前 index 自动反推。
+- REPLAY 仍仅为本机恢复/调试证据；probeDigest 不是签名或 release attestation。
+
+## 下一步验证边界
+
+- 顺序执行两次默认无 `--probe-json`、无 `--allow-probe-replay` 的 LIVE full importer，分别输出到 ignored `build/sage-api-real/live-1/` 与 `live-2/`；记录真实 exit code、terminal receipt、probe/tree/report digest、coverage 和墙钟结果。
+- 任一次 timeout/failed 都只得出“重复性未证实”，不得使用旧 ignored 产物补齐；两次成功后才比较 deterministic fields。
+- 再单独执行一次显式 replay，仅验证恢复边界和同 probeDigest。
+- 不更新 bundled resource、plugin、product、installer 或 release。
 
 ## 完成标准
 

@@ -170,9 +170,159 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+EXPECTED_KINDS = frozenset({"MODULE", "CLASS", "FUNCTION", "METHOD", "PROPERTY", "CONSTANT", "ALIAS"})
+
+
 def probe_digest(envelope: dict[str, Any]) -> str:
     unsigned = {key: value for key, value in envelope.items() if key != "probeDigest"}
     return hashlib.sha256(canonical_json(unsigned).encode("utf-8")).hexdigest()
+
+
+def expected_digest(contract: dict[str, Any]) -> str:
+    unsigned = {key: value for key, value in contract.items() if key != "expectedDigest"}
+    if isinstance(unsigned.get("symbols"), list):
+        unsigned["symbols"] = sorted(
+            unsigned["symbols"],
+            key=lambda item: (item["qualifiedName"], item["kind"]),
+        )
+    return hashlib.sha256(canonical_json(unsigned).encode("utf-8")).hexdigest()
+
+
+def load_expected_contract(
+    path: Path,
+    *,
+    probe: dict[str, Any],
+    artifact_id: str,
+    tree_digest_value: str,
+    distro: str,
+    conda: str,
+    conda_env: str,
+) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"expected contract cannot be read: {error}") from error
+    if not isinstance(value, dict):
+        raise ValueError("expected contract must be a JSON object")
+    required = {
+        "schemaVersion", "artifactId", "sageVersion", "pythonVersion", "stubgen",
+        "provenance", "probeDigest", "treeDigest", "symbols", "expectedDigest",
+    }
+    missing = sorted(required - set(value))
+    if missing:
+        raise ValueError(f"expected contract is missing {', '.join(missing)}")
+    if value["schemaVersion"] != 1:
+        raise ValueError("expected contract schemaVersion must be 1")
+    if value["artifactId"] != artifact_id:
+        raise ValueError("expected contract artifactId does not match artifact")
+    if value["sageVersion"] != probe["sageVersion"]:
+        raise ValueError("expected contract Sage version does not match runtime probe")
+    if value["pythonVersion"] not in {probe["pythonVersion"], python_minor(probe["pythonVersion"])}:
+        raise ValueError("expected contract Python version does not match runtime probe")
+    stubgen = value["stubgen"]
+    runtime_stubgen = probe["stubgen"]
+    if not isinstance(stubgen, dict) or stubgen.get("name") != runtime_stubgen["name"] or stubgen.get("version") != runtime_stubgen["version"]:
+        raise ValueError("expected contract stubgen does not match runtime probe")
+    provenance = value["provenance"]
+    source_prefix = f"wsl:{distro}:{conda}:env={conda_env}"
+    if not isinstance(provenance, dict):
+        raise ValueError("expected contract provenance must be an object")
+    if provenance.get("kind") != "STUBGEN":
+        raise ValueError("expected contract provenance kind must be STUBGEN")
+    if provenance.get("generator") != f"{runtime_stubgen['name']}/{runtime_stubgen['version']}":
+        raise ValueError("expected contract provenance generator does not match runtime probe")
+    if not isinstance(provenance.get("source"), str) or not provenance["source"].startswith(source_prefix):
+        raise ValueError("expected contract provenance source does not match runtime binding")
+    expected_probe_digest = make_probe_envelope(distro, conda, conda_env, probe)["probeDigest"]
+    if value["probeDigest"] != expected_probe_digest:
+        raise ValueError("expected contract probeDigest does not match runtime probe")
+    if value["treeDigest"] != tree_digest_value:
+        raise ValueError("expected contract treeDigest does not match source tree")
+    symbols = value["symbols"]
+    if not isinstance(symbols, list) or not symbols:
+        raise ValueError("expected contract symbols must be a non-empty array")
+    normalized_symbols: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for index, symbol in enumerate(symbols):
+        if not isinstance(symbol, dict) or not isinstance(symbol.get("qualifiedName"), str) or not symbol["qualifiedName"].strip():
+            raise ValueError(f"expected contract symbol {index} requires qualifiedName")
+        if symbol.get("kind") not in EXPECTED_KINDS:
+            raise ValueError(f"expected contract symbol {index} kind is invalid")
+        normalized = {"qualifiedName": symbol["qualifiedName"], "kind": symbol["kind"]}
+        key = (normalized["qualifiedName"], normalized["kind"])
+        if key in seen:
+            raise ValueError(f"expected contract contains duplicate symbol {key[0]} ({key[1]})")
+        seen.add(key)
+        normalized_symbols.append(normalized)
+    normalized = dict(value)
+    normalized["symbols"] = sorted(normalized_symbols, key=lambda item: (item["qualifiedName"], item["kind"]))
+    if not isinstance(value["expectedDigest"], str) or value["expectedDigest"] != expected_digest(normalized):
+        raise ValueError("expected contract expectedDigest is invalid")
+    return normalized
+
+
+def coverage_summary(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("Sage API coverage must be a JSON object")
+    arrays = ("expected", "covered", "missing", "conflicts", "diagnostics")
+    for field in arrays:
+        if not isinstance(value.get(field), list):
+            raise ValueError(f"Sage API coverage {field} must be an array")
+    expected_count = value.get("expectedCount")
+    covered_count = value.get("coveredCount")
+    missing_count = value.get("missingCount", len(value["missing"]))
+    if type(expected_count) is not int or expected_count != len(value["expected"]):
+        raise ValueError("Sage API coverage expectedCount is invalid")
+    if type(covered_count) is not int or covered_count != len(value["covered"]):
+        raise ValueError("Sage API coverage coveredCount is invalid")
+    if type(missing_count) is not int or missing_count != len(value["missing"]):
+        raise ValueError("Sage API coverage missingCount is invalid")
+    conflict_count = len(value["conflicts"])
+    if expected_count == 0:
+        return {
+            "scope": "UNSCOPED",
+            "expectedCount": 0,
+            "coveredCount": 0,
+            "missingCount": 0,
+            "coverageRatio": None,
+            "isComplete": False,
+            "conflictCount": conflict_count,
+        }
+    ratio = value.get("coverageRatio")
+    if isinstance(ratio, bool) or not isinstance(ratio, (int, float)) or not 0 <= ratio <= 1:
+        raise ValueError("Sage API coverage coverageRatio is invalid")
+    if not isinstance(value.get("isComplete"), bool):
+        raise ValueError("Sage API coverage isComplete is invalid")
+    return {
+        "scope": "SCOPED",
+        "expectedCount": expected_count,
+        "coveredCount": covered_count,
+        "missingCount": missing_count,
+        "coverageRatio": ratio,
+        "isComplete": value["isComplete"],
+        "conflictCount": conflict_count,
+    }
+
+
+def validate_generator_summary(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or not value:
+        raise ValueError("Sage API generator summary must be a non-empty JSON object")
+    required = {"entries", "diagnostics", "coverage", "missing"}
+    missing = sorted(required - set(value))
+    if missing:
+        raise ValueError(f"Sage API generator summary is missing {', '.join(missing)}")
+    if any(type(value[field]) is not int or value[field] < 0 for field in ("entries", "diagnostics", "missing")):
+        raise ValueError("Sage API generator summary counts are invalid")
+    if isinstance(value["coverage"], bool) or not isinstance(value["coverage"], (int, float)):
+        raise ValueError("Sage API generator summary coverage is invalid")
+    return value
+
+
+def persist_generator_failure(receipt_path: Path, receipt: dict[str, Any], error: str, returncode: int | None) -> None:
+    receipt["generator"]["status"] = "failed"
+    receipt["generator"]["returncode"] = returncode
+    receipt["generator"]["error"] = error
+    write_json(receipt_path, receipt)
 
 
 def make_probe_envelope(distro: str, conda: str, conda_env: str, probe: dict[str, Any]) -> dict[str, Any]:
@@ -384,8 +534,23 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
         "--allow-missing", "--allow-conflicts",
     ]
     expected = getattr(args, "expected", None)
+    expected_contract = None
     if expected:
-        command.extend(["--expected", str(expected.resolve())])
+        expected_contract = load_expected_contract(
+            expected.resolve(), probe=probe, artifact_id=manifest["artifactId"],
+            tree_digest_value=receipt["treeDigest"], distro=args.distro, conda=args.conda, conda_env=args.conda_env,
+        )
+        expected_array_path = output / "expected-symbols.json"
+        write_json(expected_array_path, expected_contract["symbols"])
+        command.extend(["--expected", str(expected_array_path)])
+        receipt["expected"] = {
+            "path": str(expected.resolve()),
+            "digest": expected_contract["expectedDigest"],
+            "artifactId": expected_contract["artifactId"],
+            "count": len(expected_contract["symbols"]),
+        }
+    else:
+        receipt["expected"] = {"count": 0, "scope": "UNSCOPED"}
     generator_timeout = getattr(args, "generator_timeout", 900.0)
     receipt["generator"] = {
         "command": command,
@@ -411,27 +576,28 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
             f"Sage API generator timed out after {generator_timeout:g}s"
         ) from error
     if result.returncode != 0:
-        receipt["generator"]["status"] = "failed"
-        receipt["generator"]["returncode"] = result.returncode
-        write_json(receipt_path, receipt)
-        raise ValueError(f"Sage API generator failed ({result.returncode}): {result.stderr.strip() or result.stdout.strip()}")
-    summary = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
-    if not isinstance(summary, dict):
-        raise ValueError("Sage API generator summary must be a JSON object")
-    coverage_report = json.loads(coverage_path.read_text(encoding="utf-8"))
-    if not isinstance(coverage_report, dict):
-        raise ValueError("Sage API coverage must be a JSON object")
-    diagnostics = coverage_report.get("diagnostics", [])
-    conflicts = coverage_report.get("conflicts", [])
-    if not isinstance(diagnostics, list) or not isinstance(conflicts, list):
-        raise ValueError("Sage API coverage diagnostics must be arrays")
+        error = f"Sage API generator failed ({result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
+        persist_generator_failure(receipt_path, receipt, error, result.returncode)
+        raise ValueError(error)
+    try:
+        summary = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
+        summary = validate_generator_summary(summary)
+        if not index_path.is_file() or not coverage_path.is_file() or not raw_path.is_file():
+            raise ValueError("Sage API post-generator outputs are missing")
+        coverage_report = json.loads(coverage_path.read_text(encoding="utf-8"))
+        coverage = coverage_summary(coverage_report)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        message = f"Sage API post-generator validation failed: {error}"
+        persist_generator_failure(receipt_path, receipt, message, result.returncode)
+        raise ValueError(message) from error
+    receipt["coverage"] = coverage
     receipt["generator"] = {
         "command": command,
         "timeoutSeconds": generator_timeout,
         "status": "completed",
         "returncode": result.returncode,
         "summary": summary,
-        "diagnostics": {"count": len(diagnostics), "conflictCount": len(conflicts)},
+        "diagnostics": {"count": len(coverage_report["diagnostics"]), "conflictCount": len(coverage_report["conflicts"])},
         "outputs": {"index": str(index_path), "coverage": str(coverage_path), "raw": str(raw_path)},
     }
     write_json(receipt_path, receipt)
@@ -478,6 +644,8 @@ def main(argv: list[str] | None = None) -> int:
             "output": receipt["generator"]["outputs"]["index"],
             "probeMode": receipt["probeMode"],
             "probeDigest": receipt["probeDigest"],
+            "expected": receipt.get("expected"),
+            "coverage": receipt.get("coverage"),
         }, sort_keys=True))
         return 0
     except (OSError, ValueError, json.JSONDecodeError) as error:

@@ -25,5 +25,21 @@
       "status": "local auditable artifact; not bundled or committed"
     }
   ],
-  "generatorVersion": "sage-api-index-py/0.1"
+  "generatorVersion": "sage-api-index-py/0.1",
+  "coverageContracts": [
+    {
+      "path": "tools/sage-api-index/expected-sage-10.9.json",
+      "artifactId": "wsl-ubuntu-sage-10.9-stubgen-0.8.3",
+      "sageVersion": "10.9",
+      "pythonVersion": "3.13",
+      "stubgen": "sage-pycharm-stubgen/0.8.3",
+      "provenance": "STUBGEN",
+      "status": "local manual expected contract; not bundled or release attestation"
+    }
+  ],
+  "replayEvidence": {
+    "status": "local recovery/debug only",
+    "attestation": false,
+    "releaseSupport": false
+  }
 }
