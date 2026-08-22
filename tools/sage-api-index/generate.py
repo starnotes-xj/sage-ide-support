@@ -362,6 +362,16 @@ def coverage(index: dict[str, Any], diagnostics: list[dict[str, Any]], expected:
     dynamic = [item for item in covered if resolved[(item["qualifiedName"], item["kind"])] and (entries[resolved[(item["qualifiedName"], item["kind"])]]["dynamicity"] != "STATIC" or any(signature.get("returnType", {}).get("state") == "DYNAMIC" for signature in entries[resolved[(item["qualifiedName"], item["kind"])]].get("signatures", [])))]
     return {"expected": expected, "covered": covered, "missing": missing, "withoutSignature": without_signature, "dynamic": dynamic, "conflicts": [item for item in diagnostics if item["kind"] == "CONFLICT"], "expectedCount": len(expected), "coveredCount": len(covered), "coverageRatio": 1.0 if not expected else len(covered) / len(expected), "isComplete": not missing and not any(item["kind"] == "CONFLICT" for item in diagnostics), "diagnostics": diagnostics}
 
+def gate_failures(report: dict[str, Any], args: argparse.Namespace) -> list[str]:
+    failures = []
+    if report["missing"] and not args.allow_missing:
+        failures.append(f"missing={len(report['missing'])}")
+    if report["conflicts"] and not args.allow_conflicts:
+        failures.append(f"conflicts={len(report['conflicts'])}")
+    if args.min_coverage is not None and report["coverageRatio"] < args.min_coverage:
+        failures.append(f"coverage={report['coverageRatio']:.6f}<min={args.min_coverage:.6f}")
+    return failures
+
 def diff_indexes(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
     before = {(item["qualifiedName"], item["kind"]): item for item in previous.get("entries", [])}
     after = {(item["qualifiedName"], item["kind"]): item for item in current.get("entries", [])}
@@ -388,6 +398,9 @@ def parse_source_manifest(path: Path) -> list[SourceSpec]:
         if not isinstance(root, str) or not root.strip() or not isinstance(kind, str) or kind not in {"RUNTIME", "STUB", "SIGNATURE", "DOCUMENTATION", "USER_STUB", "PROBE"} or not isinstance(locator, str) or not locator.strip() or not isinstance(module_prefix, str):
             raise ValueError(f"source manifest entry {index} requires root, valid kind, locator, and optional modulePrefix")
         source_root = Path(root)
+        if not source_root.is_absolute():
+            source_root = path.parent / source_root
+        source_root = source_root.resolve()
         if not source_root.is_dir():
             raise ValueError(f"source manifest root does not exist: {source_root}")
         specs.append(SourceSpec(source_root, kind, locator, module_prefix))
@@ -416,7 +429,13 @@ def build(args: argparse.Namespace) -> int:
         previous = json.loads(args.previous.read_text(encoding="utf-8"))
         args.diff_output.parent.mkdir(parents=True, exist_ok=True)
         args.diff_output.write_text(json.dumps(diff_indexes(previous, index), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(json.dumps({"sources": len(paths), "rawSymbols": len(raw), "entries": len(index["entries"]), "diagnostics": len(diagnostics), "coverage": report["coverageRatio"], "missing": len(report["missing"])}, ensure_ascii=False))
+    summary = {"sources": len(paths), "rawSymbols": len(raw), "entries": len(index["entries"]), "diagnostics": len(diagnostics), "coverage": report["coverageRatio"], "missing": len(report["missing"])}
+    failures = gate_failures(report, args)
+    if failures:
+        summary["gateFailures"] = failures
+        print(json.dumps(summary, ensure_ascii=False), file=sys.stderr)
+        return 3
+    print(json.dumps(summary, ensure_ascii=False))
     return 0
 
 def parser() -> argparse.ArgumentParser:
@@ -433,6 +452,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--coverage-output", type=Path)
     result.add_argument("--previous", type=Path)
     result.add_argument("--diff-output", type=Path)
+    result.add_argument("--min-coverage", type=float)
+    result.add_argument("--allow-missing", action="store_true")
+    result.add_argument("--allow-conflicts", action="store_true")
     return result
 
 if __name__ == "__main__":

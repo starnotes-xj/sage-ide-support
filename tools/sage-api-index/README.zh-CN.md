@@ -56,7 +56,7 @@ Run it with `--source-manifest manifest.json` instead of `--source-root`. Every 
 
 - `--output`: schemaVersion=1 index;
 - `--raw-output`: raw extractor records;
-- `--expected` + `--coverage-output`: missing, alias-aware coverage ratio, dynamic, no-signature, and conflict reports;
+- `--expected` + `--coverage-output`: missing, alias-aware coverage ratio, dynamic, no-signature, and conflict reports; `--min-coverage` enforces a numeric threshold;
 - `--previous` + `--diff-output`: added/removed/changed symbol report;
 - malformed source, invalid manifest, unsupported schema fields, or empty roots return exit code 2.
 

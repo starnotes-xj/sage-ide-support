@@ -4,7 +4,7 @@
 
 P1 已完成主要 Community 产品接入与 Windows 双架构 hardened installer 验证；P2 CTF MVP 尚未实现。当前下一条核心产品主线是 SageMath 全量代码智能（API 索引、类型推断、补全和提示），Jupyter 降为后续可选兼容层。
 
-**本轮状态同步（2026-08-22）**：已提交 `8e47fa8`，完成第一条可运行的数据驱动 Sage API 链路：版本化模型/normalizer、严格 JSON reader/loader、不可变 query、唯一 KNOWN factory return type、父类/别名成员闭包和矩阵成员补全消费。随后新增 `tools/sage-api-index/generate.py` 与高价值域 fixture，支持 AST 提取、canonical alias 归并、严格 contract validation、coverage/diagnostics/diff；新增 Kotlin `SageApiIndexGenerator` 统一入口，并用 generated artifact 驱动 bundled resource。Python generator 5 项测试、core 20 项测试和 Sage Core Kotlin 编译均通过；当前 artifact 为 8 个 fixture source、45 entries，coverage 15/16（0.9375），不代表真实 Sage 全量覆盖。
+**本轮状态同步（2026-08-22）**：已提交 `0871c81`、`1696048`，完成第一条可运行的数据驱动 Sage API 链路：版本化模型/normalizer、严格 JSON reader/loader、不可变 query、唯一 KNOWN factory return type、父类/别名成员闭包和矩阵成员补全消费。随后新增 `tools/sage-api-index/generate.py` 与高价值域 fixture，支持 AST 提取、canonical alias 归并、严格 contract validation、可组合 source manifest、coverage/diagnostics/diff；新增 Kotlin `SageApiIndexGenerator` 统一入口，并用 generated artifact 驱动 bundled resource。Python generator 9 项测试、core 20 项测试和 Sage Core Kotlin 编译均通过；当前 artifact 为 8 个 fixture source、45 entries，coverage 15/16（0.9375），不代表真实 Sage 全量覆盖。生成器 gate 默认拒绝 missing/conflict，允许通过显式 `--allow-missing`/`--allow-conflicts` 记录 fixture 或迁移例外，gate 失败仍会写出 index/coverage 审计产物并返回 exit code 3。
 
 ### 本轮文档结论：未完成项与优先级
 

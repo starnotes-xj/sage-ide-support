@@ -120,7 +120,7 @@ Sage Runtime / sage-pycharm-stubgen / 官方文档 / 用户 stub
 
 ## 5. 当前实现切片与完整性定义
 
-当前已落地的最小可验证切片不是全量实现：`core:sage-api` 已具备版本化模型、normalizer、稳定 JSON writer、严格 reader/loader、不可变 query 和 Unknown/Dynamic 安全边界；`plugins:sage-core` 已消费该 index，支持唯一 KNOWN factory return type、父类/别名成员闭包和矩阵 `solve_right`/`determinant` 等数据驱动成员补全。bundled JSON 只用于可运行回归，不能作为 Sage 全量覆盖声明。
+当前已落地的最小可验证切片不是全量实现：`core:sage-api` 已具备版本化模型、normalizer、稳定 JSON writer、严格 reader/loader、不可变 query 和 Unknown/Dynamic 安全边界；`plugins:sage-core` 已消费 generated bundled index，支持唯一 KNOWN factory return type、父类/别名成员闭包和矩阵 `solve_right`/`determinant` 等数据驱动成员补全。Python generator 已支持 canonical alias、source manifest、严格 contract validation、coverage/diff 与默认 missing/conflict gate；当前 fixture artifact 仍不能作为 Sage 全量覆盖声明。
 
 下一阶段必须优先把真实 Sage Runtime / `sage-pycharm-stubgen` / 签名 / 文档输入接入生成流水线，再用覆盖率报告和 product-level golden tests 证明完整性。
 

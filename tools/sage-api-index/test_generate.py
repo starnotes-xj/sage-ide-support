@@ -28,7 +28,8 @@ class GeneratorTest(unittest.TestCase):
             expected.write_text((ROOT / "expected-high-value.json").read_text(encoding="utf-8"), encoding="utf-8")
             output, report_path = root / "index.json", root / "coverage.json"
             completed = self.run_generator(source, expected, output, report_path)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.returncode, 3, completed.stderr)
+            self.assertIn("missing=1", completed.stderr)
             index = json.loads(output.read_text(encoding="utf-8"))
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(index["schemaVersion"], 1)
@@ -51,7 +52,7 @@ class GeneratorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             output = root / "index.json"
-            result = subprocess.run([sys.executable, str(GENERATOR), "--source-manifest", str(ROOT / "source-manifest.json"), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(output)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, str(GENERATOR), "--source-manifest", str(ROOT / "source-manifest.json"), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(output), "--expected", str(ROOT / "expected-high-value.json"), "--allow-missing"], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             index = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(index["sourceDigests"]["fixture-stubgen/10.6/sage/all.pyi"], index["entries"][0]["sources"][0]["digest"])
@@ -92,7 +93,8 @@ class GeneratorTest(unittest.TestCase):
             expected.write_text("[{\"qualifiedName\":\"sage.factory\",\"kind\":\"FUNCTION\"}]", encoding="utf-8")
             output, report_path = root / "index.json", root / "coverage.json"
             completed = self.run_generator(source, expected, output, report_path)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.returncode, 3, completed.stderr)
+            self.assertIn("conflicts=1", completed.stderr)
             index = json.loads(output.read_text(encoding="utf-8"))
             report = json.loads(report_path.read_text(encoding="utf-8"))
             factory = next(entry for entry in index["entries"] if entry["qualifiedName"] == "sage.factory")
@@ -129,6 +131,50 @@ class GeneratorTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 2)
             self.assertIn("invalid syntax", completed.stderr)
             self.assertFalse(output.exists())
+
+    def test_coverage_gate_fails_after_writing_auditable_reports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            source.mkdir()
+            (source / "sage.pyi").write_text("def present() -> Integer: ...\n", encoding="utf-8")
+            expected = root / "expected.json"
+            expected.write_text(json.dumps([{ "qualifiedName": "sage.present", "kind": "FUNCTION" }, { "qualifiedName": "sage.missing", "kind": "FUNCTION" }]), encoding="utf-8")
+            output, report_path = root / "index.json", root / "coverage.json"
+            result = self.run_generator(source, expected, output, report_path)
+            self.assertEqual(result.returncode, 3)
+            self.assertTrue(output.exists())
+            self.assertTrue(report_path.exists())
+            self.assertIn("missing=1", result.stderr)
+
+    def test_min_coverage_gate_fails_even_when_missing_is_explicitly_allowed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            source.mkdir()
+            (source / "sage.pyi").write_text("def present() -> Integer: ...\n", encoding="utf-8")
+            expected = root / "expected.json"
+            expected.write_text("[{\"qualifiedName\":\"sage.present\",\"kind\":\"FUNCTION\"},{\"qualifiedName\":\"sage.missing\",\"kind\":\"FUNCTION\"}]", encoding="utf-8")
+            output, report_path = root / "index.json", root / "coverage.json"
+            command = [sys.executable, str(GENERATOR), "--source-root", str(source), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(output), "--expected", str(expected), "--coverage-output", str(report_path), "--allow-missing", "--min-coverage", "1.0"]
+            result = subprocess.run(command, check=False, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 3)
+            self.assertIn("coverage=0.500000<min=1.000000", result.stderr)
+            self.assertTrue(output.exists())
+            self.assertTrue(report_path.exists())
+
+    def test_allow_missing_can_produce_a_green_fixture_gate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            source.mkdir()
+            (source / "sage.pyi").write_text("def present() -> Integer: ...\n", encoding="utf-8")
+            expected = root / "expected.json"
+            expected.write_text("[{\"qualifiedName\":\"sage.present\",\"kind\":\"FUNCTION\"},{\"qualifiedName\":\"sage.missing\",\"kind\":\"FUNCTION\"}]", encoding="utf-8")
+            output = root / "index.json"
+            command = [sys.executable, str(GENERATOR), "--source-root", str(source), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(output), "--expected", str(expected), "--allow-missing", "--min-coverage", "0.5"]
+            result = subprocess.run(command, check=False, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_rejects_empty_source_root(self):
         with tempfile.TemporaryDirectory() as temp:

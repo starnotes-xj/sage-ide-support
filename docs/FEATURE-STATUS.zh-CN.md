@@ -44,8 +44,8 @@
 
 ### Sage 代码智能与科学计算
 
-- Sage API extractor/normalizer：已新增 Python 标准库 AST `.pyi`/`.py` 生成器、Kotlin generator 入口、稳定 index、coverage/diagnostics/diff 和高价值域 fixture；尚未接入真实 Sage Runtime、`sage-pycharm-stubgen`、签名和文档批量输入，也未替换 bundled matrix fallback；
-- API 覆盖率、缺失符号、冲突、无签名和动态对象报告：生成器已支持 coverage ratio、missing、conflict、dynamic、withoutSignature 与 added/removed/changed diff；真实目标版本报告尚未生成；
+- Sage API extractor/normalizer：已新增 Python 标准库 AST `.pyi`/`.py` 生成器、Kotlin generator 入口、稳定 index、canonical alias、严格 contract validation、可组合 source manifest、coverage/diagnostics/diff 和高价值域 fixture；bundled resource 已由 validated generated artifact 驱动，但尚未接入真实 Sage Runtime、`sage-pycharm-stubgen`、签名和文档批量输入；
+- API 覆盖率、缺失符号、冲突、无签名和动态对象报告：生成器已支持 coverage ratio、missing、conflict、dynamic、withoutSignature 与 added/removed/changed diff；默认 gate 对 missing/conflict 返回 exit code 3，同时保留 index/coverage 审计产物；真实目标版本报告尚未生成；
 - 全量模块/类/函数/方法/属性/构造器/常量补全；
 - 基于接收者类型、parent 关系、方法链、构造器和常见运算的类型传播；
 - 参数提示、重载匹配、文档提示、来源标签和版本提示；

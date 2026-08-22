@@ -4,14 +4,14 @@
   "pythonVersion": "3.11",
   "generatorVersion": "sage-api-index-py/0.1",
   "sourceDigests": {
-    "sage/all.pyi": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d",
-    "sage/arith/misc.pyi": "d3978a39ff30a931bf19a746960fc8f259bb687151a57590fb8dd7db980775bc",
-    "sage/crypto/crypto.pyi": "6087f488d7028450fcb4aa51f70c8192f91a2aed735334a059fcb7b62d3899db",
-    "sage/matrix/matrix.pyi": "44601add79aa4e45b2e214392a199413203e2c4204a4fb92529fa44efd10f74c",
-    "sage/modules/vector.pyi": "dcfb3cb73b65e6556da065676d2c3c9c2a118c510c4923134de9484b2964cb65",
-    "sage/rings/finite_rings/finite_field_base.pyi": "84f681994c1e45021ec87bd8748705d182cee6884f8eb37f798a02fdc58af267",
-    "sage/rings/integer.pyi": "d1ec4193d0cd57dd4da89dd9504b9a1b411626cf0bcdfda49af07c64515a2512",
-    "sage/rings/polynomial/polynomial_ring.pyi": "d8f23822b254b084baafd023e028ececde09750e1c886fa24f84e4fc31a55ab7"
+    "fixture-stubgen/10.6/sage/all.pyi": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d",
+    "fixture-stubgen/10.6/sage/arith/misc.pyi": "d3978a39ff30a931bf19a746960fc8f259bb687151a57590fb8dd7db980775bc",
+    "fixture-stubgen/10.6/sage/crypto/crypto.pyi": "6087f488d7028450fcb4aa51f70c8192f91a2aed735334a059fcb7b62d3899db",
+    "fixture-stubgen/10.6/sage/matrix/matrix.pyi": "44601add79aa4e45b2e214392a199413203e2c4204a4fb92529fa44efd10f74c",
+    "fixture-stubgen/10.6/sage/modules/vector.pyi": "dcfb3cb73b65e6556da065676d2c3c9c2a118c510c4923134de9484b2964cb65",
+    "fixture-stubgen/10.6/sage/rings/finite_rings/finite_field_base.pyi": "84f681994c1e45021ec87bd8748705d182cee6884f8eb37f798a02fdc58af267",
+    "fixture-stubgen/10.6/sage/rings/integer.pyi": "d1ec4193d0cd57dd4da89dd9504b9a1b411626cf0bcdfda49af07c64515a2512",
+    "fixture-stubgen/10.6/sage/rings/polynomial/polynomial_ring.pyi": "d8f23822b254b084baafd023e028ececde09750e1c886fa24f84e4fc31a55ab7"
   },
   "entries": [
     {
@@ -25,7 +25,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -44,7 +44,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:7",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:7",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -63,7 +63,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:4",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:4",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -82,7 +82,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:4",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:4",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -101,7 +101,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:5",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:5",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -120,7 +120,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:1",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -139,7 +139,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:3",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:3",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -158,7 +158,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:2",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:2",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -177,7 +177,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:7",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:7",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -194,7 +194,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:9",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:9",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -233,7 +233,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:6",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:6",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -252,7 +252,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:1",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -271,7 +271,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/all.pyi:2",
+          "locator": "fixture-stubgen/10.6/sage/all.pyi:2",
           "digest": "90f3b63fdf07efdda09c19413d9973df83a3556ab8bfc273183e80929452287d"
         }
       ],
@@ -288,7 +288,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/arith/misc.pyi",
+          "locator": "fixture-stubgen/10.6/sage/arith/misc.pyi",
           "digest": "d3978a39ff30a931bf19a746960fc8f259bb687151a57590fb8dd7db980775bc"
         }
       ],
@@ -307,7 +307,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/arith/misc.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/arith/misc.pyi:1",
           "digest": "d3978a39ff30a931bf19a746960fc8f259bb687151a57590fb8dd7db980775bc"
         }
       ],
@@ -324,7 +324,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/arith/misc.pyi:4",
+          "locator": "fixture-stubgen/10.6/sage/arith/misc.pyi:4",
           "digest": "d3978a39ff30a931bf19a746960fc8f259bb687151a57590fb8dd7db980775bc"
         }
       ],
@@ -363,7 +363,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/arith/misc.pyi:3",
+          "locator": "fixture-stubgen/10.6/sage/arith/misc.pyi:3",
           "digest": "d3978a39ff30a931bf19a746960fc8f259bb687151a57590fb8dd7db980775bc"
         }
       ],
@@ -400,7 +400,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/crypto/crypto.pyi",
+          "locator": "fixture-stubgen/10.6/sage/crypto/crypto.pyi",
           "digest": "6087f488d7028450fcb4aa51f70c8192f91a2aed735334a059fcb7b62d3899db"
         }
       ],
@@ -419,7 +419,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/crypto/crypto.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/crypto/crypto.pyi:1",
           "digest": "6087f488d7028450fcb4aa51f70c8192f91a2aed735334a059fcb7b62d3899db"
         }
       ],
@@ -436,7 +436,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/crypto/crypto.pyi:3",
+          "locator": "fixture-stubgen/10.6/sage/crypto/crypto.pyi:3",
           "digest": "6087f488d7028450fcb4aa51f70c8192f91a2aed735334a059fcb7b62d3899db"
         }
       ],
@@ -473,7 +473,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/crypto/crypto.pyi:2",
+          "locator": "fixture-stubgen/10.6/sage/crypto/crypto.pyi:2",
           "digest": "6087f488d7028450fcb4aa51f70c8192f91a2aed735334a059fcb7b62d3899db"
         }
       ],
@@ -512,7 +512,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/crypto/crypto.pyi:5",
+          "locator": "fixture-stubgen/10.6/sage/crypto/crypto.pyi:5",
           "digest": "6087f488d7028450fcb4aa51f70c8192f91a2aed735334a059fcb7b62d3899db"
         }
       ],
@@ -571,7 +571,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/matrix/matrix.pyi",
+          "locator": "fixture-stubgen/10.6/sage/matrix/matrix.pyi",
           "digest": "44601add79aa4e45b2e214392a199413203e2c4204a4fb92529fa44efd10f74c"
         }
       ],
@@ -590,7 +590,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/matrix/matrix.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/matrix/matrix.pyi:1",
           "digest": "44601add79aa4e45b2e214392a199413203e2c4204a4fb92529fa44efd10f74c"
         }
       ],
@@ -609,7 +609,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/matrix/matrix.pyi:3",
+          "locator": "fixture-stubgen/10.6/sage/matrix/matrix.pyi:3",
           "digest": "44601add79aa4e45b2e214392a199413203e2c4204a4fb92529fa44efd10f74c"
         }
       ],
@@ -631,7 +631,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/matrix/matrix.pyi:6",
+          "locator": "fixture-stubgen/10.6/sage/matrix/matrix.pyi:6",
           "digest": "44601add79aa4e45b2e214392a199413203e2c4204a4fb92529fa44efd10f74c"
         }
       ],
@@ -656,7 +656,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/matrix/matrix.pyi:5",
+          "locator": "fixture-stubgen/10.6/sage/matrix/matrix.pyi:5",
           "digest": "44601add79aa4e45b2e214392a199413203e2c4204a4fb92529fa44efd10f74c"
         }
       ],
@@ -695,7 +695,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/matrix/matrix.pyi:8",
+          "locator": "fixture-stubgen/10.6/sage/matrix/matrix.pyi:8",
           "digest": "44601add79aa4e45b2e214392a199413203e2c4204a4fb92529fa44efd10f74c"
         }
       ],
@@ -732,7 +732,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/modules/vector.pyi",
+          "locator": "fixture-stubgen/10.6/sage/modules/vector.pyi",
           "digest": "dcfb3cb73b65e6556da065676d2c3c9c2a118c510c4923134de9484b2964cb65"
         }
       ],
@@ -751,7 +751,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/modules/vector.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/modules/vector.pyi:1",
           "digest": "dcfb3cb73b65e6556da065676d2c3c9c2a118c510c4923134de9484b2964cb65"
         }
       ],
@@ -768,7 +768,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/modules/vector.pyi:2",
+          "locator": "fixture-stubgen/10.6/sage/modules/vector.pyi:2",
           "digest": "dcfb3cb73b65e6556da065676d2c3c9c2a118c510c4923134de9484b2964cb65"
         }
       ],
@@ -807,7 +807,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/modules/vector.pyi:4",
+          "locator": "fixture-stubgen/10.6/sage/modules/vector.pyi:4",
           "digest": "dcfb3cb73b65e6556da065676d2c3c9c2a118c510c4923134de9484b2964cb65"
         }
       ],
@@ -844,7 +844,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/finite_rings/finite_field_base.pyi",
+          "locator": "fixture-stubgen/10.6/sage/rings/finite_rings/finite_field_base.pyi",
           "digest": "84f681994c1e45021ec87bd8748705d182cee6884f8eb37f798a02fdc58af267"
         }
       ],
@@ -863,7 +863,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/finite_rings/finite_field_base.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/rings/finite_rings/finite_field_base.pyi:1",
           "digest": "84f681994c1e45021ec87bd8748705d182cee6884f8eb37f798a02fdc58af267"
         }
       ],
@@ -880,7 +880,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/finite_rings/finite_field_base.pyi:2",
+          "locator": "fixture-stubgen/10.6/sage/rings/finite_rings/finite_field_base.pyi:2",
           "digest": "84f681994c1e45021ec87bd8748705d182cee6884f8eb37f798a02fdc58af267"
         }
       ],
@@ -905,7 +905,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/finite_rings/finite_field_base.pyi:3",
+          "locator": "fixture-stubgen/10.6/sage/rings/finite_rings/finite_field_base.pyi:3",
           "digest": "84f681994c1e45021ec87bd8748705d182cee6884f8eb37f798a02fdc58af267"
         }
       ],
@@ -932,7 +932,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/finite_rings/finite_field_base.pyi:5",
+          "locator": "fixture-stubgen/10.6/sage/rings/finite_rings/finite_field_base.pyi:5",
           "digest": "84f681994c1e45021ec87bd8748705d182cee6884f8eb37f798a02fdc58af267"
         }
       ],
@@ -969,7 +969,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/integer.pyi",
+          "locator": "fixture-stubgen/10.6/sage/rings/integer.pyi",
           "digest": "d1ec4193d0cd57dd4da89dd9504b9a1b411626cf0bcdfda49af07c64515a2512"
         }
       ],
@@ -990,7 +990,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/integer.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/rings/integer.pyi:1",
           "digest": "d1ec4193d0cd57dd4da89dd9504b9a1b411626cf0bcdfda49af07c64515a2512"
         }
       ],
@@ -1007,7 +1007,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/integer.pyi:2",
+          "locator": "fixture-stubgen/10.6/sage/rings/integer.pyi:2",
           "digest": "d1ec4193d0cd57dd4da89dd9504b9a1b411626cf0bcdfda49af07c64515a2512"
         }
       ],
@@ -1055,7 +1055,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/polynomial/polynomial_ring.pyi",
+          "locator": "fixture-stubgen/10.6/sage/rings/polynomial/polynomial_ring.pyi",
           "digest": "d8f23822b254b084baafd023e028ececde09750e1c886fa24f84e4fc31a55ab7"
         }
       ],
@@ -1074,7 +1074,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/polynomial/polynomial_ring.pyi:1",
+          "locator": "fixture-stubgen/10.6/sage/rings/polynomial/polynomial_ring.pyi:1",
           "digest": "d8f23822b254b084baafd023e028ececde09750e1c886fa24f84e4fc31a55ab7"
         }
       ],
@@ -1093,7 +1093,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/polynomial/polynomial_ring.pyi:5",
+          "locator": "fixture-stubgen/10.6/sage/rings/polynomial/polynomial_ring.pyi:5",
           "digest": "d8f23822b254b084baafd023e028ececde09750e1c886fa24f84e4fc31a55ab7"
         }
       ],
@@ -1141,7 +1141,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/polynomial/polynomial_ring.pyi:2",
+          "locator": "fixture-stubgen/10.6/sage/rings/polynomial/polynomial_ring.pyi:2",
           "digest": "d8f23822b254b084baafd023e028ececde09750e1c886fa24f84e4fc31a55ab7"
         }
       ],
@@ -1166,7 +1166,7 @@
       "sources": [
         {
           "kind": "STUB",
-          "locator": "sage/rings/polynomial/polynomial_ring.pyi:3",
+          "locator": "fixture-stubgen/10.6/sage/rings/polynomial/polynomial_ring.pyi:3",
           "digest": "d8f23822b254b084baafd023e028ececde09750e1c886fa24f84e4fc31a55ab7"
         }
       ],

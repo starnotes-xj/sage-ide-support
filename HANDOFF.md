@@ -169,3 +169,11 @@
 - fixture 已拆分覆盖 matrix、vector、polynomial、finite field、number theory、crypto，当前生成 8 个源文件、45 个 entries；高价值 manifest 16 项，alias-aware coverage 15/16（0.9375），唯一 missing 是刻意保留的 `sage.all.missing`。
 - 生成器新增严格 index contract validation：schemaVersion、版本/生成器元数据、SHA-256、entry kind/dynamicity/confidence、signature/type/source 字段和重复 entry；Python 负例测试现为 5 项。
 - `plugins/sage-core/src/main/resources/sage-api-index.json` 已由 validated generated artifact 替换原最小矩阵 slice；`core:sage-api` test resource 同步用于 Kotlin reader regression。
+- source manifest 已提交：`tools/sage-api-index/source-manifest.json` 用相对 root 复现 fixture 输入；每条 entry 保留 source kind/locator/digest。
+- generator gate 已提交实现：默认 missing/conflict 返回 exit code `3`，`--allow-missing`/`--allow-conflicts` 显式放行；gate 失败仍写出 index、coverage 和 diff 供 CI 审计。
+- Python generator 当前 10 项测试通过；fixture/manifest 生成在显式 `--allow-missing` 下输出 8 sources、45 entries、coverage `0.9375`。
+- 新增最小 coverage gate 回归：`--min-coverage` 低于阈值返回 exit code `3`，且仍保留 index/coverage。
+- 本轮构建命令首次失败于环境准备：Gradle 指向的 ASCII `G:\sage-build\temp` 尚不存在，故 core/plugin 两条 Gradle 命令均未进入编译；这是本轮新 blocker，需创建目录后重跑，不是源码失败。
+- 创建 ASCII temp 后，`:core:sage-api:test -PrunSageApiTests=true` fresh exit code `0`；plugin 重试命令因 PowerShell 未将 `-Psage.ide.localSdk=D:/JetBrains/PyCharm` 作为单个参数传给 Gradle，Gradle 将其误解析为 task/project。需以引号包裹该 `-P` 参数后重跑；这是命令调用错误，不是源码失败。
+- 使用引号修正参数后，`:plugins:sage-core:processResources :plugins:sage-core:compileKotlin "-Psage.ide.localSdk=D:/JetBrains/PyCharm"` fresh exit code `0`，bundled resource 已重新处理。
+- `:plugins:sage-core:compileTestKotlin "-Psage.ide.localSdk=D:/JetBrains/PyCharm"` 已真实重试但仍在 Kotlin test source 编译前被 IntelliJ Platform Gradle Plugin 阻塞：`ModuleDescriptor ... unknown field module/namespace`；这是已知平台 descriptor 兼容性 blocker。
