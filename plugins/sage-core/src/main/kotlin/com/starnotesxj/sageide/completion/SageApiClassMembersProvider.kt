@@ -23,10 +23,14 @@ class SageApiClassMembersProvider : PyClassMembersProviderBase() {
         val query = SageApiIndexService.getInstance().query() ?: return emptyList()
         if (!isSageContext(location, clazz.pyClass)) return emptyList()
         val owner = clazz.pyClass.qualifiedName ?: return emptyList()
-        return query.members(owner).map { entry ->
-            val memberName = entry.qualifiedName.substringAfterLast('.')
-            indexedMember(memberName, owner, entry.kind)
-        }
+        return query.members(owner)
+            .asSequence()
+            .map { entry ->
+                val memberName = entry.qualifiedName.substringAfterLast('.')
+                indexedMember(memberName, owner, entry.kind)
+            }
+            .distinctBy { it.name }
+            .toList()
     }
 
     override fun resolveMember(type: PyClassType, name: String, location: PsiElement?, resolveContext: PyResolveContext): PsiElement? {

@@ -20,7 +20,6 @@ import com.jetbrains.python.psi.types.PyTypeProviderBase
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sageide.sugar.SageFileUtils
 import com.starnotesxj.sageide.completion.SageApiIndexService
-import com.starnotesxj.sagemath.sageapi.SageTypeState
 import com.starnotesxj.sageide.sugar.SageStubIndex
 import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
 import com.starnotesxj.sageide.sugar.SageSugarInfo
@@ -133,14 +132,13 @@ class SageTypeProvider : PyTypeProviderBase() {
             com.jetbrains.python.psi.resolve.PyResolveContext.defaultContext(context),
         ).mapNotNull(PyCallable::getQualifiedName).distinct().singleOrNull() ?: return null
         val returnName = SageApiIndexService.getInstance().query()
-            ?.callReturnTypes(qualifiedName)
-            ?.singleOrNull()
-            ?.takeIf { it.state == SageTypeState.KNOWN }
+            ?.uniqueKnownReturnType(qualifiedName)
             ?.expression
             ?: return null
-        val className = returnName.substringBefore('[').trim()
-        val simpleName = className.substringAfterLast('.')
-        val cls = SageStubIndex.findClass(target.project, simpleName) ?: return null
+        val query = SageApiIndexService.getInstance().query() ?: return null
+        val className = query.resolveKnownClassName(returnName) ?: return null
+        val cls = SageStubIndex.findClass(target.project, className.substringAfterLast('.')) ?: return null
+        if (cls.qualifiedName != null && cls.qualifiedName != className) return null
         if (!cls.isValid) return null
         return Ref.create(PyClassTypeImpl(cls, false))
     }

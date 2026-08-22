@@ -156,4 +156,8 @@
 新阻塞（已记录，不能伪装成测试通过）：
 
 - `:plugins:sage-core:compileTestKotlin` 尚未进入 Kotlin test source 编译，IntelliJ Platform Gradle Plugin 在解析本地 PyCharm module descriptor 时失败：`ModuleDescriptor ... unknown field module/namespace`。这是本地平台依赖元数据解析错误，不是当前 Kotlin 源码编译错误；需要后续用既有 plugin test 运行方式或修复/绕过该工具链版本不兼容后再执行。
+- 新增 `core/sage-api/src/main/kotlin/com/starnotesxj/sagemath/sageapi/SageApiIndexLoader.kt`：统一执行 validated JSON/path/resource 加载；插件 service 失败时保持旧 index 并回退 bundled。loader 回归测试覆盖无效外部路径回退资源。
+- `SageApiIndexQuery` 现在按子类→父类 rank 解析成员，子类同名成员覆盖父类；未知带点类型名不再按 simple name 猜测。
+- JSON reader 严格拒绝重复 object key、非整数 schemaVersion 和错误 boolean 字段；对应 core 回归测试已加入。
+- 本轮 fresh 验证：`:core:sage-api:test -PrunSageApiTests=true` exit code `0`；`:plugins:sage-core:processResources :plugins:sage-core:compileKotlin -Psage.ide.localSdk=D:/JetBrains/PyCharm` exit code `0`。
 - 真实 Sage Runtime / `sage-pycharm-stubgen` 全量 index 尚未生成；bundled JSON 仍是最小可验证 slice。

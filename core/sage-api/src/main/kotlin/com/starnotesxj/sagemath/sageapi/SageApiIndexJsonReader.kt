@@ -4,7 +4,7 @@ package com.starnotesxj.sagemath.sageapi
 object SageApiIndexJsonReader {
     fun read(json: String): SageApiIndex {
         val root = JsonParser(json).parse().asObject("$")
-        val schemaVersion = root.requiredNumber("schemaVersion").toInt()
+        val schemaVersion = root.requiredInteger("schemaVersion")
         require(schemaVersion == SAGE_API_SCHEMA_VERSION) {
             "Unsupported Sage API schema version: " + schemaVersion
         }
@@ -108,10 +108,14 @@ object SageApiIndexJsonReader {
 
     private fun Map<String, Any?>.optionalString(name: String): String? = this[name]?.asString(name)
 
-    private fun Map<String, Any?>.requiredNumber(name: String): Number =
-        (this[name] ?: fail("Missing '" + name + "'")).asNumber(name)
+    private fun Map<String, Any?>.requiredInteger(name: String): Int {
+        val number = (this[name] ?: fail("Missing '" + name + "'")).asNumber(name)
+        require(number.toDouble() == number.toInt().toDouble()) { "Expected integer at " + name }
+        return number.toInt()
+    }
 
-    private fun Map<String, Any?>.optionalBoolean(name: String): Boolean? = this[name] as? Boolean
+    private fun Map<String, Any?>.optionalBoolean(name: String): Boolean? =
+        if (!containsKey(name)) null else this[name] as? Boolean ?: fail("Expected boolean at " + name)
 
     private fun Map<String, Any?>.requiredValue(name: String, path: String): Any? =
         if (containsKey(name)) this[name] else fail("Missing '" + name + "' at " + path)
@@ -180,6 +184,7 @@ object SageApiIndexJsonReader {
                 skipWhitespace()
                 require(peek('"')) { "Expected object key at offset " + offset }
                 val key = readString()
+                require(!result.containsKey(key)) { "Duplicate JSON object key '" + key + "' at offset " + offset }
                 skipWhitespace()
                 expect(':')
                 result[key] = readValue()

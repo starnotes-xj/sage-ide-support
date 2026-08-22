@@ -3,10 +3,8 @@ package com.starnotesxj.sageide.completion
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
-import com.starnotesxj.sagemath.sageapi.SageApiIndexJsonReader
+import com.starnotesxj.sagemath.sageapi.SageApiIndexLoader
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.nio.file.Path
 
 /** Application-scoped holder for the validated Sage API index. */
@@ -15,9 +13,13 @@ class SageApiIndexService {
     @Volatile
     private var current: SageApiIndexQuery? = null
 
+    private val loader = SageApiIndexLoader()
+
     init {
-        System.getProperty(INDEX_PATH_PROPERTY)?.takeIf { it.isNotBlank() }?.let { reload(Path.of(it)) }
-            ?: reloadBundled()
+        val configuredPath = System.getProperty(INDEX_PATH_PROPERTY)?.takeIf { it.isNotBlank() }
+        if (configuredPath == null || !reload(Path.of(configuredPath))) {
+            reloadBundled()
+        }
     }
 
     fun install(query: SageApiIndexQuery?) {
@@ -26,22 +28,24 @@ class SageApiIndexService {
 
     fun query(): SageApiIndexQuery? = current
 
-    private fun reloadBundled(): Boolean = runCatching {
-        val stream = javaClass.classLoader.getResourceAsStream(BUNDLED_INDEX_RESOURCE) ?: return false
-        val json = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-        install(SageApiIndexQuery(SageApiIndexJsonReader.read(json)))
-        true
-    }.getOrElse {
-        LOG.warn("Cannot load bundled Sage API index; indexed completion remains unavailable", it)
-        false
+    private fun reloadBundled(): Boolean {
+        val index = loader.fromResource(javaClass.classLoader, BUNDLED_INDEX_RESOURCE)
+        if (index == null) {
+            LOG.warn("Cannot load bundled Sage API index; indexed completion remains unavailable")
+            return false
+        }
+        install(SageApiIndexQuery(index))
+        return true
     }
 
-    fun reload(path: Path): Boolean = runCatching {
-        install(SageApiIndexQuery(SageApiIndexJsonReader.read(Files.readString(path))))
-        true
-    }.getOrElse {
-        LOG.warn("Cannot load Sage API index from $path; keeping the previous index", it)
-        false
+    fun reload(path: Path): Boolean {
+        val index = loader.fromPath(path)
+        if (index == null) {
+            LOG.warn("Cannot load Sage API index from $path; keeping the previous index")
+            return false
+        }
+        install(SageApiIndexQuery(index))
+        return true
     }
 
     companion object {

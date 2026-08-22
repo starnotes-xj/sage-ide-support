@@ -253,8 +253,157 @@ class SageApiIndexTest {
         val query = SageApiIndexQuery(index)
 
         assertEquals("sage.matrix.matrix.Matrix", query.callReturnTypes("sage.matrix.matrix").single().expression)
+        assertEquals("sage.matrix.matrix.Matrix", query.uniqueKnownReturnType("sage.matrix.matrix")?.expression)
         assertEquals(setOf("solve_right", "determinant"), query.members("sage.matrix.matrix.Matrix").map { it.qualifiedName.substringAfterLast('.') }.toSet())
         assertEquals(SageApiSymbolKind.METHOD, query.members("sage.matrix.matrix.Matrix", "solve_right").single().kind)
+    }
+
+    @Test
+    fun uniqueKnownReturnTypeRejectsDynamicOrAmbiguousReturns() {
+        val function = SageApiEntry(
+            qualifiedName = "sage.all.factory",
+            kind = SageApiSymbolKind.FUNCTION,
+            signatures = listOf(
+                SageApiSignature(returnType = SageTypeRef.known("sage.all.Integer")),
+                SageApiSignature(returnType = SageTypeRef.known("sage.all.Rational")),
+            ),
+        )
+        val ambiguous = SageApiIndexQuery(SageApiIndex("10.6", "3.11", listOf(function)))
+        assertEquals(null, ambiguous.uniqueKnownReturnType("sage.all.factory"))
+        assertEquals(null, ambiguous.uniqueKnownReturnType("missing"))
+
+        val dynamic = function.copy(signatures = listOf(SageApiSignature.dynamic()))
+        val dynamicQuery = SageApiIndexQuery(SageApiIndex("10.6", "3.11", listOf(dynamic)))
+        assertEquals(null, dynamicQuery.uniqueKnownReturnType("sage.all.factory"))
+    }
+
+    @Test
+    fun resolveKnownClassNameRequiresOneCanonicalClass() {
+        val unique = SageApiEntry("sage.matrix.Matrix", SageApiSymbolKind.CLASS, aliases = listOf("Matrix"))
+        val uniqueQuery = SageApiIndexQuery(SageApiIndex("10.6", "3.11", listOf(unique)))
+        assertEquals("sage.matrix.Matrix", uniqueQuery.resolveKnownClassName("Matrix"))
+        assertEquals("sage.matrix.Matrix", uniqueQuery.resolveKnownClassName("sage.matrix.Matrix[Integer]"))
+
+        val left = SageApiEntry("sage.left.Matrix", SageApiSymbolKind.CLASS)
+        val right = SageApiEntry("sage.right.Matrix", SageApiSymbolKind.CLASS)
+        val ambiguous = SageApiIndexQuery(SageApiIndex("10.6", "3.11", listOf(left, right)))
+        assertEquals(null, ambiguous.resolveKnownClassName("Matrix"))
+    }
+
+    @Test
+    fun uniqueKnownReturnTypeRejectsMixedKnownAndUnknownOverloads() {
+        val factory = SageApiEntry(
+            qualifiedName = "sage.all.factory",
+            kind = SageApiSymbolKind.FUNCTION,
+            signatures = listOf(
+                SageApiSignature(returnType = SageTypeRef.known("sage.all.Integer")),
+                SageApiSignature(returnType = SageTypeRef.unknown()),
+            ),
+        )
+        val query = SageApiIndexQuery(SageApiIndex("10.6", "3.11", listOf(factory)))
+        assertEquals(null, query.uniqueKnownReturnType("sage.all.factory"))
+    }
+
+    @Test
+    fun jsonReaderRejectsDuplicateQualifiedNameAndKind() {
+        val duplicate = """
+            {
+              "schemaVersion": 1,
+              "sageVersion": "10.6",
+              "pythonVersion": "3.11",
+              "entries": [
+                {"qualifiedName":"sage.all.Integer","kind":"CLASS"},
+                {"qualifiedName":"sage.all.Integer","kind":"CLASS"}
+              ]
+            }
+        """.trimIndent()
+        val error = runCatching { SageApiIndexJsonReader.read(duplicate) }.exceptionOrNull()
+        assertNotNull(error)
+        assertTrue(error.message.orEmpty().contains("duplicate qualified-name/kind"))
+    }
+
+    @Test
+    fun jsonReaderRejectsKnownTypeWithoutExpression() {
+        val invalid = """
+            {
+              "schemaVersion": 1,
+              "sageVersion": "10.6",
+              "pythonVersion": "3.11",
+              "entries": [{
+                "qualifiedName":"sage.all.factory",
+                "kind":"FUNCTION",
+                "signatures":[{
+                  "returnType":{"state":"KNOWN","expression":null}
+                }]
+              }]
+            }
+        """.trimIndent()
+        val error = runCatching { SageApiIndexJsonReader.read(invalid) }.exceptionOrNull()
+        assertNotNull(error)
+        assertTrue(error.message.orEmpty().contains("Known Sage type references require an expression"))
+    }
+
+    @Test
+    fun jsonReaderRejectsFractionalSchemaVersionAndWrongBooleanType() {
+        val fractional = """{"schemaVersion":1.5,"sageVersion":"10.6","pythonVersion":"3.11","entries":[]}"""
+        val fractionalError = runCatching { SageApiIndexJsonReader.read(fractional) }.exceptionOrNull()
+        assertNotNull(fractionalError)
+        assertTrue(fractionalError.message.orEmpty().contains("Expected integer"))
+
+        val wrongBoolean = """{
+          "schemaVersion":1,
+          "sageVersion":"10.6",
+          "pythonVersion":"3.11",
+          "entries":[{
+            "qualifiedName":"sage.all.factory",
+            "kind":"FUNCTION",
+            "signatures":[{
+              "parameters":[{"name":"x","optional":"yes"}],
+              "returnType":{"state":"UNKNOWN","expression":null}
+            }]
+          }]
+        }"""
+        val booleanError = runCatching { SageApiIndexJsonReader.read(wrongBoolean) }.exceptionOrNull()
+        assertNotNull(booleanError)
+        assertTrue(booleanError.message.orEmpty().contains("Expected boolean"))
+    }
+
+    @Test
+    fun memberLookupPrefersChildDeclarationOverParentDeclaration() {
+        val parent = SageApiEntry("sage.Parent", SageApiSymbolKind.CLASS)
+        val child = SageApiEntry("sage.Child", SageApiSymbolKind.CLASS, parents = listOf("sage.Parent"))
+        val parentSolve = SageApiEntry("sage.Parent.solve", SageApiSymbolKind.METHOD)
+        val childSolve = SageApiEntry("sage.Child.solve", SageApiSymbolKind.METHOD)
+        val query = SageApiIndexQuery(SageApiIndex("10.6", "3.11", listOf(parentSolve, parent, child, childSolve)))
+        val result = query.members("sage.Child", "solve")
+        assertEquals(1, result.size)
+        assertEquals("sage.Child.solve", result.single().qualifiedName)
+    }
+
+    @Test
+    fun jsonReaderRejectsDuplicateObjectKeys() {
+        val duplicate = """{"schemaVersion":1,"schemaVersion":1,"sageVersion":"10.6","pythonVersion":"3.11","entries":[]}"""
+        val error = runCatching { SageApiIndexJsonReader.read(duplicate) }.exceptionOrNull()
+        assertNotNull(error)
+        assertTrue(error.message.orEmpty().contains("Duplicate JSON object key"))
+    }
+
+    @Test
+    fun loaderReadsResourceAndRejectsMalformedExternalPath() {
+        val loader = SageApiIndexLoader()
+        val resource = loader.fromResource(javaClass.classLoader, "fixtures/index-empty.json")
+        assertNotNull(resource)
+        assertEquals("10.6", resource.sageVersion)
+        assertEquals(null, loader.fromPath(java.nio.file.Path.of("G:/missing/sage-api-index.json")))
+        assertEquals("10.6", loader.externalOrBundled(java.nio.file.Path.of("G:/missing/sage-api-index.json"), javaClass.classLoader, "fixtures/index-empty.json")?.sageVersion)
+    }
+
+    @Test
+    fun qualifiedUnknownTypeDoesNotFallbackToSimpleName() {
+        val matrix = SageApiEntry("sage.matrix.Matrix", SageApiSymbolKind.CLASS)
+        val query = SageApiIndexQuery(SageApiIndex("10.6", "3.11", listOf(matrix)))
+        assertEquals(null, query.resolveKnownClassName("foreign.Matrix"))
+        assertEquals("sage.matrix.Matrix", query.resolveKnownClassName("Matrix"))
     }
 
     @Test
