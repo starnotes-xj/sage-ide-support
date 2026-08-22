@@ -7,6 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from generate import validate_index
+
 ROOT = Path(__file__).resolve().parent
 GENERATOR = ROOT / "generate.py"
 
@@ -162,6 +165,65 @@ class GeneratorTest(unittest.TestCase):
             self.assertIn("coverage=0.500000<min=1.000000", result.stderr)
             self.assertTrue(output.exists())
             self.assertTrue(report_path.exists())
+
+    def test_checked_in_bundled_index_matches_generator_contract(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "generated.json"
+            coverage = root / "coverage.json"
+            result = subprocess.run([
+                sys.executable,
+                str(GENERATOR),
+                "--source-manifest",
+                str(ROOT / "source-manifest.json"),
+                "--sage-version",
+                "10.6",
+                "--python-version",
+                "3.11",
+                "--output",
+                str(output),
+                "--coverage-output",
+                str(coverage),
+                "--expected",
+                str(ROOT / "expected-high-value.json"),
+                "--allow-missing",
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            generated = json.loads(output.read_text(encoding="utf-8"))
+            bundled_path = ROOT.parent.parent / "plugins" / "sage-core" / "src" / "main" / "resources" / "sage-api-index.json"
+            bundled = json.loads(bundled_path.read_text(encoding="utf-8"))
+            self.assertEqual(generated, bundled)
+            report = json.loads(coverage.read_text(encoding="utf-8"))
+            self.assertEqual(report["coveredCount"], 15)
+            self.assertEqual(report["coverageRatio"], 0.9375)
+            self.assertEqual(report["missing"], [{"qualifiedName": "sage.all.missing", "kind": "FUNCTION"}])
+            validate_index(bundled)
+            duplicate = dict(bundled)
+            duplicate["entries"] = bundled["entries"] + [bundled["entries"][0]]
+            with self.assertRaisesRegex(ValueError, "duplicate entry"):
+                validate_index(duplicate)
+            damaged = dict(bundled)
+            damaged_entry = dict(bundled["entries"][0])
+            damaged_entry["kind"] = "CORRUPTED"
+            damaged["entries"] = [damaged_entry] + bundled["entries"][1:]
+            with self.assertRaisesRegex(ValueError, "known Sage symbol kind"):
+                validate_index(damaged)
+
+            entries = {(entry["qualifiedName"], entry["kind"]): entry for entry in bundled["entries"]}
+            self.assertIn(("sage.matrix.matrix.matrix", "FUNCTION"), entries)
+            self.assertIn(("sage.matrix.matrix.Matrix", "CLASS"), entries)
+            self.assertIn(("sage.matrix.matrix.Matrix.solve_right", "METHOD"), entries)
+            self.assertIn("sage.all.matrix", entries[("sage.matrix.matrix.matrix", "FUNCTION")]["aliases"])
+            self.assertEqual(
+                entries[("sage.matrix.matrix.matrix", "FUNCTION")]["signatures"][0]["returnType"],
+                {"state": "KNOWN", "expression": "sage.matrix.matrix.Matrix"},
+            )
+            self.assertTrue(bundled["generatorVersion"])
+            self.assertTrue(bundled["sourceDigests"])
+            self.assertTrue(all(entry["sources"] for entry in bundled["entries"]))
+            self.assertTrue(any(entry.get("documentation") for entry in bundled["entries"]))
+            self.assertTrue(any(source.get("digest") for entry in bundled["entries"] for source in entry["sources"]))
 
     def test_allow_missing_can_produce_a_green_fixture_gate(self):
         with tempfile.TemporaryDirectory() as temp:

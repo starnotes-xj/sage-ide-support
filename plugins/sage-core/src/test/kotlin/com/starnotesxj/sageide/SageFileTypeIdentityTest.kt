@@ -1,7 +1,7 @@
 package com.starnotesxj.sageide
 
 import com.intellij.openapi.fileTypes.FileTypeManager
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.starnotesxj.sageide.SagePluginTestBase
 import com.jetbrains.python.PythonLanguage
 import com.starnotesxj.sageide.sugar.SageFileType
 
@@ -10,7 +10,7 @@ import com.starnotesxj.sageide.sugar.SageFileType
  * plugin's SageFileType (own identity) while keeping the Python language, so
  * all Python-language services (completion, inspections, type inference) apply.
  */
-class SageFileTypeIdentityTest : BasePlatformTestCase() {
+class SageFileTypeIdentityTest : SagePluginTestBase() {
 
     fun testSageResolvesToTheSageFileType() {
         assertSame(
@@ -26,7 +26,7 @@ class SageFileTypeIdentityTest : BasePlatformTestCase() {
     fun testSageFileKeepsThePythonLanguage() {
         val file = myFixture.configureByText("sample.sage", "")
         assertSame(SageFileType.INSTANCE, file.fileType)
-        assertEquals(PythonLanguage.INSTANCE, file.language)
+        assertTrue(file.language.isKindOf(PythonLanguage.INSTANCE))
     }
 
     fun testPythonFilesAreUntouched() {

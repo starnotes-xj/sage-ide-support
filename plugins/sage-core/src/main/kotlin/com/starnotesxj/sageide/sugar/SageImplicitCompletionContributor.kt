@@ -15,6 +15,7 @@ import com.intellij.patterns.PlatformPatterns
 import com.intellij.patterns.StandardPatterns
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
+import com.starnotesxj.sageide.completion.SageApiClassMembersProvider
 import com.jetbrains.python.psi.PyImportStatementBase
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.jetbrains.python.psi.PyTargetExpression
@@ -73,9 +74,7 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
     init {
         extend(
             CompletionType.BASIC,
-            PlatformPatterns.psiElement()
-                .withParent(PyReferenceExpression::class.java)
-                .withLanguage(com.jetbrains.python.PythonLanguage.INSTANCE),
+            PlatformPatterns.psiElement(),
             object : CompletionProvider<CompletionParameters>() {
                 override fun addCompletions(
                     parameters: CompletionParameters,
@@ -90,12 +89,36 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     if (SageFileUtils.hasExplicitSageAllImport(file)) return
 
                     val position = parameters.position
-                    val reference = position.parent as? PyReferenceExpression ?: return
+                    val reference = PsiTreeUtil.getParentOfType(
+                        position,
+                        PyReferenceExpression::class.java,
+                    ) ?: PsiTreeUtil.getParentOfType(
+                        PsiTreeUtil.prevVisibleLeaf(position),
+                        PyReferenceExpression::class.java,
+                    ) ?: return
                     // Only unqualified names: `RR` yes, `foo.RR` no (that is
                     // member completion).  Skip assignment targets and import
                     // statements, where the reference is not a name use.
-                    if (reference.isQualified || reference is PyTargetExpression) return
+                    if (reference is PyTargetExpression) return
                     if (PsiTreeUtil.getParentOfType(position, PyImportStatementBase::class.java) != null) return
+
+                    if (reference.isQualified) {
+                        val qualifier = reference.qualifier ?: return
+                        val typeContext = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(
+                            position.project,
+                            file,
+                        )
+                        val qualifierType = typeContext.getType(qualifier)
+                            as? com.jetbrains.python.psi.types.PyClassType
+                            ?: return
+                        val members = SageApiClassMembersProvider()
+                            .getMembers(qualifierType, file, typeContext)
+                        for (member in members) {
+                            if (!result.prefixMatcher.prefixMatches(member.name)) continue
+                            result.addElement(LookupElementBuilder.create(member.name))
+                        }
+                        return
+                    }
 
                     val prefix = result.prefixMatcher.prefix
                     if (prefix.isEmpty()) {

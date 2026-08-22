@@ -1,7 +1,7 @@
 package com.starnotesxj.sageide.type
 
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.starnotesxj.sageide.SagePluginTestBase
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.types.PyClassType
 import kotlin.test.assertEquals
@@ -10,7 +10,7 @@ import com.starnotesxj.sageide.completion.SageApiIndexService
 import com.starnotesxj.sagemath.sageapi.SageApiIndexJsonReader
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
 
-class SageTypeProviderTest : BasePlatformTestCase() {
+class SageTypeProviderTest : SagePluginTestBase() {
 
     private val provider = SageTypeProvider()
 
@@ -26,7 +26,9 @@ class SageTypeProviderTest : BasePlatformTestCase() {
         val index = SageApiIndexQuery(SageApiIndexJsonReader.read(indexResource.bufferedReader().use { it.readText() }))
         SageApiIndexService.getInstance().install(index)
         try {
-            myFixture.configureByText("matrix.sage", "A = matrix(F, [[1]])\n")
+            myFixture.copyFileToProject("testData/sage-stubs/sage/matrix/matrix.pyi", "sage/matrix/matrix.pyi")
+            myFixture.configureByText("matrix.sage", "from sage.matrix.matrix import matrix\nA = matrix([[1]])\n")
+            myFixture.doHighlighting()
             val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
                 .first { it.name == "A" }
             val type = provider.getReferenceType(target, defaultContext(), null)?.get() as? PyClassType

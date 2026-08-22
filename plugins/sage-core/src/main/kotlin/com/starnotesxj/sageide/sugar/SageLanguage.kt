@@ -14,6 +14,7 @@ import com.jetbrains.python.PythonLanguage
  * platform's isKindOf language matching.
  */
 class SageLanguage private constructor() : Language(PythonLanguage.INSTANCE, "Sage"), DependentLanguage {
+    override fun isCaseSensitive(): Boolean = PythonLanguage.INSTANCE.isCaseSensitive
     companion object {
         @JvmField
         val INSTANCE: SageLanguage = SageLanguage()

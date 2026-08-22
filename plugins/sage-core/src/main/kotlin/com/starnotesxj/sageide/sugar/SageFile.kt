@@ -40,4 +40,5 @@ class SageFile(viewProvider: FileViewProvider) : PyFileImpl(viewProvider) {
     override fun getIcon(flags: Int): Icon = SageIcons.SAGE
 
     override fun getFileType(): FileType = SageFileType.INSTANCE
+
 }

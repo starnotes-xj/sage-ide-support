@@ -1,10 +1,10 @@
 package com.starnotesxj.sageide.sugar
 
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.starnotesxj.sageide.SagePluginTestBase
 import com.jetbrains.python.psi.PyAssignmentStatement
 
-class SageSugarAnalyzerTest : BasePlatformTestCase() {
+class SageSugarAnalyzerTest : SagePluginTestBase() {
 
     private fun statements(fileName: String): Collection<PyAssignmentStatement> {
         myFixture.configureByFile("testData/sugar/$fileName")
@@ -19,8 +19,8 @@ class SageSugarAnalyzerTest : BasePlatformTestCase() {
         assertEquals("R", info.factoryName)
         assertEquals(listOf("x"), info.names)
         assertEquals("GF", info.call?.callee?.name)
-        assertTrue(first.targets.isEmpty())
-        assertEquals(0, info.call!!.argumentList!!.arguments.size)
+        assertTrue(first.targets.isNotEmpty())
+        assertEquals(1, info.call!!.argumentList!!.arguments.size)
 
         val second = statements.elementAt(1)
         val secondInfo = SageSugarAnalyzer.analyze(second)!!

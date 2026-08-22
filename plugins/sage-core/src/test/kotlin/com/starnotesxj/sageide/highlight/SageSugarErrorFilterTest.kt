@@ -2,11 +2,11 @@ package com.starnotesxj.sageide.highlight
 
 import com.intellij.psi.PsiErrorElement
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.starnotesxj.sageide.SagePluginTestBase
 import com.jetbrains.python.psi.PyAssignmentStatement
 import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
 
-class SageSugarErrorFilterTest : BasePlatformTestCase() {
+class SageSugarErrorFilterTest : SagePluginTestBase() {
 
     private val filter = SageSugarErrorFilter()
 

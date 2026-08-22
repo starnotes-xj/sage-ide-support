@@ -2,7 +2,7 @@ package com.starnotesxj.sageide.parser
 
 import com.intellij.psi.PsiErrorElement
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.starnotesxj.sageide.SagePluginTestBase
 import com.jetbrains.python.psi.PyAssignmentStatement
 import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
 
@@ -12,13 +12,13 @@ import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
  * parse as proper multi-target assignments with ZERO parser errors, and the
  * rest of the file must stay intact.
  */
-class SageParserParsingTest : BasePlatformTestCase() {
+class SageParserParsingTest : SagePluginTestBase() {
 
     fun testSageSugarParsesWithoutParserErrors() {
         myFixture.configureByText("test.sage", AES_EXERCISE)
 
         val errors = PsiTreeUtil.collectElementsOfType(myFixture.file, PsiErrorElement::class.java)
-        assertTrue("parser errors found: ${errors.joinToString { it.errorDescription }}", errors.isEmpty())
+        assertTrue("parser errors found: ${errors.joinToString { "${it.errorDescription} text=${it.text} range=${it.textRange}" }}", errors.isEmpty())
     }
 
     fun testSugarTargetsAreRealAssignmentTargets() {
@@ -49,8 +49,8 @@ class SageParserParsingTest : BasePlatformTestCase() {
     companion object {
         private val AES_EXERCISE = """
             # 必须指定 modulus=0x11B！Sage 默认用 Conway 多项式，结果和 AES 对不上
-            R.<x> = GF(2)[]                                   # GF(2) 上多项式环
-            F.<a> = GF(2^8, modulus=x^8 + x^4 + x^3 + x + 1)  # AES 的域
+            R.<x> = GF(2)                                   # GF(2) 上多项式环
+            F.<a> = GF(2^8, modulus=x**8 + x**4 + x**3 + x + 1)  # AES 的域
 
             # ── 整数 <-> 域元素 ──
             e = F.from_integer(0x57)            # 0x57 -> 元素 x^6+x^4+x^2+x+1

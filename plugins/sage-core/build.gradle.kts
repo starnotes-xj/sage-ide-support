@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":core:runtime"))
     implementation(project(":core:sage-api"))
     testImplementation("junit:junit:4.13.2")
+    testImplementation(kotlin("test"))
 
     intellijPlatform {
         if (onCi) {

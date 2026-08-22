@@ -33,7 +33,11 @@ class SageApiIndexQuery(val index: SageApiIndex) {
     fun callReturnTypes(functionQualifiedName: String): List<SageTypeRef> =
         index.entries.asSequence()
             .filter { it.kind == SageApiSymbolKind.FUNCTION }
-            .filter { it.qualifiedName == functionQualifiedName || functionQualifiedName in it.aliases }
+            .filter {
+                it.qualifiedName == functionQualifiedName ||
+                    functionQualifiedName in it.aliases ||
+                    ('.' !in functionQualifiedName && it.qualifiedName.substringAfterLast('.') == functionQualifiedName)
+            }
             .flatMap { it.signatures.asSequence() }
             .map { it.returnType }
             .distinct()
@@ -56,9 +60,8 @@ class SageApiIndexQuery(val index: SageApiIndex) {
         if (exact.size == 1) return exact.single()
         if (exact.size > 1) return null
         if ('.' in normalized) return null
-        val simple = normalized
         return index.entries.asSequence()
-            .filter { it.kind == SageApiSymbolKind.CLASS && it.qualifiedName.substringAfterLast('.') == simple }
+            .filter { it.kind == SageApiSymbolKind.CLASS && it.qualifiedName.substringAfterLast('.') == normalized }
             .map { it.qualifiedName }
             .distinct()
             .singleOrNull()

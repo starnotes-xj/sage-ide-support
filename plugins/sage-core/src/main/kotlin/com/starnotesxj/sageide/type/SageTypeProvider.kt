@@ -117,10 +117,6 @@ class SageTypeProvider : PyTypeProviderBase() {
         // why `ct.nth_root(3)` had no member completion.  Mirror the
         // preparse conversion at the ASSIGNMENT boundary: a .sage target
         // assigned a bare int/float literal gets the converted class type.
-        // This is a GENERAL rule (no name whitelist) and it is where the
-        // type actually flows onward; literals in other positions cannot be
-        // wrapped without changing the document text (a PSI identifier's
-        // text must come from the buffer), so they keep their Python types.
         return genericFactoryAssignedType(target, context) ?: literalAssignedType(target)
     }
 
@@ -128,22 +124,26 @@ class SageTypeProvider : PyTypeProviderBase() {
     private fun genericFactoryAssignedType(target: PyTargetExpression, context: TypeEvalContext): Ref<PyType>? {
         val call = target.findAssignedValue() as? PyCallExpression ?: return null
         if (!SageFileUtils.isSageFile(target.containingFile)) return null
-        val qualifiedName = call.multiResolveCalleeFunction(
-            com.jetbrains.python.psi.resolve.PyResolveContext.defaultContext(context),
-        ).mapNotNull(PyCallable::getQualifiedName).distinct().singleOrNull() ?: return null
-        val returnName = SageApiIndexService.getInstance().query()
-            ?.uniqueKnownReturnType(qualifiedName)
-            ?.expression
-            ?: return null
         val query = SageApiIndexService.getInstance().query() ?: return null
+        val resolvedNames = (call.multiResolveCalleeFunction(
+            com.jetbrains.python.psi.resolve.PyResolveContext.defaultContext(context),
+        ).mapNotNull(PyCallable::getQualifiedName) + listOfNotNull(call.callee?.name))
+            .distinct()
+        val qualifiedName = resolvedNames.singleOrNull()
+            ?: resolvedNames.firstOrNull { query.uniqueKnownReturnType(it) != null }
+            ?: return null
+        val returnName = query.uniqueKnownReturnType(qualifiedName)?.expression ?: return null
         val className = query.resolveKnownClassName(returnName) ?: return null
-        val cls = SageStubIndex.findClass(target.project, className.substringAfterLast('.')) ?: return null
-        if (cls.qualifiedName != null && cls.qualifiedName != className) return null
-        if (!cls.isValid) return null
-        return Ref.create(PyClassTypeImpl(cls, false))
+        val cls = SageStubIndex.findClass(target.project, className.substringAfterLast('.'))
+        if (cls != null) {
+            if (cls.qualifiedName != null && cls.qualifiedName != className) return null
+            if (!cls.isValid) return null
+            return Ref.create(PyClassTypeImpl(cls, false))
+        }
+        return PyClassTypeImpl.createTypeByQName(target, className, false)?.let { Ref.create(it) }
     }
 
-    /** `x = <int literal>` -> Integer, `x = <float literal>` -> RealNumber (sage preparse semantics). */
+    /** `x = <int literal>` -> Integer, `x = <float literal>` -> RealNumber. */
     private fun literalAssignedType(target: PyTargetExpression): Ref<PyType>? {
         val assigned = target.findAssignedValue() as? PyNumericLiteralExpression ?: return null
         val className = when {
