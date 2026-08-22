@@ -39,10 +39,19 @@ class RawSymbol:
     def key(self) -> tuple[str, str]:
         return self.qualified_name, self.kind
 
+@dataclass(frozen=True)
+class SourceSpec:
+    root: Path
+    kind: str
+    locator: str
+    module_prefix: str = ""
+
 class AstExtractor:
-    def __init__(self, source_root: Path, module_prefix: str = "") -> None:
-        self.source_root = source_root.resolve()
-        self.module_prefix = module_prefix.strip(".")
+    def __init__(self, source: SourceSpec) -> None:
+        self.source_root = source.root.resolve()
+        self.source_kind = source.kind
+        self.source_locator = source.locator.strip("/")
+        self.module_prefix = source.module_prefix.strip(".")
 
     def extract_path(self, path: Path) -> list[RawSymbol]:
         path = path.resolve()
@@ -50,7 +59,9 @@ class AstExtractor:
         tree = ast.parse(text, filename=str(path), type_comments=True)
         module = self.module_name(path)
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        source = SourceRef("STUB", path.relative_to(self.source_root).as_posix(), digest)
+        relative = path.relative_to(self.source_root).as_posix()
+        locator = "/".join(part for part in (self.source_locator, relative) if part)
+        source = SourceRef(self.source_kind, locator, digest)
         imports = self.collect_imports(tree)
         imports.update({node.name: f"{module}.{node.name}" for node in tree.body if isinstance(node, ast.ClassDef)})
         symbols: list[RawSymbol] = [RawSymbol(module, "MODULE", source, confidence="HIGH")]
@@ -362,12 +373,34 @@ def diff_indexes(previous: dict[str, Any], current: dict[str, Any]) -> dict[str,
 def discover(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*") if path.suffix in {".pyi", ".py"} and path.is_file())
 
+def parse_source_manifest(path: Path) -> list[SourceSpec]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, list) or not value:
+        raise ValueError("source manifest must be a nonempty JSON array")
+    specs = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"source manifest entry {index} must be an object")
+        root = item.get("root")
+        kind = item.get("kind")
+        locator = item.get("locator")
+        module_prefix = item.get("modulePrefix", "")
+        if not isinstance(root, str) or not root.strip() or not isinstance(kind, str) or kind not in {"RUNTIME", "STUB", "SIGNATURE", "DOCUMENTATION", "USER_STUB", "PROBE"} or not isinstance(locator, str) or not locator.strip() or not isinstance(module_prefix, str):
+            raise ValueError(f"source manifest entry {index} requires root, valid kind, locator, and optional modulePrefix")
+        source_root = Path(root)
+        if not source_root.is_dir():
+            raise ValueError(f"source manifest root does not exist: {source_root}")
+        specs.append(SourceSpec(source_root, kind, locator, module_prefix))
+    return specs
+
 def build(args: argparse.Namespace) -> int:
-    paths = discover(args.source_root.resolve())
+    if args.source_manifest is None and args.source_root is None:
+        raise ValueError("either --source-root or --source-manifest is required")
+    specs = parse_source_manifest(args.source_manifest) if args.source_manifest else [SourceSpec(args.source_root, "STUB", args.source_locator, args.module_prefix)]
+    paths = [(spec, path) for spec in specs for path in discover(spec.root)]
     if not paths:
-        raise ValueError(f"no .pyi/.py sources found under {args.source_root}")
-    extractor = AstExtractor(args.source_root, args.module_prefix)
-    raw = [symbol for path in paths for symbol in extractor.extract_path(path)]
+        raise ValueError("no .pyi/.py sources found in configured source roots")
+    raw = [symbol for spec, path in paths for symbol in AstExtractor(spec).extract_path(path)]
     index, diagnostics = normalize(raw, args.sage_version, args.python_version)
     validate_index(index)
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -388,8 +421,10 @@ def build(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("--source-root", type=Path, required=True)
+    result.add_argument("--source-root", type=Path)
     result.add_argument("--module-prefix", default="")
+    result.add_argument("--source-manifest", type=Path)
+    result.add_argument("--source-locator", default="runtime-export")
     result.add_argument("--sage-version", required=True)
     result.add_argument("--python-version", required=True)
     result.add_argument("--output", type=Path, required=True)

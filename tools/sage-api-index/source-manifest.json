@@ -1,0 +1,7 @@
+[
+  {
+    "root": "tools/sage-api-index/fixtures",
+    "kind": "STUB",
+    "locator": "fixture-stubgen/10.6"
+  }
+]

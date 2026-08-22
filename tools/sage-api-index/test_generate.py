@@ -47,6 +47,41 @@ class GeneratorTest(unittest.TestCase):
             self.assertEqual(dynamic["signatures"][0]["returnType"]["state"], "UNKNOWN")
             self.assertTrue(index["sourceDigests"])
 
+    def test_checked_in_source_manifest_reproduces_fixture_shape(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "index.json"
+            result = subprocess.run([sys.executable, str(GENERATOR), "--source-manifest", str(ROOT / "source-manifest.json"), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(output)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(index["sourceDigests"]["fixture-stubgen/10.6/sage/all.pyi"], index["entries"][0]["sources"][0]["digest"])
+            self.assertEqual(len(index["entries"]), 45)
+
+    def test_source_manifest_preserves_kinds_and_locators(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stub_root = root / "stub"
+            runtime_root = root / "runtime"
+            stub_root.mkdir()
+            runtime_root.mkdir()
+            (stub_root / "sage.pyi").write_text("def factory() -> Matrix: ...\n", encoding="utf-8")
+            (runtime_root / "sage.pyi").write_text("class Matrix: ...\n", encoding="utf-8")
+            manifest = root / "sources.json"
+            manifest.write_text(json.dumps([
+                {"root": str(stub_root), "kind": "STUB", "locator": "stubgen/v1"},
+                {"root": str(runtime_root), "kind": "RUNTIME", "locator": "sage/10.6"},
+            ]), encoding="utf-8")
+            output = root / "index.json"
+            result = subprocess.run([sys.executable, str(GENERATOR), "--source-manifest", str(manifest), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(output)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            sources = {source["kind"] for entry in index["entries"] for source in entry["sources"]}
+            locators = {source["locator"] for entry in index["entries"] for source in entry["sources"]}
+            self.assertIn("STUB", sources)
+            self.assertIn("RUNTIME", sources)
+            self.assertTrue(any(locator.startswith("stubgen/v1/") for locator in locators))
+            self.assertTrue(any(locator.startswith("sage/10.6/") for locator in locators))
+
     def test_detects_conflicting_overloads_as_dynamic(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
