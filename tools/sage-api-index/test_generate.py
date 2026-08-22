@@ -13,6 +13,72 @@ from generate import validate_index
 ROOT = Path(__file__).resolve().parent
 GENERATOR = ROOT / "generate.py"
 
+class ManifestContractTest(unittest.TestCase):
+    def test_manifest_contract_requires_identity_and_provenance(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest = root / "manifest.json"
+            output = root / "index.json"
+            manifest.write_text(json.dumps({
+                "artifactId": "fixture-contract",
+                "sageVersion": "10.6",
+                "pythonVersion": "3.11",
+                "provenance": {"kind": "FIXTURE", "generator": "test"},
+                "sources": [{"root": "missing-stubs", "kind": "FIXTURE", "locator": "fixture-contract/10.6"}],
+            }), encoding="utf-8")
+            result = subprocess.run([
+                sys.executable, str(GENERATOR),
+                "--source-manifest", str(manifest),
+                "--sage-version", "10.6",
+                "--python-version", "3.11",
+                "--output", str(output),
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("source manifest root does not exist", result.stderr)
+
+    def test_manifest_contract_preserves_provenance_and_source_metadata(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            shutil.copytree(ROOT / "fixtures" / "sage", source / "sage")
+            manifest = root / "manifest.json"
+            output = root / "index.json"
+            coverage = root / "coverage.json"
+            manifest.write_text(json.dumps({
+                "artifactId": "fixture-contract",
+                "sageVersion": "10.6",
+                "pythonVersion": "3.11",
+                "provenance": {"kind": "FIXTURE", "generator": "test_generate", "source": "checked-in"},
+                "sources": [{"root": "stubs", "kind": "FIXTURE", "locator": "fixture-contract/10.6"}],
+            }), encoding="utf-8")
+            result = subprocess.run([
+                sys.executable, str(GENERATOR),
+                "--source-manifest", str(manifest),
+                "--source-base", str(root),
+                "--sage-version", "10.6",
+                "--python-version", "3.11",
+                "--output", str(output),
+                "--coverage-output", str(coverage),
+                "--expected", str(ROOT / "expected-high-value.json"),
+                "--allow-missing",
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(index["artifactId"], "fixture-contract")
+            self.assertEqual(index["sageVersion"], "10.6")
+            self.assertEqual(index["pythonVersion"], "3.11")
+            self.assertEqual(index["provenance"], {"kind": "FIXTURE", "generator": "test_generate", "source": "checked-in"})
+            self.assertEqual(index["sourceManifest"], "manifest.json")
+            self.assertEqual(index["sources"][0]["kind"], "FIXTURE")
+            self.assertEqual(index["sources"][0]["locator"], "fixture-contract/10.6")
+            self.assertTrue(index["sources"][0]["files"])
+            self.assertTrue(index["sourceDigests"])
+            names = {(entry["qualifiedName"], entry["kind"]): entry for entry in index["entries"]}
+            self.assertIn(("sage.matrix.matrix.Matrix.solve_right", "METHOD"), names)
+            factory = names[("sage.matrix.matrix.matrix", "FUNCTION")]
+            self.assertEqual(factory["signatures"][0]["returnType"], {"state": "KNOWN", "expression": "sage.matrix.matrix.Matrix"})
+            self.assertTrue(all(source["digest"] for entry in index["entries"] for source in entry["sources"]))
+
 class GeneratorTest(unittest.TestCase):
     def run_generator(self, source, expected, output, coverage, previous=None, diff=None):
         command = [sys.executable, str(GENERATOR), "--source-root", str(source), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(output), "--expected", str(expected), "--coverage-output", str(coverage)]
@@ -193,7 +259,11 @@ class GeneratorTest(unittest.TestCase):
             generated = json.loads(output.read_text(encoding="utf-8"))
             bundled_path = ROOT.parent.parent / "plugins" / "sage-core" / "src" / "main" / "resources" / "sage-api-index.json"
             bundled = json.loads(bundled_path.read_text(encoding="utf-8"))
-            self.assertEqual(generated, bundled)
+            self.assertEqual(generated["entries"], bundled["entries"])
+            self.assertEqual(generated["sourceDigests"], bundled["sourceDigests"])
+            self.assertEqual(generated["sageVersion"], bundled["sageVersion"])
+            self.assertEqual(generated["pythonVersion"], bundled["pythonVersion"])
+            self.assertEqual(generated["generatorVersion"], bundled["generatorVersion"])
             report = json.loads(coverage.read_text(encoding="utf-8"))
             self.assertEqual(report["coveredCount"], 15)
             self.assertEqual(report["coverageRatio"], 0.9375)

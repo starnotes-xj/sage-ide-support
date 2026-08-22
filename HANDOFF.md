@@ -236,3 +236,35 @@
 
 - 该测试锁定的是当前 fixture/source manifest 与 checked-in bundled artifact 的一致性，不是实际 Sage runtime/stubgen 全量覆盖；真实 Runtime 输入、product fresh build、installer、smoke、release audit、FinalCheck 均未在本轮运行。
 - HANDOFF-PROMPT.zh-CN.md 与现有未提交工作区改动均保留，未提交 Git；下一轮不得将 fixture contract 结果描述成真实 Sage runtime 全量完成。
+- 本轮新错误记录：首次写入下一任务文档的 run_code 字符串因反斜杠转义导致工具解析失败（工具级 exit code：N/A，未执行命令）；已改用逐行字符串构造后继续。
+- 本轮新错误记录：更新 NEXT-TASK.zh-CN.md 后立即运行 `git diff --check`，真实 exit code `1`，报告 `NEXT-TASK.zh-CN.md:116: new blank line at EOF`；已记录，下一步仅修复该文档末尾空行。
+- 任务文档已修复末尾空行；重新运行 `git diff --check`，真实 exit code `0`（仅既有 LF/CRLF warning）。
+- 本轮新错误记录：新增 manifest contract 测试首次运行 `python -m unittest tools/sage-api-index/test_generate.py`，真实 exit code `1`；两个新测试被既有 CLI 强制要求 `--sage-version/--python-version` 阻止，非源码解析错误。已记录后读取最小测试范围修复调用参数。
+- 本轮新错误记录：修正测试版本参数后再次运行同一命令，真实 exit code `1`；现有 generator 只接受数组 manifest、且没有 `--source-base`，导致新对象 manifest 测试分别报 `source manifest must be a nonempty JSON array` 与 `unrecognized arguments: --source-base`。已记录后读取最小 generator CLI/manifest 处理范围。
+- 本轮新错误记录：首次批量修改 generator 时，`edit` 找不到精确 normalize 函数片段，工具操作未写入（工具级 exit code：N/A，未执行命令）；已改为基于已读取的精确行片段分步修改。
+- 本轮新错误记录：更新对象 source-manifest 后运行 `python -m unittest tools/sage-api-index/test_generate.py`，真实 exit code `1`；新 contract 测试暴露三处预期失败：生成 index 尚无顶层 sources 元数据、checked-in bundled drift 测试不应比较新增 manifest metadata、缺失路径错误文案为 `source manifest root does not exist` 而测试写成 `source root does not exist`。已记录后仅修复这些最小契约范围。
+- 本轮新错误记录：补齐顶层 sources 后运行同一测试，真实 exit code `1`；normalize 将 sourceSpecs 字典按对象属性访问，报 `AttributeError: dict has no attribute kind`，同时缺失路径断言仍需匹配完整错误文案。已记录后读取错误行并修复。
+- 本轮新错误记录：修正字典访问后运行同一测试，真实 exit code `1`；source files 聚合条件使用原始 `FIXTURE` 与归一化 `STUB` 不一致，checked-in bundled drift 预期也需明确排除新 metadata；缺失路径断言仍使用过短文案。已记录后继续最小修复。
+- 本轮新错误记录：统一内部 source kind 为 `STUB` 后运行同一测试，真实 exit code `1`；测试仍要求顶层 sources kind 为 `FIXTURE`，说明输出 contract 需保留 manifest 原始 kind，不应只用内部 extractor kind。已记录后调整 metadata 输出而不改变解析语义。
+
+## 本轮增量：artifact manifest/provenance 输入边界（2026-08-22）
+
+### 实现
+
+- `tools/sage-api-index/source-manifest.json` 从旧数组升级为显式对象 schema：`artifactId`、Sage/Python 版本、`provenance`、`sources`；当前唯一输入明确标记为 `FIXTURE`，没有伪称真实 Sage runtime。
+- `tools/sage-api-index/generate.py` 新增对象 manifest 严格校验：缺少 identity/version/provenance/sources、source root 不存在或输入为空时失败；保留旧数组 manifest 和 `--source-root` 兼容。
+- 新增 `--source-base`，支持 manifest root 相对独立 base 解析；对象 manifest 的 artifact/provenance/source metadata 写入生成 index，source digest 与 entry locator 保持一致。
+- `tools/sage-api-index/test_generate.py` 新增 manifest contract 回归，覆盖缺失 artifact 路径、provenance/source metadata、普通 METHOD、KNOWN factory return type、source digest、版本和既有 bundled entry drift；没有增加单函数特例。
+
+### Fresh 验证（真实 exit code）
+
+- `python -m unittest tools/sage-api-index/test_generate.py`：exit code `0`，13 tests completed，0 failures。
+- `python -m py_compile tools/sage-api-index/generate.py tools/sage-api-index/test_generate.py`：exit code `0`。
+- `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`：exit code `0`，BUILD SUCCESSFUL；6 actionable tasks up-to-date。
+- `git diff --check`：exit code `0`；仅有既有 LF/CRLF warning，无 whitespace error。
+
+### 未完成与剩余风险
+
+- 当前 manifest 仍然是 checked-in fixture provenance，不是真实 Sage runtime/stubgen artifact；未发现可确认的真实 Sage `.pyi` 输入，因此本轮没有伪造真实导入结果。
+- 本轮未修改 bundled JSON、插件源码、product、installer、release 或官方 checkout；未执行 product fresh build、installer smoke、release audit 或 FinalCheck。
+- 本轮新增错误和真实 exit code 均已在前置增量中记录；最终工作区保持未提交状态。

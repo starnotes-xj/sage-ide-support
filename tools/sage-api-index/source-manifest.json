@@ -1,7 +1,17 @@
-[
-  {
-    "root": "fixtures",
-    "kind": "STUB",
-    "locator": "fixture-stubgen/10.6"
-  }
-]
+{
+  "artifactId": "fixture-stubgen-sage-10.6",
+  "sageVersion": "10.6",
+  "pythonVersion": "3.11",
+  "provenance": {
+    "kind": "FIXTURE",
+    "generator": "checked-in test fixture",
+    "source": "tools/sage-api-index/fixtures"
+  },
+  "sources": [
+    {
+      "root": "fixtures",
+      "kind": "FIXTURE",
+      "locator": "fixture-stubgen/10.6"
+    }
+  ]
+}

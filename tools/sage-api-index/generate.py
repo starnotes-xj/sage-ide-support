@@ -193,7 +193,8 @@ def parameter_for(argument: ast.arg, default: ast.AST | None, imports: dict[str,
 def signature_key(signature: dict[str, Any]) -> str:
     return json.dumps(signature, sort_keys=True, separators=(",", ":"))
 
-def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_version: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_version: str, metadata: dict[str, Any] | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+
     raw_list = list(raw_symbols)
     grouped: dict[tuple[str, str], list[RawSymbol]] = {}
     imported_aliases: dict[str, set[str]] = {}
@@ -236,6 +237,9 @@ def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_versio
             entry["documentation"] = documents[0]
         entries.append(entry)
     index = {"schemaVersion": SCHEMA_VERSION, "sageVersion": sage_version, "pythonVersion": python_version, "generatorVersion": GENERATOR_VERSION, "sourceDigests": source_digests(entries), "entries": entries}
+    if metadata:
+        index = {**metadata, **index}
+        index["sources"] = [{"kind": source["kind"], "locator": source["locator"], "files": sorted({item["locator"].split(":")[0] for entry in entries for item in entry["sources"] if item["kind"] == source["extractorKind"] and item["locator"].startswith(source["locator"] + "/")})} for source in metadata.get("sourceSpecs", [])]
     return index, sorted(diagnostics, key=lambda item: (item["qualifiedName"], item["kind"]))
 
 def conflicting_signatures(signatures: list[dict[str, Any]]) -> bool:
@@ -383,38 +387,60 @@ def diff_indexes(previous: dict[str, Any], current: dict[str, Any]) -> dict[str,
 def discover(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*") if path.suffix in {".pyi", ".py"} and path.is_file())
 
-def parse_source_manifest(path: Path) -> list[SourceSpec]:
+def parse_source_manifest(path: Path, source_base: Path | None = None) -> tuple[list[SourceSpec], dict[str, Any]]:
     value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, list) or not value:
-        raise ValueError("source manifest must be a nonempty JSON array")
+    if isinstance(value, list):
+        items = value
+        metadata = {}
+    elif isinstance(value, dict):
+        required = ("artifactId", "sageVersion", "pythonVersion", "provenance", "sources")
+        missing = [field for field in required if field not in value]
+        if missing:
+            raise ValueError(f"source manifest requires {', '.join(missing)}")
+        for field in ("artifactId", "sageVersion", "pythonVersion"):
+            if not isinstance(value[field], str) or not value[field].strip():
+                raise ValueError(f"source manifest {field} must be a nonblank string")
+        if not isinstance(value["provenance"], dict) or not value["provenance"]:
+            raise ValueError("source manifest provenance must be a nonempty object")
+        items = value["sources"]
+        metadata = {"artifactId": value["artifactId"], "sageVersion": value["sageVersion"], "pythonVersion": value["pythonVersion"], "provenance": value["provenance"], "sourceManifest": path.name, "sourceSpecs": [{"kind": item.get("kind"), "extractorKind": "STUB" if item.get("kind") == "FIXTURE" else item.get("kind"), "locator": item.get("locator")} for item in items if isinstance(item, dict)]}
+    else:
+        raise ValueError("source manifest must be a JSON array or artifact object")
+    if not isinstance(items, list) or not items:
+        raise ValueError("source manifest sources must be a nonempty JSON array")
     specs = []
-    for index, item in enumerate(value):
+    base = (source_base or path.parent).resolve()
+    for index, item in enumerate(items):
         if not isinstance(item, dict):
             raise ValueError(f"source manifest entry {index} must be an object")
         root = item.get("root")
         kind = item.get("kind")
         locator = item.get("locator")
         module_prefix = item.get("modulePrefix", "")
-        if not isinstance(root, str) or not root.strip() or not isinstance(kind, str) or kind not in {"RUNTIME", "STUB", "SIGNATURE", "DOCUMENTATION", "USER_STUB", "PROBE"} or not isinstance(locator, str) or not locator.strip() or not isinstance(module_prefix, str):
+        valid_kinds = {"FIXTURE", "RUNTIME", "STUB", "SIGNATURE", "DOCUMENTATION", "USER_STUB", "PROBE"}
+        if not isinstance(root, str) or not root.strip() or not isinstance(kind, str) or kind not in valid_kinds or not isinstance(locator, str) or not locator.strip() or not isinstance(module_prefix, str):
             raise ValueError(f"source manifest entry {index} requires root, valid kind, locator, and optional modulePrefix")
         source_root = Path(root)
         if not source_root.is_absolute():
-            source_root = path.parent / source_root
+            source_root = base / source_root
         source_root = source_root.resolve()
         if not source_root.is_dir():
             raise ValueError(f"source manifest root does not exist: {source_root}")
-        specs.append(SourceSpec(source_root, kind, locator, module_prefix))
-    return specs
+        specs.append(SourceSpec(source_root, "STUB" if kind == "FIXTURE" else kind, locator, module_prefix))
+    return specs, metadata
 
 def build(args: argparse.Namespace) -> int:
     if args.source_manifest is None and args.source_root is None:
         raise ValueError("either --source-root or --source-manifest is required")
-    specs = parse_source_manifest(args.source_manifest) if args.source_manifest else [SourceSpec(args.source_root, "STUB", args.source_locator, args.module_prefix)]
+    if args.source_manifest:
+        specs, metadata = parse_source_manifest(args.source_manifest, args.source_base)
+    else:
+        specs, metadata = [SourceSpec(args.source_root, "STUB", args.source_locator, args.module_prefix)], {}
     paths = [(spec, path) for spec in specs for path in discover(spec.root)]
     if not paths:
         raise ValueError("no .pyi/.py sources found in configured source roots")
     raw = [symbol for spec, path in paths for symbol in AstExtractor(spec).extract_path(path)]
-    index, diagnostics = normalize(raw, args.sage_version, args.python_version)
+    index, diagnostics = normalize(raw, metadata.get("sageVersion", args.sage_version), metadata.get("pythonVersion", args.python_version), metadata)
     validate_index(index)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -443,6 +469,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--source-root", type=Path)
     result.add_argument("--module-prefix", default="")
     result.add_argument("--source-manifest", type=Path)
+    result.add_argument("--source-base", type=Path)
     result.add_argument("--source-locator", default="runtime-export")
     result.add_argument("--sage-version", required=True)
     result.add_argument("--python-version", required=True)
