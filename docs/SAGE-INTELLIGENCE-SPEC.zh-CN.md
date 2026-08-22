@@ -149,7 +149,7 @@ Sage Runtime / sage-pycharm-stubgen / 官方文档 / 用户 stub
 
 ### 回归测试门
 
-- API index schema/generator tests；
+- API index schema/generator tests（当前已加入 Python generator tests、Kotlin unified generator test）；
 - 版本化 fixture 和 golden completion tests；
 - type inference/property-based tests；
 - preparse/source-map golden tests；

@@ -160,4 +160,12 @@
 - `SageApiIndexQuery` 现在按子类→父类 rank 解析成员，子类同名成员覆盖父类；未知带点类型名不再按 simple name 猜测。
 - JSON reader 严格拒绝重复 object key、非整数 schemaVersion 和错误 boolean 字段；对应 core 回归测试已加入。
 - 本轮 fresh 验证：`:core:sage-api:test -PrunSageApiTests=true` exit code `0`；`:plugins:sage-core:processResources :plugins:sage-core:compileKotlin -Psage.ide.localSdk=D:/JetBrains/PyCharm` exit code `0`。
-- 真实 Sage Runtime / `sage-pycharm-stubgen` 全量 index 尚未生成；bundled JSON 仍是最小可验证 slice。
+- 新增 `tools/sage-api-index/generate.py`：Python 标准库 AST `.pyi`/`.py` extractor，输出 schemaVersion=1 index、SHA-256 sourceDigests、签名/文档/父类/别名、coverage/diagnostics/diff。
+- 新增 `tools/sage-api-index/test_generate.py`，4 项测试覆盖高价值域 symbol、coverage missing/ratio、Dynamic conflict、added/removed/changed diff 和空源目录负例；`python -m py_compile ...` 与测试通过。
+- 新增 `core/sage-api/.../SageApiIndexGenerator.kt`，统一现有 Kotlin stub extractor + normalizer 入口；core 现有 19 项测试通过。
+- 生成器 fixture 覆盖 matrix/vector/polynomial/finite-field/number-theory 高价值入口，其中 `Matrix.solve_right` 作为普通 METHOD 数据被提取，不含方法名特例。
+- Sage Core Kotlin 编译继续通过；真实 Runtime/stubgen 输入尚未接入，当前生成器 artifact 仍是 fixture 验证，不得宣称全量覆盖。
+- 生成器已修复 canonical function 的 re-export alias 归并：`sage.all.matrix`/`sage.all.GF` 可命中真实函数条目，而不是只留下无签名 ALIAS；coverage 同样按 alias 解析。
+- fixture 已拆分覆盖 matrix、vector、polynomial、finite field、number theory、crypto，当前生成 8 个源文件、45 个 entries；高价值 manifest 16 项，alias-aware coverage 15/16（0.9375），唯一 missing 是刻意保留的 `sage.all.missing`。
+- 生成器新增严格 index contract validation：schemaVersion、版本/生成器元数据、SHA-256、entry kind/dynamicity/confidence、signature/type/source 字段和重复 entry；Python 负例测试现为 5 项。
+- `plugins/sage-core/src/main/resources/sage-api-index.json` 已由 validated generated artifact 替换原最小矩阵 slice；`core:sage-api` test resource 同步用于 Kotlin reader regression。

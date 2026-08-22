@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "sageVersion": "10.6",
+  "pythonVersion": "3.11",
+  "stubgen": {
+    "name": "sage-pycharm-stubgen",
+    "version": "pending-runtime-export",
+    "source": "runtime-or-user-supplied-pyi"
+  },
+  "sources": [
+    {
+      "kind": "STUB",
+      "locator": "runtime-export/**/*.pyi"
+    },
+    {
+      "kind": "SIGNATURE",
+      "locator": "pending-stubgen-signature-export"
+    },
+    {
+      "kind": "DOCUMENTATION",
+      "locator": "pending-sage-documentation-export"
+    }
+  ],
+  "generatorVersion": "sage-api-index-py/0.1"
+}

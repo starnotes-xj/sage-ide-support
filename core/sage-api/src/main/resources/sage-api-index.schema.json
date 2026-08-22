@@ -3,26 +3,217 @@
   "$id": "https://sage-math-ctf-ide.dev/schema/sage-api-index-v1.json",
   "title": "Versioned SageMath API index",
   "type": "object",
-  "required": ["schemaVersion", "sageVersion", "pythonVersion", "entries"],
+  "required": [
+    "schemaVersion",
+    "sageVersion",
+    "pythonVersion",
+    "generatorVersion",
+    "sourceDigests",
+    "entries"
+  ],
   "properties": {
-    "schemaVersion": {"const": 1},
-    "sageVersion": {"type": "string", "minLength": 1},
-    "pythonVersion": {"type": "string", "minLength": 1},
-    "entries": {"type": "array", "items": {"$ref": "#/$defs/entry"}}
+    "schemaVersion": {
+      "const": 1
+    },
+    "sageVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pythonVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "generatorVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceDigests": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-fA-F]{64}$"
+      }
+    }
   },
   "$defs": {
     "entry": {
       "type": "object",
-      "required": ["qualifiedName", "kind", "signatures", "parents", "aliases", "dynamicity", "confidence", "sources"],
+      "required": [
+        "qualifiedName",
+        "kind",
+        "signatures",
+        "parents",
+        "aliases",
+        "dynamicity",
+        "confidence",
+        "sources"
+      ],
       "properties": {
-        "qualifiedName": {"type": "string", "minLength": 1},
-        "kind": {"enum": ["MODULE", "CLASS", "FUNCTION", "METHOD", "PROPERTY", "CONSTANT", "ALIAS"]},
-        "signatures": {"type": "array"},
-        "parents": {"type": "array", "items": {"type": "string"}},
-        "aliases": {"type": "array", "items": {"type": "string"}},
-        "dynamicity": {"enum": ["STATIC", "DYNAMIC", "UNKNOWN"]},
-        "confidence": {"enum": ["HIGH", "MEDIUM", "LOW", "UNKNOWN"]},
-        "sources": {"type": "array"}
+        "qualifiedName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "MODULE",
+            "CLASS",
+            "FUNCTION",
+            "METHOD",
+            "PROPERTY",
+            "CONSTANT",
+            "ALIAS"
+          ]
+        },
+        "signatures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/signature"
+          }
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dynamicity": {
+          "enum": [
+            "STATIC",
+            "DYNAMIC",
+            "UNKNOWN"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "HIGH",
+            "MEDIUM",
+            "LOW",
+            "UNKNOWN"
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "documentation": {
+          "type": "object"
+        },
+        "valueType": {
+          "$ref": "#/$defs/typeRef"
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "required": [
+        "parameters",
+        "returnType"
+      ],
+      "properties": {
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/parameter"
+          }
+        },
+        "returnType": {
+          "$ref": "#/$defs/typeRef"
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "defaultValue": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "keywordOnly": {
+          "type": "boolean"
+        },
+        "variadic": {
+          "type": "boolean"
+        }
+      }
+    },
+    "typeRef": {
+      "type": "object",
+      "required": [
+        "state",
+        "expression"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "KNOWN",
+            "UNKNOWN",
+            "DYNAMIC"
+          ]
+        },
+        "expression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "kind",
+        "locator"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "RUNTIME",
+            "STUB",
+            "SIGNATURE",
+            "DOCUMENTATION",
+            "USER_STUB",
+            "PROBE"
+          ]
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        }
       }
     }
   }

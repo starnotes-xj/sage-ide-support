@@ -101,6 +101,32 @@ class SageApiIndexTest {
     }
 
     @Test
+    fun generatedArtifactRoundTripsThroughKotlinReaderAndKeepsAliases() {
+        val artifact = SageApiIndexJsonReader.read(
+            requireNotNull(javaClass.classLoader.getResourceAsStream("sage-api-index.json"))
+                .bufferedReader().use { it.readText() },
+        )
+        val query = SageApiIndexQuery(artifact)
+        assertEquals("10.6", artifact.sageVersion)
+        assertEquals("3.11", artifact.pythonVersion)
+        assertTrue(artifact.entries.size >= 40)
+        assertEquals("sage.matrix.matrix.Matrix", query.resolveKnownClassName("sage.all.Matrix"))
+        assertEquals("sage.matrix.matrix.Matrix", query.uniqueKnownReturnType("sage.all.matrix")?.expression)
+        assertTrue(query.members("sage.matrix.matrix.Matrix").any { it.qualifiedName.endsWith("solve_right") })
+    }
+
+    @Test
+    fun generatorProvidesOneSourceDrivenEntryPoint() {
+        val generated = SageApiIndexGenerator().generate(
+            SageApiVersion("10.6", "3.11"),
+            listOf(SageStubSource("sage.all", FIXTURE, "all.pyi")),
+        )
+        assertNotNull(generated.index.entry("sage.all.factor", SageApiSymbolKind.FUNCTION))
+        assertNotNull(generated.index.entry("sage.all.Integer", SageApiSymbolKind.CLASS))
+        assertEquals("sage.rings.integer.Integer", generated.index.entry("sage.all.Integer.nth_root", SageApiSymbolKind.METHOD)?.signatures?.single()?.returnType?.expression)
+    }
+
+    @Test
     fun conflictingSameShapeSignaturesBecomeDynamicAndAreReported() {
         val source = SageApiSourceRef(SageApiSourceKind.STUB, "fixture-a.pyi")
         val other = SageApiSourceRef(SageApiSourceKind.SIGNATURE, "fixture-b.json")

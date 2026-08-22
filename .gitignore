@@ -24,5 +24,9 @@ Thumbs.db
 *.sage-session
 .env.local
 
+# Python caches
+__pycache__/
+*.py[cod]
+
 # Ad-hoc lexer test outputs
 *.class

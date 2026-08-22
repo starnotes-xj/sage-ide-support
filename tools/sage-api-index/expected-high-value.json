@@ -1,0 +1,66 @@
+[
+  {
+    "qualifiedName": "sage.matrix.matrix.matrix",
+    "kind": "FUNCTION"
+  },
+  {
+    "qualifiedName": "sage.modules.vector.vector",
+    "kind": "FUNCTION"
+  },
+  {
+    "qualifiedName": "sage.rings.polynomial.polynomial_ring.PolynomialRing",
+    "kind": "FUNCTION"
+  },
+  {
+    "qualifiedName": "sage.rings.finite_rings.finite_field_base.GF",
+    "kind": "FUNCTION"
+  },
+  {
+    "qualifiedName": "sage.arith.misc.factor",
+    "kind": "FUNCTION"
+  },
+  {
+    "qualifiedName": "sage.crypto.crypto.discrete_log",
+    "kind": "FUNCTION"
+  },
+  {
+    "qualifiedName": "sage.matrix.matrix.Matrix",
+    "kind": "CLASS"
+  },
+  {
+    "qualifiedName": "sage.matrix.matrix.Matrix.solve_right",
+    "kind": "METHOD"
+  },
+  {
+    "qualifiedName": "sage.matrix.matrix.Matrix.determinant",
+    "kind": "METHOD"
+  },
+  {
+    "qualifiedName": "sage.modules.vector.Vector",
+    "kind": "CLASS"
+  },
+  {
+    "qualifiedName": "sage.modules.vector.Vector.dot_product",
+    "kind": "METHOD"
+  },
+  {
+    "qualifiedName": "sage.rings.polynomial.polynomial_ring.PolynomialRing.gen",
+    "kind": "METHOD"
+  },
+  {
+    "qualifiedName": "sage.rings.finite_rings.finite_field_base.FiniteField.gen",
+    "kind": "METHOD"
+  },
+  {
+    "qualifiedName": "sage.crypto.crypto.CryptoSystem.encrypt",
+    "kind": "METHOD"
+  },
+  {
+    "qualifiedName": "sage.all.missing",
+    "kind": "FUNCTION"
+  },
+  {
+    "qualifiedName": "sage.all.dynamic_factory",
+    "kind": "FUNCTION"
+  }
+]
