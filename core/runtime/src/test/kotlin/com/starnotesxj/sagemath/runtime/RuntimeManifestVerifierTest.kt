@@ -54,7 +54,7 @@ class RuntimeManifestVerifierTest {
         try {
             val platform = PlatformTriple(OperatingSystem.WINDOWS, CpuArchitecture.X64)
             val id = SageRuntimeId("10.6", platform)
-            val versionName = "managed-10.6-windows-x64"
+            val versionName = "${id.stableName()}-00000000-0000-4000-8000-000000000006"
             val versionRoot = root.resolve("versions").resolve(versionName)
             Files.createDirectories(versionRoot)
             val executable = versionRoot.resolve("sage.exe")

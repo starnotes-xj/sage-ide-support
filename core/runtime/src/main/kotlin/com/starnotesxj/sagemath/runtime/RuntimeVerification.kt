@@ -123,7 +123,7 @@ class FileRuntimeLocator(
             require(size in 1..RuntimeManifestCodec.MAX_ENCODED_BYTES) { "Runtime manifest sidecar is too large" }
             RuntimeManifestCodec.decode(Files.readAllBytes(marker))
         }.getOrNull() ?: return null
-        if (manifest.runtimeId != id) return null
+        if (manifest.runtimeId != id || !id.isValidInstalledDirectoryName(currentName)) return null
         val executable = runtimeRoot.resolve(manifest.executable).normalize()
         if (
             !executable.startsWith(runtimeRoot) ||

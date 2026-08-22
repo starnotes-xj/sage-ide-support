@@ -87,6 +87,17 @@ data class SageRuntimeId(
             .joinToString("") { "%02x".format(Locale.ROOT, it) }
         return "runtime-${digest.take(24)}"
     }
+
+    /** Accept only the immutable directory name or the installer's UUID suffix. */
+    fun isValidInstalledDirectoryName(name: String): Boolean {
+        if (name == stableName()) return true
+        val suffix = name.removePrefix("${stableName()}-")
+        return suffix != name && UUID_SUFFIX.matches(suffix)
+    }
+
+    companion object {
+        private val UUID_SUFFIX = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+    }
 }
 
 enum class ArchiveFormat {
