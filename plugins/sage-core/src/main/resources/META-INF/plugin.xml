@@ -224,6 +224,8 @@
     <!-- Shared Sage execution settings (Settings | Tools | SageMath). -->
     <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRunSettings"/>
     <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRuntimeService"/>
+    <applicationService serviceImplementation="com.starnotesxj.sageide.completion.SageApiIndexService"/>
+
     <applicationConfigurable parentId="tools"
                              id="com.starnotesxj.sageide.run.SageRunSettingsConfigurable"
                              displayName="SageMath"
@@ -286,20 +288,13 @@
 
   <extensions defaultExtensionNs="Pythonid">
     <!-- Types the factory target (F) and the generator targets (a/x) of
-         F.<a> = Constructor(...) statements.  Return types for sage stub methods
-         are NOT patched here since v1.3.0 — the stubgen curated table annotates
-         them directly, keeping type knowledge in the stub data layer.
-         order="first": the type-provider EP loops (getReferenceType / getReturnType /
-         getCallType) stop at the FIRST provider returning a non-null Ref — even when
-         the Ref's content is null — so a later-registered provider can be shadowed by
-         an earlier one.  This provider answers only for sugar targets in .sage files
-         (null everywhere else), so being consulted first never disturbs the other
-         providers while making our results immune to their Ref-shadows. -->
+         F.<a> = Constructor(...) statements. Return types for Sage stub
+         methods are provided by the indexed data layer when available. -->
     <typeProvider implementation="com.starnotesxj.sageide.type.SageTypeProvider" order="first"/>
-    <!-- The implicit sage.all namespace (.sage files get it injected at runtime)
-         plus generator references inside sugar statements: consulted by PyReferenceImpl
-         whenever ordinary Python resolution fails.  (Replaces the PsiReferenceContributor
-         of <=1.1.x, which the inspection and type inference never consulted.) -->
+    <!-- Indexed Sage class members supplement native PSI/.pyi members. -->
+    <pyClassMembersProvider implementation="com.starnotesxj.sageide.completion.SageApiClassMembersProvider"/>
+    <!-- The implicit sage.all namespace plus generator references inside
+         sugar statements, consulted when ordinary Python resolution fails. -->
     <pyReferenceResolveProvider implementation="com.starnotesxj.sageide.sugar.SageReferenceResolveProvider"/>
   </extensions>
 </idea-plugin>

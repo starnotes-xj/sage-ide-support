@@ -7,6 +7,8 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.PyElementTypes
 import com.jetbrains.python.psi.PyAssignmentStatement
+import com.jetbrains.python.psi.PyCallExpression
+import com.jetbrains.python.psi.PyCallable
 import com.jetbrains.python.psi.PyNumericLiteralExpression
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.types.PyCallableType
@@ -17,6 +19,8 @@ import com.jetbrains.python.psi.types.PyType
 import com.jetbrains.python.psi.types.PyTypeProviderBase
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sageide.sugar.SageFileUtils
+import com.starnotesxj.sageide.completion.SageApiIndexService
+import com.starnotesxj.sagemath.sageapi.SageTypeState
 import com.starnotesxj.sageide.sugar.SageStubIndex
 import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
 import com.starnotesxj.sageide.sugar.SageSugarInfo
@@ -62,6 +66,7 @@ import com.starnotesxj.sageide.sugar.SageSugarInfo
  * `.sage` files.
  */
 class SageTypeProvider : PyTypeProviderBase() {
+
 
     override fun getReferenceType(
         referenceTarget: PsiElement,
@@ -117,7 +122,27 @@ class SageTypeProvider : PyTypeProviderBase() {
         // type actually flows onward; literals in other positions cannot be
         // wrapped without changing the document text (a PSI identifier's
         // text must come from the buffer), so they keep their Python types.
-        return literalAssignedType(target)
+        return genericFactoryAssignedType(target, context) ?: literalAssignedType(target)
+    }
+
+    /** Resolve `target = sage_factory(...)` from the versioned API return type. */
+    private fun genericFactoryAssignedType(target: PyTargetExpression, context: TypeEvalContext): Ref<PyType>? {
+        val call = target.findAssignedValue() as? PyCallExpression ?: return null
+        if (!SageFileUtils.isSageFile(target.containingFile)) return null
+        val qualifiedName = call.multiResolveCalleeFunction(
+            com.jetbrains.python.psi.resolve.PyResolveContext.defaultContext(context),
+        ).mapNotNull(PyCallable::getQualifiedName).distinct().singleOrNull() ?: return null
+        val returnName = SageApiIndexService.getInstance().query()
+            ?.callReturnTypes(qualifiedName)
+            ?.singleOrNull()
+            ?.takeIf { it.state == SageTypeState.KNOWN }
+            ?.expression
+            ?: return null
+        val className = returnName.substringBefore('[').trim()
+        val simpleName = className.substringAfterLast('.')
+        val cls = SageStubIndex.findClass(target.project, simpleName) ?: return null
+        if (!cls.isValid) return null
+        return Ref.create(PyClassTypeImpl(cls, false))
     }
 
     /** `x = <int literal>` -> Integer, `x = <float literal>` -> RealNumber (sage preparse semantics). */

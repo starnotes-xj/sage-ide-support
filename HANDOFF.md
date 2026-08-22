@@ -111,8 +111,8 @@
 
 ### 未完成与风险
 
-- 这不是全量 Sage API intelligence：尚未实现真实 Sage Runtime / `sage-pycharm-stubgen` / signature / documentation 批量 extractor、增量构建、版本 diff、完整 coverage report、IDE service/resolver、类型传播、completion/signature/documentation 消费和 source-map golden tests。
-- 当前 JSON writer 只负责稳定输出，不提供 JSON parser/loader；schema 资源尚未接入 runtime 校验。
+- 这不是全量 Sage API intelligence：尚未实现真实 Sage Runtime / `sage-pycharm-stubgen` / signature / documentation 批量 extractor、增量构建、版本 diff、完整 coverage report 和 source-map golden tests；当前已接入 immutable query、validated JSON loader、类型传播和成员 completion 消费的最小链路。
+- JSON reader 已接入 index service，并通过模型构造器执行 schemaVersion、结构字段、Unknown/Dynamic 和重复 entry 校验；独立 schema JSON 仍未实现完整 JSON-Schema validator。
 - extractor 是刻意有限的 `.pyi` 语法切片，不应被描述为 Sage 全量覆盖；动态/Cython API 仍返回 Unknown/Dynamic。
 - 本轮没有运行 Sage Core plugin、Community product、installer、smoke、release audit 或 FinalCheck；既有交接中的产品证据未被本轮重用为 fresh build 证据。
 - 未修改 `G:\Projects\sage-ide-support`、`G:\Projects\intellij-community-sage-pr` 或官方 `G:\Projects\intellij-community-sage-ide`；本轮仅修改产品仓库。
@@ -120,9 +120,40 @@
 ### 下一位代理
 
 从 `core/sage-api/src/main/kotlin/com/starnotesxj/sagemath/sageapi/SageApiIndexModels.kt` 和 `SageApiNormalizer.kt` 继续：优先加入真正的 schema loader/validator 与 Python stdlib AST extractor（建议放到 `tools/sage-api-index/`），再接入 `plugins/sage-core` 的 immutable index service；不要把 extractor 逻辑扩展成 Kotlin 函数特例。
+## 本轮增量：通用 Sage API 成员解析问题（接手重点）
+
+- 典型复现：`matrix(...)` 返回的矩阵对象可以提示部分成员，但 `solve_right` 未出现在候选中；这类问题不能靠逐个函数补 Kotlin 特例。
+- 根因方向：当前 stubgen 数据、Python PSI 和插件侧局部 `SageTypeProvider`/completion 规则没有形成统一的版本化 API index、工厂返回类型解析和继承/parent/mixin/category 成员闭包。
+- 通用解决路径：Sage Runtime introspection + `sage-pycharm-stubgen` + 签名/文档 → extractor/normalizer → versioned API/type/document index → immutable loader/query → factory/constructor return type → inheritance/parent/mixin/category/dynamic closure → completion/signature/documentation。
+- `solve_right` 只能作为矩阵成员闭包和 coverage/golden test 的回归样例，不能作为硬编码特例。
+- 本轮新增 `HANDOFF-PROMPT.zh-CN.md`，已明确“实际修改文件、提交保存本轮成果，然后继续推进”，并要求下一轮先添加失败测试，再接入 `core:sage-api` 与 `plugins:sage-core`。
+- Jupyter 不参与该问题的类型权威链路；Sage 原生编辑器和 Sage Console 仍是首要方向。
+
 ## 交接规则
 
 - 不修改官方 checkout、`sage-ide-support` 或 `sage-pr`。
 - 不手工编辑 installer、SPDX 或 distribution 产物来伪造验证结果。
 - 新构建必须使用 JDK 25、ASCII `G:\sage-build` 环境路径，并记录真实 exit code。
 - 后续 Git 提交使用中文 Lore 格式，并包含 `约束：`、`拒绝：`、`置信度：`、`影响范围：`、`后续指引：`、`已验证：`、`未验证：`。
+## 本轮增量：矩阵工厂类型传播与 bundled index（进行中）
+
+已实际写入：
+
+- `SageTypeProvider` 增加通用 `target = sage_factory(...)` 路径：通过 `PyCallExpression.multiResolveCalleeFunction` 得到 callable qualified name，查询 immutable Sage API index 的唯一 KNOWN return type，再通过 Sage stub class index 构造实例类型；不包含 `solve_right` 方法名特例。
+- `SageApiIndexService` 增加 application service 和外部路径加载；没有 `-Dsage.api.index` 时加载插件资源 `sage-api-index.json`，JSON 经过 schema reader 和模型构造器校验后才安装。
+- 新增 `plugins/sage-core/src/main/resources/sage-api-index.json`，当前是可运行的最小矩阵 slice，包含 `matrix` factory return、`Matrix` class、`determinant` 和 `solve_right`。它是接入链路 fixture，不宣称全量 Sage 覆盖。
+- `SageApiIndexTest` 新增 matrix factory return 与 generic member query 回归测试，当前 core 测试通过。
+- `SageTypeProviderTest` 新增目标赋值类型回归用例，等待 plugin test classpath 可用后执行。
+- 新增 `plugins/sage-core/src/test/resources/testData/completion/matrix-solve-right.sage`，固定 `A = matrix(...)` 后的 `A.sol<caret>` 回归输入。
+
+本轮 fresh 验证：
+
+- `:core:sage-api:test -PrunSageApiTests=true`：通过，8 tests。
+- `:plugins:sage-core:compileKotlin -Psage.ide.localSdk=D:/JetBrains/PyCharm`：通过。
+- `:plugins:sage-core:processResources -Psage.ide.localSdk=D:/JetBrains/PyCharm`：通过，并确认 `build/resources/main/sage-api-index.json` 已打包。
+- `git diff --check`：通过；仅有 Git 的 LF/CRLF warning。
+
+新阻塞（已记录，不能伪装成测试通过）：
+
+- `:plugins:sage-core:compileTestKotlin` 尚未进入 Kotlin test source 编译，IntelliJ Platform Gradle Plugin 在解析本地 PyCharm module descriptor 时失败：`ModuleDescriptor ... unknown field module/namespace`。这是本地平台依赖元数据解析错误，不是当前 Kotlin 源码编译错误；需要后续用既有 plugin test 运行方式或修复/绕过该工具链版本不兼容后再执行。
+- 真实 Sage Runtime / `sage-pycharm-stubgen` 全量 index 尚未生成；bundled JSON 仍是最小可验证 slice。

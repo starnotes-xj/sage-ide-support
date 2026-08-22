@@ -20,6 +20,7 @@ repositories {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:runtime"))
+    implementation(project(":core:sage-api"))
     testImplementation("junit:junit:4.13.2")
 
     intellijPlatform {
@@ -58,5 +59,5 @@ intellijPlatform {
 }
 
 tasks.test {
-    enabled = false
+    enabled = providers.gradleProperty("runSageCoreTests").map(String::toBoolean).orElse(false).get()
 }

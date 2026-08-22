@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "sageVersion": "10.6",
+  "pythonVersion": "3.11",
+  "generatorVersion": "sage-api-index/0.1",
+  "sourceDigests": {},
+  "entries": [
+    {
+      "qualifiedName": "sage.matrix.matrix",
+      "kind": "FUNCTION",
+      "dynamicity": "STATIC",
+      "confidence": "MEDIUM",
+      "parents": [],
+      "protocols": [],
+      "aliases": ["sage.all.matrix"],
+      "sources": [{"kind": "STUB", "locator": "bundled/sage/matrix/matrix.pyi"}],
+      "signatures": [{"parameters": [], "returnType": {"state": "KNOWN", "expression": "sage.matrix.matrix.Matrix"}}]
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix.Matrix",
+      "kind": "CLASS",
+      "dynamicity": "STATIC",
+      "confidence": "MEDIUM",
+      "parents": ["sage.structure.SageObject"],
+      "protocols": [],
+      "aliases": [],
+      "sources": [{"kind": "STUB", "locator": "bundled/sage/matrix/matrix.pyi"}],
+      "signatures": []
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix.Matrix.determinant",
+      "kind": "METHOD",
+      "dynamicity": "STATIC",
+      "confidence": "MEDIUM",
+      "parents": [],
+      "protocols": [],
+      "aliases": [],
+      "sources": [{"kind": "STUB", "locator": "bundled/sage/matrix/matrix.pyi"}],
+      "signatures": [{"parameters": [], "returnType": {"state": "KNOWN", "expression": "sage.rings.integer.Integer"}}]
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix.Matrix.solve_right",
+      "kind": "METHOD",
+      "dynamicity": "STATIC",
+      "confidence": "MEDIUM",
+      "parents": [],
+      "protocols": [],
+      "aliases": [],
+      "sources": [{"kind": "STUB", "locator": "bundled/sage/matrix/matrix.pyi"}],
+      "signatures": [{"parameters": [{"name": "B", "type": {"state": "UNKNOWN", "expression": null}, "defaultValue": null, "optional": false, "keywordOnly": false, "variadic": false}], "returnType": {"state": "UNKNOWN", "expression": null}}]
+    }
+  ]
+}

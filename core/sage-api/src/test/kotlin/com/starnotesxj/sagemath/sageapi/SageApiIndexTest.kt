@@ -204,6 +204,68 @@ class SageApiIndexTest {
         assertTrue(json.contains("\"summary\": \"Integers\""))
     }
 
+    @Test
+    fun jsonReaderRoundTripsAndQueryFollowsParents() {
+        val parent = SageApiEntry(
+            qualifiedName = "sage.rings.RingElement",
+            kind = SageApiSymbolKind.CLASS,
+        )
+        val child = SageApiEntry(
+            qualifiedName = "sage.rings.Integer",
+            kind = SageApiSymbolKind.CLASS,
+            parents = listOf(parent.qualifiedName),
+        )
+        val method = SageApiEntry(
+            qualifiedName = "sage.rings.RingElement.solve_right",
+            kind = SageApiSymbolKind.METHOD,
+            signatures = listOf(SageApiSignature.dynamic()),
+        )
+        val index = SageApiIndex("10.6", "3.11", listOf(method, child, parent))
+        val loaded = SageApiIndexJsonReader.read(SageApiIndexJsonWriter.write(index))
+
+        assertEquals(index.sageVersion, loaded.sageVersion)
+        assertEquals(index.pythonVersion, loaded.pythonVersion)
+        assertEquals(index.entries.toSet(), loaded.entries.toSet())
+        assertTrue(SageApiIndexQuery(loaded).members("sage.rings.Integer").any { it.qualifiedName.endsWith("solve_right") })
+    }
+
+    @Test
+    fun matrixFactoryAndGenericClassMembersAreQueryableWithoutMethodSpecialCases() {
+        val matrix = SageApiEntry(
+            qualifiedName = "sage.matrix.matrix",
+            kind = SageApiSymbolKind.FUNCTION,
+            signatures = listOf(SageApiSignature(returnType = SageTypeRef.known("sage.matrix.matrix.Matrix"))),
+        )
+        val matrixClass = SageApiEntry(
+            qualifiedName = "sage.matrix.matrix.Matrix",
+            kind = SageApiSymbolKind.CLASS,
+            parents = listOf("sage.structure.SageObject"),
+        )
+        val solveRight = SageApiEntry(
+            qualifiedName = "sage.matrix.matrix.Matrix.solve_right",
+            kind = SageApiSymbolKind.METHOD,
+        )
+        val determinant = SageApiEntry(
+            qualifiedName = "sage.matrix.matrix.Matrix.determinant",
+            kind = SageApiSymbolKind.METHOD,
+        )
+        val index = SageApiIndex("10.6", "3.11", listOf(determinant, matrix, solveRight, matrixClass))
+        val query = SageApiIndexQuery(index)
+
+        assertEquals("sage.matrix.matrix.Matrix", query.callReturnTypes("sage.matrix.matrix").single().expression)
+        assertEquals(setOf("solve_right", "determinant"), query.members("sage.matrix.matrix.Matrix").map { it.qualifiedName.substringAfterLast('.') }.toSet())
+        assertEquals(SageApiSymbolKind.METHOD, query.members("sage.matrix.matrix.Matrix", "solve_right").single().kind)
+    }
+
+    @Test
+    fun jsonReaderRejectsUnsupportedSchema() {
+        val error = runCatching {
+            SageApiIndexJsonReader.read("{\"schemaVersion\": 99, \"sageVersion\": \"10\", \"pythonVersion\": \"3\", \"entries\": []}")
+        }.exceptionOrNull()
+        assertNotNull(error)
+        assertTrue(error.message.orEmpty().contains("Unsupported Sage API schema version"))
+    }
+
     private companion object {
         val FIXTURE = """
             from sage.rings.ring import RingElement as RingElement

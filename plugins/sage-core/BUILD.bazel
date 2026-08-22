@@ -24,6 +24,7 @@ jvm_library(
         "//platform/xdebugger-api:debugger",
         "//core/runtime:runtime",
         "//core/model:model",
+        "//core/sage-api:sage-api",
         "//platform/core-api:core",
         "//platform/core-impl",
         "//platform/editor-ui-api:editor-ui",
