@@ -8,6 +8,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $zip = (Resolve-Path -LiteralPath $PluginZip).Path
+# Legacy external-plugin staging only; formal bundled builds copy the source tree in apply-overlay.ps1.
 $destination = Join-Path $CommunityRoot 'build/sage-core-plugin'
 $staging = Join-Path $CommunityRoot 'build/.sage-plugin-extract'
 

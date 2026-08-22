@@ -2,10 +2,11 @@
 param(
   [Parameter(Mandatory = $true)] [string] $OfficialCheckout,
   [Parameter(Mandatory = $true)] [string] $StagingRoot,
-  [Parameter(Mandatory = $true)] [string] $PluginZip,
+  [string] $PluginZip,
   [Parameter(Mandatory = $true)] [string] $OverlayRoot,
   [string] $ExpectedCommit = 'b0001cd6c53979b384def7a1e3febe061e2ef687',
-  [switch] $Force
+  [switch] $Force,
+  [switch] $LegacyExternalPlugin
 )
 
 Set-StrictMode -Version Latest
@@ -21,7 +22,12 @@ $overlay = (Resolve-Path -LiteralPath $OverlayRoot).Path
 $stage = [IO.Path]::GetFullPath($StagingRoot)
 if (-not [IO.Path]::IsPathFullyQualified($stage)) { throw "StagingRoot must be absolute: $stage" }
 
-$status = (& git -C $official status --porcelain)
+# The protected checkout carries the pre-existing CodeGraph index and session
+# database; permit only those documented untracked paths. Any tracked change or
+# other untracked path still blocks staging.
+$status = @(& git -C $official status --porcelain) | Where-Object {
+  $_ -and $_ -notmatch '^\?\? (\.codegraph[/\\]|hashcat_sessions\.db$)'
+}
 if ($status) { throw "Official checkout is not clean; refusing to stage it.`n$status" }
 $actualCommit = (& git -C $official rev-parse HEAD).Trim()
 if ($actualCommit -ne $ExpectedCommit) { throw "Unexpected official commit: $actualCommit (expected $ExpectedCommit)" }
@@ -41,12 +47,16 @@ try {
   & "$overlay/scripts/repair-modules-xml.ps1" -CommunityRoot $stage *> $null
   & "$overlay/scripts/prune-missing-android-labels.ps1" -CommunityRoot $stage *> $null
   & "$overlay/scripts/apply-overlay.ps1" -CommunityRoot $stage -OverlayRoot $overlay *> $null
-  & "$overlay/scripts/stage-sage-plugin.ps1" -PluginZip $PluginZip -CommunityRoot $stage *> $null
+  if ($LegacyExternalPlugin) {
+    if ([string]::IsNullOrWhiteSpace($PluginZip)) { throw "-PluginZip is required with -LegacyExternalPlugin" }
+    & "$overlay/scripts/stage-sage-plugin.ps1" -PluginZip $PluginZip -CommunityRoot $stage *> $null
+  }
   $record = [ordered]@{
     officialCheckout = $official
     stagingTree = $stage
     commit = $ExpectedCommit
-    pluginZip = (Resolve-Path -LiteralPath $PluginZip).Path
+    pluginZip = if ($LegacyExternalPlugin) { (Resolve-Path -LiteralPath $PluginZip).Path } else { $null }
+    bundledPlugin = 'plugins/sage-core'
     createdUtc = [DateTime]::UtcNow.ToString('O')
   }
   $record | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'build/sage-overlay/staging.json') -Encoding UTF8

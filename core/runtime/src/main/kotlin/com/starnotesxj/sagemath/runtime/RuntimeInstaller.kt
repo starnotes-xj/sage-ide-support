@@ -4,6 +4,9 @@ import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.nio.channels.FileChannel
+import java.nio.channels.FileLock
+import java.nio.channels.OverlappingFileLockException
+import java.util.concurrent.TimeUnit
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -45,6 +48,7 @@ interface RuntimeDownloader {
         destination: Path,
         progress: DownloadProgressListener = NoopDownloadProgress,
         cancellation: InstallationCancellation = NeverCancelled,
+        control: RuntimeControl = RuntimeControl(),
     ): DownloadedArtifact
 }
 
@@ -84,7 +88,9 @@ class HttpRuntimeDownloader(
         destination: Path,
         progress: DownloadProgressListener,
         cancellation: InstallationCancellation,
+        control: RuntimeControl,
     ): DownloadedArtifact {
+        control.checkpoint("DOWNLOAD")
         require(maxDownloadBytes > 0) { "Maximum download size must be positive" }
         require(destination.parent != null) { "Download destination must have a parent directory" }
         ensureDownloadPathIsSafe(destination)
@@ -100,6 +106,7 @@ class HttpRuntimeDownloader(
                     ).use { output ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
+                            control.checkpoint("DOWNLOAD")
                             if (cancellation.isCancelled()) {
                                 throw RuntimeInstallException("DOWNLOAD_CANCELLED", "Runtime download was cancelled")
                             }
@@ -150,6 +157,8 @@ data class RuntimeInstallRequest(
     val progress: DownloadProgressListener = NoopDownloadProgress,
     val cancellation: InstallationCancellation = NeverCancelled,
     val replaceExisting: Boolean = false,
+    /** Optional monotonic deadline and cancellation propagated through installation. */
+    val control: RuntimeControl = RuntimeControl(),
 ) {
     init {
         require(manifest.runtimeId == artifact.id) { "Runtime manifest does not match the artifact" }
@@ -219,27 +228,31 @@ class ZipRuntimeInstaller(
             ensureDirectoryChainIsNotSymbolic(installRoot.resolve("versions"))
             Files.createDirectories(versionsRoot)
             ensureDirectoryChainIsNotSymbolic(versionsRoot)
+            controlCheckpoint(request.control, "INSTALL")
             FileChannel.open(
                 lockPath,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.WRITE,
             ).use { lockChannel ->
-                lockChannel.lock().use {
+                acquireLock(lockChannel, request.control).use {
                     val existing = existingRuntime(request, installRoot, versionsRoot)
                     if (existing != null && !request.replaceExisting) {
+                        checkpoint(request, "INSTALL")
                         return InstallResult.AlreadyInstalled(existing)
                     }
 
                     ensureDirectoryChainIsNotSymbolic(stagingDir)
                     Files.createDirectories(stagingDir)
                     val archive = stagingDir.resolve("artifact.zip")
-                    val downloaded = downloader.download(request.artifact, archive, request.progress, request.cancellation)
+                    checkpoint(request, "DOWNLOAD")
+                    val downloaded = downloader.download(request.artifact, archive, request.progress, request.cancellation, request.control)
+                    checkpoint(request, "DOWNLOAD")
                     if (downloaded.path != archive || !checksumVerifier.verify(archive, request.artifact.sha256)) {
                         throw RuntimeInstallException("DIGEST_MISMATCH", "Runtime archive digest does not match the catalog")
                     }
                     val payload = stagingDir.resolve("payload")
                     Files.createDirectories(payload)
-                    unzipSafely(archive, payload, request.cancellation)
+                    unzipSafely(archive, payload, request.cancellation, request.control)
 
                     val executable = payload.resolve(request.artifact.entrypoint).normalize()
                     if (
@@ -252,9 +265,7 @@ class ZipRuntimeInstaller(
                     if (!request.artifact.platformIsWindows()) {
                         ensureUnixExecutable(executable)
                     }
-                    if (request.cancellation.isCancelled()) {
-                        throw RuntimeInstallException("INSTALL_CANCELLED", "Runtime installation was cancelled")
-                    }
+                    checkpoint(request, "INSTALL")
                     val report = manifestVerifier.verify(payload, request.manifest)
                     if (!report.valid) {
                         throw RuntimeInstallException(
@@ -262,9 +273,7 @@ class ZipRuntimeInstaller(
                             "Runtime manifest verification failed: ${report.problems.joinToString(", ")}",
                         )
                     }
-                    if (request.cancellation.isCancelled()) {
-                        throw RuntimeInstallException("INSTALL_CANCELLED", "Runtime installation was cancelled")
-                    }
+                    checkpoint(request, "INSTALL")
 
                     val stagedRuntime = stagingDir.resolve("runtime")
                     moveDirectoryForPublication(payload, stagedRuntime)
@@ -406,6 +415,7 @@ class ZipRuntimeInstaller(
         archive: Path,
         payload: Path,
         cancellation: InstallationCancellation,
+        control: RuntimeControl = RuntimeControl(),
     ) {
         ZipInputStream(Files.newInputStream(archive)).use { input ->
             val buffer = ByteArray(64 * 1024)
@@ -414,9 +424,7 @@ class ZipRuntimeInstaller(
             var totalBytes = 0L
             var entryCount = 0
             while (true) {
-                if (cancellation.isCancelled()) {
-                    throw RuntimeInstallException("INSTALL_CANCELLED", "Runtime installation was cancelled")
-                }
+                checkpoints(cancellation, control, "INSTALL")
                 val entry = input.nextEntry ?: break
                 entryCount++
                 if (entryCount > MAX_ARCHIVE_ENTRIES) {
@@ -449,9 +457,7 @@ class ZipRuntimeInstaller(
                     StandardOpenOption.WRITE,
                 ).use { output ->
                     while (true) {
-                        if (cancellation.isCancelled()) {
-                            throw RuntimeInstallException("INSTALL_CANCELLED", "Runtime installation was cancelled")
-                        }
+                        checkpoints(cancellation, control, "INSTALL")
                         val read = input.read(buffer)
                         if (read < 0) break
                         totalBytes += read
@@ -462,6 +468,35 @@ class ZipRuntimeInstaller(
                     }
                 }
             }
+        }
+    }
+
+    private fun checkpoint(request: RuntimeInstallRequest, stage: String) = checkpoints(request.cancellation, request.control, stage)
+    private fun controlCheckpoint(control: RuntimeControl, stage: String) {
+        when {
+            control.cancellation.isCancelled() -> throw RuntimeInstallException("${stage}_CANCELLED", "Runtime installation was cancelled")
+            control.deadline.isExpired() -> throw RuntimeInstallException("${stage}_TIMED_OUT", "Runtime installation deadline expired")
+        }
+    }
+
+
+    private fun checkpoints(cancellation: InstallationCancellation, control: RuntimeControl, stage: String) {
+        when {
+            cancellation.isCancelled() || control.cancellation.isCancelled() -> throw RuntimeInstallException("${stage}_CANCELLED", "Runtime installation was cancelled")
+            control.deadline.isExpired() -> throw RuntimeInstallException("${stage}_TIMED_OUT", "Runtime installation deadline expired")
+        }
+    }
+
+    private fun acquireLock(channel: FileChannel, control: RuntimeControl): FileLock {
+        while (true) {
+            when {
+                control.cancellation.isCancelled() -> throw RuntimeInstallException("LOCK_CANCELLED", "Runtime installation was cancelled")
+                control.deadline.isExpired() -> throw RuntimeInstallException("LOCK_TIMED_OUT", "Runtime installation deadline expired")
+            }
+            try { channel.tryLock()?.let { return it } } catch (_: OverlappingFileLockException) { }
+            val remaining = control.deadline.remainingNanos()
+            if (remaining != null && remaining <= 0) throw RuntimeInstallException("LOCK_TIMED_OUT", "Runtime installation deadline expired")
+            Thread.sleep(if (remaining == null) 10L else minOf(10L, TimeUnit.NANOSECONDS.toMillis(remaining).coerceAtLeast(1L)))
         }
     }
 

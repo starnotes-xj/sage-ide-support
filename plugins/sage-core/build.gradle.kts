@@ -19,6 +19,7 @@ repositories {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:runtime"))
     testImplementation("junit:junit:4.13.2")
 
     intellijPlatform {

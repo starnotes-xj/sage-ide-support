@@ -26,8 +26,12 @@ class SageCommandLineState(
         val s = SageRunSettings.getInstance().getState()
         val scriptArguments = tokenizeArguments(configuration.scriptParameters)
         val sageArguments = tokenizeArguments(s.sageParameters)
-        val commandLine = when (executionMode(s)) {
-            ExecutionMode.NATIVE -> GeneralCommandLine(s.sageExecutable)
+        val mode = executionMode(s)
+        val commandLine = when (mode) {
+            ExecutionMode.NATIVE -> GeneralCommandLine(
+                SageRuntimeService.getInstance().resolveNativeExecutable(s.sageExecutable)
+                    ?: throw ExecutionException("Sage executable was not found. Configure SageMath or use Detect Sage installation.")
+            )
                 .withParameters(sageArguments)
                 .withParameters(configuration.scriptPath)
                 .withParameters(scriptArguments)

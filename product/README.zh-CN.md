@@ -54,7 +54,7 @@ Windows 下 `gradlew.bat` 默认将 `GRADLE_USER_HOME` 放到仓库内的 ASCII 
 
 1. 复用 `JetBrainsProductProperties` 的社区产品基础；
 2. 定义新的 product code、platform prefix、应用名称和安装目录；
-3. 默认 bundled `Python Core`、Jupyter/Notebook 所需模块、Git、Terminal 和 `sage-core`；
+3. 默认 bundled `Python Core`、Git、Terminal 和 `sage-core`；Jupyter/Notebook 所需模块作为后续可选兼容层评估；
 4. 将 `ctf-tools` 作为默认产品插件；
 5. 为 Windows、macOS、Linux 定义文件关联、URL scheme、图标和安装器配置；
 6. 通过 `installers.cmd` 或等价 build target 生成产品包；
@@ -72,17 +72,25 @@ Windows 下 `gradlew.bat` 默认将 `GRADLE_USER_HOME` 放到仓库内的 ASCII 
 
 不要通过将一个插件 ZIP 解压到 PyCharm 安装目录来模拟产品发行。
 
+## 当前接入状态
+
+Community 产品 overlay、Sage product properties、Sage Core bundled plugin、Windows x64/aarch64 installer、sidecar、法律文件 overlay、x64 smoke 和 FinalCheck 已完成验证。
+
+尚未完成：Sage 全量 API/type index、类型传播和完整代码提示；Linux/macOS 产品包、跨平台开发实例矩阵、CTF tools 默认插件、Runtime Manager UI/SDK adapter、正式签名和许可证法律审批。Jupyter/Notebook 仅为后续可选兼容层。详见 [`docs/FEATURE-STATUS.zh-CN.md`](../docs/FEATURE-STATUS.zh-CN.md)。
+
 ## 首个接入任务
 
-- [ ] 选定并冻结 Community commit；
-- [ ] 确认目标版本的 Python Core/Python PSI 模块；
-- [ ] 确认 Jupyter、Debugger 和 Git/Terminal 的开源模块；
-- [ ] 编写 `SageMathCtfProductProperties`；
-- [ ] 编写产品 product layout；
-- [ ] 把 `sage-core` 和 `ctf-tools` 加入默认插件列表；
-- [ ] 建立 `build-product.ps1` / `build-product.sh`；
-- [ ] 建立单平台开发实例 smoke test；
-- [ ] 再扩展到跨平台 installers。
+- [x] 选定并冻结 Community commit；
+- [x] 确认目标版本的 Python Core/Python PSI 模块；
+- [x] 评估并记录 Python Core、Debugger、Git/Terminal 与可选 Jupyter 模块边界；
+- [x] 编写 Sage product properties；
+- [x] 编写产品 product layout；
+- [ ] 把 `ctf-tools` 加入默认插件列表（模块尚未实现）；
+- [x] 建立 staging build/verify scripts；
+- [x] 建立 Windows x64 installer smoke test；
+- [ ] 扩展并验证 Linux/macOS installers。
+
+功能缺口和 Community/Pro 边界见 [`docs/FEATURE-STATUS.zh-CN.md`](../docs/FEATURE-STATUS.zh-CN.md)。
 
 ## 不可提前承诺的事项
 

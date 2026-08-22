@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sage-math-ctf-ide.dev/schema/sage-api-index-v1.json",
+  "title": "Versioned SageMath API index",
+  "type": "object",
+  "required": ["schemaVersion", "sageVersion", "pythonVersion", "entries"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "sageVersion": {"type": "string", "minLength": 1},
+    "pythonVersion": {"type": "string", "minLength": 1},
+    "entries": {"type": "array", "items": {"$ref": "#/$defs/entry"}}
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["qualifiedName", "kind", "signatures", "parents", "aliases", "dynamicity", "confidence", "sources"],
+      "properties": {
+        "qualifiedName": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["MODULE", "CLASS", "FUNCTION", "METHOD", "PROPERTY", "CONSTANT", "ALIAS"]},
+        "signatures": {"type": "array"},
+        "parents": {"type": "array", "items": {"type": "string"}},
+        "aliases": {"type": "array", "items": {"type": "string"}},
+        "dynamicity": {"enum": ["STATIC", "DYNAMIC", "UNKNOWN"]},
+        "confidence": {"enum": ["HIGH", "MEDIUM", "LOW", "UNKNOWN"]},
+        "sources": {"type": "array"}
+      }
+    }
+  }
+}

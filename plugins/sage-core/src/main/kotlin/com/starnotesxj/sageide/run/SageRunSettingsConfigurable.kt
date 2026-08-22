@@ -78,19 +78,39 @@ class SageRunSettingsConfigurable : Configurable {
             detectButton.isEnabled = false
             Thread {
                 val mode = modeCombo.selectedItem as ExecutionMode
-                val result = when (mode) {
-                    ExecutionMode.NATIVE -> SageAutoDetect.detectNativeSage()
-                    ExecutionMode.WSL -> SageAutoDetect.detectWslSage(wslDistributionField.text)
-                    ExecutionMode.DOCKER -> SageAutoDetect.detectDockerImage()
-                }
-                SwingUtilities.invokeLater {
-                    if (result != null) {
-                        when (mode) {
-                            ExecutionMode.NATIVE, ExecutionMode.WSL -> sageExecutableField.text = result
-                            ExecutionMode.DOCKER -> dockerImageField.text = result
+                when (mode) {
+                    ExecutionMode.NATIVE -> {
+                        val configured = sageExecutableField.text
+                        val handle = SageRuntimeService.getInstance().probeConfiguredNativeAsync(configured)
+                        if (handle == null) {
+                            SwingUtilities.invokeLater { detectButton.isEnabled = true }
+                        } else {
+                            handle.future.whenComplete { probe, _ ->
+                                SwingUtilities.invokeLater {
+                                    if (probe?.status == com.starnotesxj.sagemath.runtime.RuntimeExecutionStatus.SUCCESS) {
+                                        SageRuntimeService.getInstance().resolveNativeExecutable(configured)?.let {
+                                            sageExecutableField.text = it
+                                        }
+                                    }
+                                    detectButton.isEnabled = true
+                                }
+                            }
                         }
                     }
-                    detectButton.isEnabled = true
+                    ExecutionMode.WSL -> {
+                        val result = SageAutoDetect.detectWslSage(wslDistributionField.text)
+                        SwingUtilities.invokeLater {
+                            if (result != null) sageExecutableField.text = result
+                            detectButton.isEnabled = true
+                        }
+                    }
+                    ExecutionMode.DOCKER -> {
+                        val result = SageAutoDetect.detectDockerImage()
+                        SwingUtilities.invokeLater {
+                            if (result != null) dockerImageField.text = result
+                            detectButton.isEnabled = true
+                        }
+                    }
                 }
             }.start()
         }

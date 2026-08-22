@@ -17,6 +17,143 @@ if (-not (Test-Path -LiteralPath $productSource -PathType Leaf)) {
 New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 Copy-Item -LiteralPath $productSource -Destination (Join-Path $targetDir 'SageMathCommunityProperties.kt') -Force
 
+# Stage Sage Core as a first-class Community JPS/Bazel module. The external ZIP
+# staging below remains available only for the explicit legacy fallback.
+$projectRoot = (Resolve-Path -LiteralPath (Join-Path $overlay '../..')).Path
+$pluginSource = Join-Path $projectRoot 'plugins/sage-core'
+$pluginTarget = Join-Path $community 'plugins/sage-core'
+if (-not (Test-Path -LiteralPath $pluginSource -PathType Container)) {
+  throw "Missing Sage Core source tree: $pluginSource"
+}
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $pluginTarget) | Out-Null
+Remove-Item -LiteralPath $pluginTarget -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item -LiteralPath $pluginSource -Destination $pluginTarget -Recurse -Force
+
+# Stage product-owned core modules as source modules so the Community JPS/Bazel
+# model can generate KtJvmInfo targets for Sage Core's formal dependencies.
+foreach ($relativePath in @('core/model', 'core/runtime')) {
+  $source = Join-Path $projectRoot $relativePath
+  $target = Join-Path $community $relativePath
+  if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+    throw "Missing product core module: $source"
+  }
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+  Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+  Copy-Item -LiteralPath $source -Destination $target -Recurse -Force
+}
+
+# Keep the Bazel process launched by the installer on ASCII-only paths. Windows
+# Bazel 9.1 can crash while resolving the Unicode default user.home.
+# Publish plugin-content.yaml as a first-class Bazel output. The installer reads this
+# metadata from the generated distribution target's parent directory; omitting it
+# from DefaultInfo lets nested Bazel materialize only the package directory.
+$ijPluginRulePath = Join-Path $community 'platform/build-scripts/bazel-rules/ij_plugin.bzl'
+$ijPluginRuleText = Get-Content -LiteralPath $ijPluginRulePath -Raw
+if ($ijPluginRuleText -notmatch 'DefaultInfo\(files = depset\(\[output_dir, content_yaml_file\]\)') {
+  $ijPluginRuleText = [regex]::Replace(
+    $ijPluginRuleText,
+    'DefaultInfo\(files = depset\(\[output_dir\]\)\)',
+    'DefaultInfo(files = depset([output_dir, content_yaml_file]))',
+    1
+  )
+  Set-Content -LiteralPath $ijPluginRulePath -Value $ijPluginRuleText -Encoding UTF8
+}
+
+$bazelRunnerPath = Join-Path $community 'platform/build-scripts/src/org/jetbrains/intellij/build/impl/bazel/BazelRunner.kt'
+$bazelRunnerText = Get-Content -LiteralPath $bazelRunnerPath -Raw
+if ($bazelRunnerText -notmatch 'SAGEMATH_BAZEL_ASCII_ROOT') {
+  $bazelRunnerOld = @'
+  val args = mutableListOf(
+    bazelExecutable.pathString,
+    "build",
+  )
+  args.addAll(targets)
+  runProcess(args, projectHome)
+'@
+  $bazelRunnerNew = @'
+  val asciiBuildRoot = System.getenv("SAGEMATH_BAZEL_ASCII_ROOT")?.takeIf { it.isNotBlank() }
+  val args = mutableListOf(
+    bazelExecutable.pathString,
+  )
+  if (asciiBuildRoot != null) {
+    val root = java.nio.file.Path.of(asciiBuildRoot).resolve("nested-bazel")
+    val userHome = root.resolve("user-home")
+    val tempRoot = root.resolve("tmp")
+    val appData = root.resolve("appdata")
+    val localAppData = root.resolve("localappdata")
+    java.nio.file.Files.createDirectories(userHome)
+    java.nio.file.Files.createDirectories(tempRoot)
+    java.nio.file.Files.createDirectories(appData)
+    java.nio.file.Files.createDirectories(localAppData)
+    args.add("--output_user_root=$root")
+    args.add("--host_jvm_args=-Duser.home=$userHome")
+    args.add("--host_jvm_args=-Djava.io.tmpdir=$tempRoot")
+  }
+  args.add("build")
+  args.addAll(targets)
+  runProcess(args, projectHome)
+'@
+  if (-not $bazelRunnerText.Contains($bazelRunnerOld)) {
+    throw "BazelRunner.kt patch context not found: $bazelRunnerPath"
+  }
+  $bazelRunnerText = $bazelRunnerText.Replace($bazelRunnerOld, $bazelRunnerNew)
+  Set-Content -LiteralPath $bazelRunnerPath -Value $bazelRunnerText -Encoding UTF8
+}
+elseif ($bazelRunnerText -notmatch 'resolve\("nested-bazel"\)') {
+  $bazelRunnerText = $bazelRunnerText.Replace(
+    'val root = java.nio.file.Path.of(asciiBuildRoot)',
+    'val root = java.nio.file.Path.of(asciiBuildRoot).resolve("nested-bazel")'
+  ).Replace(
+    'args.add("--output_user_root=$asciiBuildRoot")',
+    'args.add("--output_user_root=$root")'
+  )
+  Set-Content -LiteralPath $bazelRunnerPath -Value $bazelRunnerText -Encoding UTF8
+}
+
+$winInstallerBuilderPath = Join-Path $community 'platform/build-scripts/src/org/jetbrains/intellij/build/impl/WinExeInstallerBuilder.kt'
+$winInstallerBuilderText = Get-Content -LiteralPath $winInstallerBuilderPath -Raw
+if ($winInstallerBuilderText -notmatch 'SAGEMATH_UNINSTALLER_CHECKSUMS') {
+  $winInstallerOld = @'
+  if (customizer.publishUninstaller) {
+    val uninstallerFile = context.paths.artifactDir.resolve(uninstallerFileName)
+    check(Files.exists(uninstallerFile)) { "Windows uninstaller is missing: $uninstallerFile" }
+    context.notifyArtifactBuilt(uninstallerFile)
+  }
+'@
+  $winInstallerNew = @'
+  if (customizer.publishUninstaller) {
+    val uninstallerFile = context.paths.artifactDir.resolve(uninstallerFileName)
+    check(Files.exists(uninstallerFile)) { "Windows uninstaller is missing: $uninstallerFile" }
+    // SAGEMATH_UNINSTALLER_CHECKSUMS: publish independent sidecars for the uninstaller.
+    val uninstallerChecksums = Checksums.compute(
+      uninstallerFile, Checksums.Algorithm.SHA256, Checksums.Algorithm.SHA512,
+    )
+    uninstallerChecksums.verifyOrWriteChecksumFile(Checksums.Algorithm.SHA256).also { context.notifyArtifactBuilt(it) }
+    uninstallerChecksums.verifyOrWriteChecksumFile(Checksums.Algorithm.SHA512).also { context.notifyArtifactBuilt(it) }
+    context.notifyArtifactBuilt(uninstallerFile)
+  }
+'@
+  if (-not $winInstallerBuilderText.Contains($winInstallerOld)) {
+    throw "WinExeInstallerBuilder.kt patch context not found: $winInstallerBuilderPath"
+  }
+  $winInstallerBuilderText = $winInstallerBuilderText.Replace($winInstallerOld, $winInstallerNew)
+  Set-Content -LiteralPath $winInstallerBuilderPath -Value $winInstallerBuilderText -Encoding UTF8
+}
+
+$modulesFile = Join-Path $community '.idea/modules.xml'
+$modulesText = Get-Content -LiteralPath $modulesFile -Raw
+foreach ($moduleRelativePath in @(
+  'core/model/intellij.sagemath.ctf.model.iml',
+  'core/runtime/intellij.sagemath.ctf.runtime.iml',
+  'plugins/sage-core/intellij.sagemath.ctf.sage-core.iml'
+)) {
+  if ($modulesText -notmatch [regex]::Escape($moduleRelativePath)) {
+    $moduleEntry = '      <module fileurl="file://$PROJECT_DIR$/' + $moduleRelativePath + '" filepath="$PROJECT_DIR$/' + $moduleRelativePath + '" />'
+    $modulesText = $modulesText.Replace('    </modules>', "    $moduleEntry" + [Environment]::NewLine + "    </modules>")
+  }
+}
+Set-Content -LiteralPath $modulesFile -Value $modulesText -Encoding UTF8
+
 $appInfoSource = Join-Path $community 'python/ide-common/resources/idea/PyCharmCoreApplicationInfo.xml'
 $appInfo = Get-Content -LiteralPath $appInfoSource -Raw
 $appInfo = $appInfo.Replace('build number="PC-__BUILD__"', 'build number="SMC-__BUILD__"')

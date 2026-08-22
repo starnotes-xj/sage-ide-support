@@ -28,9 +28,8 @@ import java.nio.file.Path
  * SageMath CTF IDE Community product built on PyCharm Community modules.
  *
  * This class is copied into the staged Community checkout by the product build script.
- * Python stays a bundled JetBrains plugin. SageMath Core is an external plugin during this
- * migration step, but the official product builder copies it into both dev distributions
- * and installers through [getAdditionalPluginPaths].
+ * Python and SageMath Core are bundled Community plugins. The legacy external-plugin hook
+ * remains only as an explicit migration fallback for older staged trees.
  */
 open class SageMathCommunityProperties(private val communityHome: Path) : PyCharmPropertiesBase(enlargeWelcomeScreen = true) {
   override val customProductCode: String
@@ -55,6 +54,7 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
     productLayout.bundledPluginModules +=
       sequenceOf(
         "intellij.python.community.plugin",
+        "intellij.sagemath.ctf.sage-core",
         "intellij.pycharm.community.customization",
         "intellij.pycharm.community.customization.shared",
         "intellij.vcs.github",
@@ -87,7 +87,12 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
     bundledPlugins(productLayout.bundledPluginModules)
   }
 
+  /**
+   * Legacy external injection is opt-in for older staged trees only. New product builds
+   * resolve Sage Core through productLayout.bundledPluginModules and never need this hook.
+   */
   override suspend fun getAdditionalPluginPaths(context: BuildContext): List<Path> {
+    if (System.getProperty("sagemath.plugin.legacyExternal") != "true") return emptyList()
     val configuredPath = System.getProperty("sagemath.plugin.path")
     val pluginPath = configuredPath?.let(Path::of)
       ?: communityHome.resolve("build/sage-core-plugin/sage-core")
@@ -104,6 +109,8 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
     super.copyAdditionalFiles(targetDir, context)
     copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir.resolve("license"))
     copyFileToDir(context.paths.communityHomeDir.resolve("NOTICE.txt"), targetDir.resolve("license"))
+    copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir)
+    copyFileToDir(context.paths.communityHomeDir.resolve("NOTICE.txt"), targetDir)
   }
 
   override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = windowsCustomizer(communityHome) {
@@ -112,6 +119,11 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
     installDirNameHandler { "SageMath CTF IDE" }
     copyAdditionalFiles { targetDir, _, context ->
       PyCharmBuildUtils.copySkeletons(context, targetDir, "skeletons-win*.zip")
+      // Windows OS-specific distributions do not inherit ProductProperties.copyAdditionalFiles(distAllDir).
+      copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir.resolve("license"))
+      copyFileToDir(context.paths.communityHomeDir.resolve("NOTICE.txt"), targetDir.resolve("license"))
+      copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir)
+      copyFileToDir(context.paths.communityHomeDir.resolve("NOTICE.txt"), targetDir)
     }
   }
 

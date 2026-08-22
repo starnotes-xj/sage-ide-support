@@ -7,6 +7,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import kotlin.test.assertEquals
 
 class ZipRuntimeInstallerTest {
     @Test
@@ -43,6 +44,7 @@ class ZipRuntimeInstallerTest {
                     destination: java.nio.file.Path,
                     progress: DownloadProgressListener,
                     cancellation: InstallationCancellation,
+                    control: RuntimeControl,
                 ): DownloadedArtifact {
                     Files.copy(archive, destination)
                     return DownloadedArtifact(destination, Files.size(destination), digest)
@@ -99,6 +101,7 @@ class ZipRuntimeInstallerTest {
                     destination: java.nio.file.Path,
                     progress: DownloadProgressListener,
                     cancellation: InstallationCancellation,
+                    control: RuntimeControl,
                 ): DownloadedArtifact {
                     Files.copy(archive, destination)
                     return DownloadedArtifact(destination, Files.size(destination), digest)
@@ -163,6 +166,7 @@ class ZipRuntimeInstallerTest {
                     destination: java.nio.file.Path,
                     progress: DownloadProgressListener,
                     cancellation: InstallationCancellation,
+                    control: RuntimeControl,
                 ): DownloadedArtifact = error("downloader must not be called")
             }).install(RuntimeInstallRequest(artifact, root.resolve("installed"), manifest = RuntimeManifest(
                 schemaVersion = 1,
@@ -210,6 +214,7 @@ class ZipRuntimeInstallerTest {
                     destination: java.nio.file.Path,
                     progress: DownloadProgressListener,
                     cancellation: InstallationCancellation,
+                    control: RuntimeControl,
                 ): DownloadedArtifact {
                     throw RuntimeInstallException("DOWNLOAD_CANCELLED", "cancelled")
                 }
@@ -255,6 +260,7 @@ class ZipRuntimeInstallerTest {
                     destination: java.nio.file.Path,
                     progress: DownloadProgressListener,
                     cancellation: InstallationCancellation,
+                    control: RuntimeControl,
                 ): DownloadedArtifact {
                     Files.write(destination, archiveBytes.toByteArray())
                     return DownloadedArtifact(destination, Files.size(destination), artifact.sha256)
@@ -283,4 +289,25 @@ class ZipRuntimeInstallerTest {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         return digest.digest(bytes).joinToString("") { "%02x".format(it) }
     }
+    @Test
+    fun `expired install deadline is reported before download`() {
+        val root = Files.createTempDirectory("sage-runtime-deadline")
+        try {
+            val id = SageRuntimeId("10.6", PlatformTriple(OperatingSystem.WINDOWS, CpuArchitecture.X64))
+            val artifact = RuntimeArtifact(id, URI("https://example.invalid/runtime.zip"), ArchiveFormat.ZIP, sha256 = "0".repeat(64), entrypoint = "sage.exe")
+            val request = RuntimeInstallRequest(
+                artifact, root.resolve("installed"),
+                RuntimeManifest(1, id, "sage.exe", listOf(RuntimeFileRecord("sage.exe", 0, "0".repeat(64))), artifact.sha256),
+                control = RuntimeControl(RuntimeDeadline.after(java.time.Duration.ZERO)),
+            )
+            val result = ZipRuntimeInstaller(object : RuntimeDownloader {
+                override fun download(artifact: RuntimeArtifact, destination: java.nio.file.Path, progress: DownloadProgressListener, cancellation: InstallationCancellation, control: RuntimeControl): DownloadedArtifact = error("must not download")
+            }).install(request)
+            assertTrue(result is InstallResult.Failed)
+            assertEquals("INSTALL_TIMED_OUT", (result as InstallResult.Failed).stage)
+        } finally {
+            Files.walk(root).use { stream -> stream.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+        }
+    }
+
 }

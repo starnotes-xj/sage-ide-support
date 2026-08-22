@@ -24,7 +24,9 @@ class JdkHttpRuntimeDownloader(
         destination: java.nio.file.Path,
         progress: DownloadProgressListener,
         cancellation: InstallationCancellation,
+        control: RuntimeControl,
     ): DownloadedArtifact {
+        control.checkpoint("DOWNLOAD_HTTP")
         require(artifact.uri.scheme.equals("https", ignoreCase = true)) {
             "Managed SageMath downloads must use HTTPS"
         }
@@ -43,6 +45,7 @@ class JdkHttpRuntimeDownloader(
             Files.deleteIfExists(destination)
             throw RuntimeInstallException("DOWNLOAD_HTTP", "Unable to download the SageMath runtime", error)
         }
+        control.checkpoint("DOWNLOAD_HTTP")
         response.body().use { body ->
             if (
                 !response.uri().scheme.equals("https", ignoreCase = true) ||
@@ -73,6 +76,7 @@ class JdkHttpRuntimeDownloader(
                     progress,
                     cancellation,
                     maxDownloadBytes,
+                    control,
                 )
             }
             catch (error: Exception) {
@@ -93,9 +97,10 @@ class JdkHttpRuntimeDownloader(
             progress: DownloadProgressListener,
             cancellation: InstallationCancellation,
             maxDownloadBytes: Long,
+            control: RuntimeControl,
         ): DownloadedArtifact = HttpRuntimeDownloader(
             connectionFactory = { input },
             maxDownloadBytes = maxDownloadBytes,
-        ).download(artifact, destination, progress, cancellation)
+        ).download(artifact, destination, progress, cancellation, control)
     }
 }

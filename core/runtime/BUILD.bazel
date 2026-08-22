@@ -1,0 +1,28 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+jvm_library(
+    name = "runtime",
+    srcs = glob(["src/main/**/*.kt", "src/main/**/*.java"], allow_empty = True),
+    module_name = "intellij.sagemath.ctf.runtime",
+    visibility = ["//visibility:public"],
+    tags = ["community-aggregator"],
+    deps = ["@lib//:kotlin-stdlib"],
+)
+
+jvm_library(
+    name = "runtime_test_lib",
+    testonly = True,
+    srcs = glob(["src/test/**/*.kt", "src/test/**/*.java"], allow_empty = True),
+    module_name = "intellij.sagemath.ctf.runtime",
+    visibility = ["//visibility:public"],
+    runtime_deps = [":runtime"],
+    deps = [
+        ":runtime",
+        "@lib//:kotlin-stdlib",
+        "@lib//:kotlin-test",
+        "@lib//:kotlin-test-junit5",
+        "//libraries/junit5",
+    ],
+)
+
+exports_files(["intellij.sagemath.ctf.runtime.iml"], visibility = ["//visibility:public"])

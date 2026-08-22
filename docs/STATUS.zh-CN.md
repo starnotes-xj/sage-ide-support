@@ -2,7 +2,9 @@
 
 ## 当前阶段
 
-P1：基于 IntelliJ Community 官方 Bazel/Bazelisk 与 installer 流程的独立 IDE 产品接入。
+P1 已完成主要 Community 产品接入与 Windows 双架构 hardened installer 验证；P2 CTF MVP 尚未实现。当前下一条核心产品主线是 SageMath 全量代码智能（API 索引、类型推断、补全和提示），Jupyter 降为后续可选兼容层。
+
+功能实现矩阵与 Community/Pro 边界见 [`FEATURE-STATUS.zh-CN.md`](FEATURE-STATUS.zh-CN.md)。
 
 ## 工程关系
 
@@ -27,15 +29,17 @@ P1：基于 IntelliJ Community 官方 Bazel/Bazelisk 与 installer 流程的独�
 - 已确认上游 `.idea/modules.xml` 存在约 289 个失效生成 `.iml` 条目，且生成的 Bazel BUILD 还引用缺失 Android 源码树；staging 脚本只过滤这些明确缺失输入并记录 manifest，官方 checkout 保持 clean；
 - 已通过 Gradle 9.6.0 + JDK 25 验证 core:model、core:runtime 测试与 Sage Core Kotlin 编译/插件打包。
 
-## 当前仍需验证
+## 当前仍需实现或验证
 
-- staging overlay 的 Bazel target analysis/query（`bazel query //build:sage_math` 已通过）；
-- Sage product properties 在上游 Bazel classpath 中的真实编译；
-- `bazel run //build:sage_math` 开发实例（已进入真实构建，尚未确认产物）；
-- `bazel run //python/build:sage_i_build_target -- -Dintellij.build.target.os=current` 当前平台安装器；
-- 生成安装包中的 `plugins/sage-core`、产品描述、启动器和许可证文件；
-- SageMath Runtime 与第三方数学库的完整许可证/SBOM 审计；
-- SageMath Core 从外部插件注入迁移为正式 Community JPS/Bazel bundled plugin。
+- `plugins/ctf-tools`、CTF Profile UI、flag 扫描、运行历史和 evidence 工作流；
+- Runtime Manager Catalog、Settings/Project SDK adapter、切换/移除 UX 和签名 Catalog；
+- Sage API 全量 index、类型传播、补全/参数/文档提示、source-map、doctest/test runner；Jupyter kernel 和富输出降为后续可选兼容层；
+- PCAP、二进制、GDB/LLDB 和 Web evidence adapters；
+- Linux/macOS 产品包、真实 arm64 主机 smoke、自动更新；
+- Authenticode 签名和 SPDX/许可证法律审批；
+- 远程 Sage Runtime catalog/probe。
+
+Windows x64/aarch64 hardened installer、Sage Core bundled plugin、根级及 `license/` 法律文件、sidecar、x64 smoke 和 FinalCheck 已完成验证。
 
 ## 重要技术约束
 
@@ -57,6 +61,8 @@ P1：基于 IntelliJ Community 官方 Bazel/Bazelisk 与 installer 流程的独�
 - JDK/Bazel 外部依赖下载、Windows 长路径、磁盘空间和构建时间仍可能影响完整安装器验证。
 
 ## 下一轮验收
+
+详细功能矩阵和 Community/Pro 边界见 [`FEATURE-STATUS.zh-CN.md`](FEATURE-STATUS.zh-CN.md)。
 
 - `git -C G:\Projects\intellij-community-sage-ide status --porcelain` 为空；
 - `product/upstream.lock.json` 与实际 HEAD、Bazel/JDK 版本一致；

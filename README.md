@@ -10,7 +10,7 @@ This repository is the standalone product line. The existing JetBrains plugin re
 
 ## Current status
 
-The repository is at **P1: product skeleton and SageMath Runtime Manager foundation**. The current source under `plugins/sage-core` is a migration baseline copied from the existing SageMath JetBrains plugin; `core/runtime` now provides the local ZIP install/verification foundation. It is not yet a finished standalone installer.
+The repository is at **P1: Community product integration and SageMath Runtime Manager foundation**. The current source under `plugins/sage-core` is a migration baseline copied from the existing SageMath JetBrains plugin; `core/runtime` provides the local ZIP install/verification foundation. The next primary product track is versioned Sage API indexing, type inference, completion, signatures, documentation, navigation, and source maps. Jupyter remains an optional compatibility layer. It is not yet a finished standalone installer.
 
 Read first:
 
@@ -26,18 +26,22 @@ Read first:
 3. Provide a SageMath Runtime Manager like IDEA JDK and PyCharm Python SDK management.
 4. Keep SageMath execution outside the JVM, while making Runtime download/install/select a first-class IDE capability.
 5. Default CTF execution to unlimited time (`null`); require explicit deadlines when desired and keep cancellation/output limits.
-6. Preserve existing Sage language behavior and tests before extracting platform-independent contracts.
-7. Keep `sage-ide-support` stable as a separate PyCharm plugin product.
-8. Separate IDE distribution, SageMath Runtime distribution, SBOM, source correspondence, and license review.
+6. Make Sage API indexing, type inference, completion, signatures, documentation, navigation, and source maps the primary product differentiator; use versioned data instead of one-off function patches.
+7. Treat Jupyter as an optional execution/compatibility layer, not the primary Sage editing experience.
+8. Preserve existing Sage language behavior and tests before extracting platform-independent contracts.
+9. Keep `sage-ide-support` stable as a separate PyCharm plugin product.
+10. Separate IDE distribution, SageMath Runtime distribution, SBOM, source correspondence, and license review.
+
+The primary motivation and specification for Sage language intelligence is documented in [`docs/SAGE-INTELLIGENCE-SPEC.zh-CN.md`](docs/SAGE-INTELLIGENCE-SPEC.zh-CN.md).
 
 ## Build status
 
 The standalone product build is intentionally introduced in stages:
 
 - `core:model`: platform-independent execution and CTF contracts;
-- `plugins:sage-core`: migrated Sage language and runtime plugin;
+- `plugins:sage-core`: migrated Sage language/runtime plugin and future Sage intelligence host;
 - `plugins:ctf-tools`: planned CTF workflow plugin;
-- `product`: planned IntelliJ Community product overlay and installer entry points.
+- `product`: Community IntelliJ product overlay and installer entry points, with further cross-platform work pending.
 
 The first implementation milestone establishes the Gradle module graph and core tests. The full IntelliJ Community product build is driven by the pinned upstream checkout described in [`product/README.zh-CN.md`](product/README.zh-CN.md), not by copying the upstream source into this repository.
 

@@ -2,7 +2,7 @@
 
 > 项目定位：面向 SageMath 的专业科学计算 IDE，并对 CTF（尤其是密码学、数论、逆向与取证工作流）做一等公民优化。
 >
-> 当前状态：规划与产品仓库初始化阶段。
+> 当前状态：P1 Community 产品接入与 Windows 双架构构建链已打通；P2 CTF MVP 尚未完成。详细实现矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
 >
 > 创建日期：2026-08-19
 
@@ -82,13 +82,14 @@ SageMath 官方资料说明 Sage 是集成 Python、Cython 和大量数学软件
 - Sage `^` 幂、`^^` XOR、`^=` 与 `^^=` 的预解析语义；
 - `R.<x> = GF(2)[]` 等 generator sugar；
 - 隐式 `sage.all` 命名空间；
-- Sage 存根索引、文档和类型推断；
-- `.py`、`.pyx`、`.ipynb` 与 `.sage` 混合项目；
+- Sage API 全量索引、声明、文档和数据驱动的类型推断；
+- `.py`、`.pyx` 与 `.sage` 混合项目；`.ipynb` 只作为后续兼容格式；
 - Sage SDK/环境检测与健康检查；
-- 当前文件运行、运行配置、REPL/Console；
+- 当前文件运行、运行配置、原生 Sage Console/REPL；
+- Sage source-map：原始 `.sage` 与 preparse Python 的诊断、跳转、重命名和 traceback 映射；
 - doctest/test runner；
-- Jupyter Sage kernel 与富输出；
-- LaTeX、图像、SVG/HTML 结果预览。
+- 版本化 Sage stub/API 数据的生成、索引、覆盖率报告和增量更新；
+- Jupyter Sage kernel、Notebook 和富输出不属于首版核心能力，详见 [SageMath 代码智能规格](SAGE-INTELLIGENCE-SPEC.zh-CN.md)。
 
 #### B. CTF 优先能力
 
@@ -140,8 +141,8 @@ CTF 能力必须进入产品架构，而不是最后通过零散插件补充。
 - 产品必须提供类似 IDEA/PyCharm SDK 管理器的 SageMath Runtime Catalog、下载、校验、安装、切换和卸载入口；
 - 首版优先支持官方 HTTPS 归档的本机 Native Runtime，WSL、Docker/Podman 和 SSH/HPC 采用独立目标适配器；
 - 首版不承诺原生 Windows Sage 的完整支持，优先支持 Windows + WSL/容器；
-- 首版不追求覆盖 Sage 全部动态类型；
-- 首版不重写完整 Python/Cython 语言服务；
+- 首版不承诺对任意动态元编程做到绝对精确；但对支持版本中可分析的 Sage API，必须以全量覆盖、类型推断和代码提示为首要目标；
+- 首版不重写完整 Python/Cython 语言服务，而是优先补强 Sage 语义层；
 - 首版不复制 PyCharm 专有功能；
 - 首版不实现完整的 Ghidra、Wireshark、IDA、pwndbg 替代品；
 - 首版不在 IDE 进程内嵌入 Python/Sage；
@@ -155,7 +156,7 @@ SageMath CTF IDE
 ├── IntelliJ Community Product
 │   ├── Platform / editor / project model / indexing
 │   ├── Git / terminal / run / debug / test infrastructure
-│   ├── Python Core / Jupyter / debugger capabilities
+│   ├── Python Core / debugger capabilities
 │   └── Sage product branding and default plugin layout
 │
 ├── sage-core plugin
@@ -163,7 +164,7 @@ SageMath CTF IDE
 │   ├── Sage preparse-aware analysis
 │   ├── Sage stubs and documentation integration
 │   ├── Sage run/debug configuration
-│   ├── Sage console/Jupyter integration
+│   ├── Sage native console and API intelligence
 │   └── Sage live/postfix templates
 │
 ├── core:model (platform-independent)
@@ -290,9 +291,9 @@ SageMath Runtime 不应只被当作用户手工安装的外部命令。完整 ID
 |---|---|
 | M0 | Sage core 在新的产品开发实例中加载，`.sage` 可打开 |
 | M1 | Python Core/Python PSI 的模块依赖在目标产品中可解析 |
-| M2 | generator sugar、隐式 namespace、`^/^^`、类型测试全绿 |
-| M3 | Sage run/debug 和 Jupyter 在目标产品中可用 |
-| M4 | 产品构建将 Python Core、Sage core 和 CTF 插件放入默认插件集合 |
+| M2 | Sage parser、generator sugar、隐式 namespace、`^/^^`、API index 和类型推断测试全绿 |
+| M3 | Sage 原生编辑/补全/类型/文档/跳转闭环，以及 Sage run/debug 在目标产品中可用；Jupyter 不作为门槛 |
+| M4 | 产品构建将 Sage intelligence、Python Core、Sage core 和 CTF 插件放入默认插件集合 |
 | M5 | 不再依赖 PyCharm 专有实现，或依赖已形成书面支持矩阵 |
 
 在 M5 之前，开发实例可以使用 PyCharm/Community-compatible base 进行快速验证，但文档和 CI 必须标明这只是开发基线，不是最终产品发行形态。
@@ -332,7 +333,7 @@ SageMath Runtime 不应只被当作用户手工安装的外部命令。完整 ID
 - 把 Sage core 放入产品开发实例的默认插件集合；
 - 建立 `run-product` 和 `build-product` 脚本；
 - 在 Windows、Linux、macOS 至少运行一次 smoke test；
-- 验证 Python Core、Jupyter、Git、Terminal、Debugger 的产品依赖。
+- 验证 Python Core、Git、Terminal、Debugger 和 Sage API intelligence 的产品依赖；Jupyter 只作为未来可选兼容层，不作为首版门槛。
 
 退出条件：
 
@@ -364,15 +365,16 @@ SageMath Runtime 不应只被当作用户手工安装的外部命令。完整 ID
 5. 输出中出现 `flag{...}` 时显示结构化命中；
 6. 执行记录包含 runtime、参数、退出码和结果摘要。
 
-### P3：科学计算工作流
+### P3：Sage 科学计算与可选兼容层
 
-- Jupyter Sage kernel；
-- 富输出、LaTeX、SVG/PNG、图形预览；
+- Sage API 全量索引覆盖率报告和多版本 fixture；
+- 类型推断、参数提示、文档提示、跳转和 source-map 完善；
 - 文档和示例搜索；
 - doctest/test runner；
 - Sage 环境锁定与可复现配置；
 - WSL/Docker/SSH 运行目标；
-- 断点和源映射改进。
+- 断点和 traceback 源映射改进；
+- 可选 Jupyter Sage kernel、`.ipynb` 导入/导出和富输出；Jupyter 不得反向决定 Sage 代码智能结果。
 
 ### P4：逆向/取证集成
 
@@ -399,6 +401,8 @@ P5 之前不承诺“一键安装即包含 SageMath”。
 
 - `core:model`：纯 JVM 单元测试，覆盖校验、默认值和序列化边界；
 - Sage parser/type tests：沿用 `plugins/sage-core/src/test`；
+- Sage API index/generator tests：覆盖率、版本差异、缺失符号、动态 API 和索引回归；
+- completion/signature/type inference golden tests：覆盖密码学、数论、代数、有限域、矩阵和多项式场景；
 - runtime command tests：Native/WSL/Docker/SSH 命令参数、转义和路径映射；
 - source-map golden tests：原始 `.sage` 到 preparse Python 的位置映射；
 - CTF profile tests：flag pattern、超时、输出上限和环境继承；
@@ -426,7 +430,7 @@ Sage 和 CTF 项目会执行任意 Python/Cython/本地代码，因此产品必�
 - 执行前显示目标、目录和环境；
 - 默认不设置自动执行 deadline（`null` 表示无限制），但默认设置输出上限；
 - UI 必须明确显示“无限制”，并提供用户取消和可选有限 deadline；
-- 对自动运行 notebook/外部 kernel 做显式提示；
+- 对自动运行 Notebook/Jupyter kernel 或外部 kernel 做显式提示；
 - 不把 flag、题目输入或 secrets 写入遥测；
 - 对远程/容器执行显示连接目标和挂载目录。
 
@@ -435,7 +439,7 @@ Sage 和 CTF 项目会执行任意 Python/Cython/本地代码，因此产品必�
 当前插件仓库是 GPL-3.0，并且 `NOTICE` 记录了 SageMath 图标 CC-BY-SA-4.0 与部分来源插件 Apache-2.0。新产品暂时继承现有开源方向，但产品构建前必须重新审计最终产物：
 
 - IntelliJ Platform/community 模块；
-- Python/Jupyter/Debugger 组件；
+- Python Core/Debugger 组件，以及未来可选的 Jupyter 兼容组件；
 - JBR/JDK 和 native helper；
 - SageMath 及所有 bundled runtime 依赖；
 - 图标、模板、文档和第三方工具；
@@ -446,16 +450,19 @@ Sage 和 CTF 项目会执行任意 Python/Cython/本地代码，因此产品必�
 ## 9. 当前迭代执行清单
 
 - [x] 建立独立产品仓库目录；
-- [x] 把插件源代码迁移到 `plugins/sage-core`；
-- [ ] 建立 root Gradle 多模块构建；
-- [ ] 建立 `core:model` 运行目标和 CTF profile；
-- [ ] 记录迁移来源 commit 和已知 Python 依赖；
-- [ ] 添加产品定义与默认 CTF profile；
-- [ ] 添加 IntelliJ Community product overlay 占位；
-- [ ] 添加开发/构建脚本；
-- [ ] 运行核心模块测试和 Sage plugin build；
-- [ ] 初始化 Git 并提交首个 Lore 格式决策记录；
-- [ ] 下一迭代接入真实 Community product 开发实例。
+- [x] 迁移 `plugins/sage-core` 基线；
+- [x] 建立 root Gradle 多模块构建和 core:model/core:runtime；
+- [x] 记录迁移来源和 Python 兼容依赖；
+- [x] 建立 CTF profile 基础契约；
+- [x] 接入 Community product properties、product layout 和 staging build scripts；
+- [x] 运行核心模块测试、Sage plugin build、Windows installer 和 x64 smoke；
+- [x] 完成 sidecar、法律文件 overlay、release audit 和 FinalCheck 基础验证；
+- [ ] 实现 `plugins/ctf-tools`、CTF Profile UI、flag/evidence/run history；
+- [ ] 实现 Runtime Manager Catalog、Settings/Project SDK adapter 和签名 Catalog；
+- [ ] 实现 Sage API index、全量类型推断、补全/签名/文档提示和 source-map 验收；
+- [ ] 补 doctest、PCAP/二进制/GDB/LLDB；
+- [ ] 后续再加入可选 Jupyter/富输出兼容层；
+- [ ] 完成 Linux/macOS、签名、法律审批、arm64 smoke、自动更新和 Pro 线。
 
 ## 10. 首个决策记录
 

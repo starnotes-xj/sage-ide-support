@@ -1,3 +1,4 @@
+<!-- BUILD_USING_BAZEL_MARKER -->
 <idea-plugin>
   <id>com.starnotesxj.sagemath.ctf.sage-core</id>
   <name>SageMath Core</name>
@@ -222,6 +223,7 @@
 
     <!-- Shared Sage execution settings (Settings | Tools | SageMath). -->
     <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRunSettings"/>
+    <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRuntimeService"/>
     <applicationConfigurable parentId="tools"
                              id="com.starnotesxj.sageide.run.SageRunSettingsConfigurable"
                              displayName="SageMath"

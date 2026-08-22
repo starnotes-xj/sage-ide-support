@@ -1,0 +1,30 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+jvm_library(
+    name = "sage-api",
+    srcs = glob(["src/main/**/*.kt", "src/main/**/*.java"], allow_empty = True),
+    resources = glob(["src/main/resources/**/*"], allow_empty = True),
+    resource_strip_prefix = "src/main/resources",
+    module_name = "intellij.sagemath.ctf.sage-api",
+    visibility = ["//visibility:public"],
+    tags = ["community-aggregator"],
+    deps = ["@lib//:kotlin-stdlib"],
+)
+
+jvm_library(
+    name = "sage-api_test_lib",
+    testonly = True,
+    srcs = glob(["src/test/**/*.kt", "src/test/**/*.java"], allow_empty = True),
+    module_name = "intellij.sagemath.ctf.sage-api",
+    visibility = ["//visibility:public"],
+    runtime_deps = [":sage-api"],
+    deps = [
+        ":sage-api",
+        "@lib//:kotlin-stdlib",
+        "@lib//:kotlin-test",
+        "@lib//:kotlin-test-junit5",
+        "//libraries/junit5",
+    ],
+)
+
+exports_files(["intellij.sagemath.ctf.sage-api.iml"], visibility = ["//visibility:public"])

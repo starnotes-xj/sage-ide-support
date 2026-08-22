@@ -9,18 +9,20 @@
 
 ## 当前迁移内容
 
+> 当前实际状态：Sage Core 语言/运行基线已迁移并通过构建/测试；`core:model` 与 `core:runtime` 基础已存在；Sage 全量 API/type index、类型传播、完整补全/提示和 source-map 尚未完成；CTF Profile UI、CTF 工具、运行历史/evidence 和完整 Runtime Manager 仍待实现。完整矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
+
 | 源能力 | 当前来源 | 目标位置 | 状态 |
 |---|---|---|---|
 | Sage 文件类型、语言和图标 | `src/main/kotlin/.../sugar` | `plugins/sage-core/src/main/kotlin/.../sugar` | 已迁移基线 |
 | Sage parser / lexer | `src/main/kotlin/.../parser`、`com/jetbrains/python/parsing` | `plugins/sage-core/...` | 已迁移基线 |
-| Sage 类型、隐式 namespace、postfix | `src/main/kotlin/.../type`、`sugar` | `plugins/sage-core/...` | 已迁移基线 |
+| Sage 类型、隐式 namespace、postfix | `src/main/kotlin/.../type`、`sugar` | `plugins/sage-core/...` | 部分实现；全量 API/type index 待完成 |
 | Native/WSL/Docker 运行 | `src/main/kotlin/.../run` | `plugins/sage-core/...` | 已迁移基线 |
 | Sage 模板、图标、plugin.xml | `src/main/resources` | `plugins/sage-core/src/main/resources` | 已迁移基线 |
 | 平台测试和 testData | `src/test` | `plugins/sage-core/src/test` | 已迁移基线 |
-| 运行目标模型 | 当前与 IntelliJ API 混合 | `core/model` | 待抽离 |
-| CTF project profile | 尚无产品实现 | `core/model` + `plugins/ctf-tools` | 待实现 |
+| 运行目标模型 | `core:model` 已有基础契约；IntelliJ adapter 仍在插件侧 | `core/model` + product adapter | 部分完成 |
+| CTF project profile | `core:model` 已有基础数据类；UI/持久化未完成 | `core/model` + `plugins/ctf-tools` | 部分完成 |
 | CTF 运行记录和 flag 扫描 | 尚无产品实现 | `core/runtime` + `plugins/ctf-tools` | 待实现 |
-| 独立产品品牌和默认插件 | 不存在 | `product` / Community overlay | 待接入 |
+| 独立产品品牌和默认插件 | Community overlay 和 Sage properties 已接入；跨平台/Pro 未完成 | `product` / Community overlay | Community 已完成主要接入 |
 
 ## 迁移纪律
 
@@ -56,7 +58,7 @@
 
 目标产品可以解析 Sage plugin.xml，Python/PythonCore 依赖明确且失败信息可诊断。
 
-### M2：语言能力等价
+### M2：语言智能能力等价
 
 以下测试在目标产品通过：
 
@@ -64,9 +66,11 @@
 - generator sugar；
 - `^`/`^^` 语义；
 - 隐式 `sage.all`；
-- Sage 类型 provider；
+- Sage API index 覆盖率和版本差异报告；
+- Sage 类型 provider、类型传播和 parent 关系；
+- 全量模块/类/函数/方法补全、参数提示和文档提示；
 - postfix templates；
-- quote handler 和检查。
+- quote handler、检查和 source-map。
 
 ### M3：运行闭环
 
@@ -80,11 +84,16 @@ Sage core 成为 SageMath CTF IDE 的默认插件，用户无需从 Marketplace 
 
 构建、签名、许可证、安装包和启动器在目标平台验证；不再把 PyCharm 安装目录作为产品运行时依赖。
 
-## 下一步
+## 当前完成度与下一步
 
-1. 添加 `core:model`；
-2. 添加 root 多模块构建；
-3. 为 Sage core 增加产品模块入口；
-4. 建立 Community overlay 的固定路径和版本记录；
-5. 运行 M0；
-6. 再实现 CTF profile，而不是先做孤立工具窗口。
+P0 基础骨架和 M0–M4 的主要代码/构建接入已完成；M5 的 Windows x64/aarch64 构建、x64 smoke 和 FinalCheck 已验证，但签名、法律审批、Linux/macOS 和 arm64 主机验收仍未完成。P2 CTF MVP 尚未完成。
+
+下一步：
+
+1. 冻结 Sage/Python 支持版本，实现 API extractor、版本化 index、覆盖率报告和增量更新；
+2. 实现 Sage 类型传播、补全/参数/文档提示、跳转和 source-map 验收；
+3. 完成 Runtime Manager Catalog、Settings/Project SDK adapter 和 Native/WSL/Docker 统一验证；
+4. 创建 `plugins/ctf-tools`，实现 CTF Profile UI、flag 扫描、运行历史、evidence 和 Crypto/Encoding MVP；
+5. 补 doctest、PCAP、二进制、GDB/LLDB，最后再处理可选 Jupyter、签名、法律审批、Linux/macOS、自动更新和 Pro 产品线。
+
+详细状态见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。

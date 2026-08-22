@@ -1,0 +1,155 @@
+package com.starnotesxj.sageide.run
+
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.Service
+import com.starnotesxj.sagemath.runtime.JdkRuntimeProcessExecutor
+import com.starnotesxj.sagemath.runtime.MutableRuntimeCancellation
+import com.starnotesxj.sagemath.runtime.RuntimeControl
+import com.starnotesxj.sagemath.runtime.RuntimeDeadline
+import com.starnotesxj.sagemath.runtime.RuntimeExecutionStatus
+import com.starnotesxj.sagemath.runtime.RuntimeProbe
+import com.starnotesxj.sagemath.runtime.RuntimeProbeRequest
+import com.starnotesxj.sagemath.runtime.RuntimeProbeResult
+import java.nio.file.Path
+import java.time.Duration
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.atomic.AtomicInteger
+
+/** Application-scoped adapter for Sage discovery and managed-runtime probes. */
+@Service(Service.Level.APP)
+class SageRuntimeService : Disposable {
+    private val executor: ExecutorService = Executors.newCachedThreadPool(SageThreadFactory)
+    private val probeExecutor = JdkRuntimeProcessExecutor()
+    private val probe = RuntimeProbe(probeExecutor)
+
+    fun probeAsync(
+        executable: Path,
+        deadline: Duration = DEFAULT_PROBE_DEADLINE,
+        maxOutputBytes: Int = DEFAULT_PROBE_OUTPUT_BYTES,
+    ): SageRuntimeProbeHandle<RuntimeProbeResult> {
+        require(!deadline.isNegative && !deadline.isZero) { "Runtime probe deadline must be positive" }
+        require(maxOutputBytes > 0) { "Runtime probe output limit must be positive" }
+        val cancellation = MutableRuntimeCancellation()
+        val control = RuntimeControl(RuntimeDeadline.after(deadline), cancellation)
+        val future = CompletableFuture.supplyAsync({
+            probe.probe(RuntimeProbeRequest(executable, control = control, maxOutputBytes = maxOutputBytes))
+        }, executor)
+        return SageRuntimeProbeHandle(future, cancellation)
+    }
+
+    /** Resolves a configured native executable, falling back to PATH discovery. */
+    fun resolveNativeExecutable(configuredExecutable: String): String? {
+        return configuredExecutable.trim().takeIf { it.isNotEmpty() } ?: SageAutoDetect.detectNativeSage()
+    }
+
+    fun probeConfiguredNativeAsync(
+        configuredExecutable: String,
+        deadline: Duration = DEFAULT_PROBE_DEADLINE,
+    ): SageRuntimeProbeHandle<RuntimeProbeResult>? {
+        val executable = resolveNativeExecutable(configuredExecutable) ?: return null
+        return probeAsync(Path.of(executable), deadline)
+    }
+
+    /** Detects and validates native Sage; WSL/Docker remain discovery-only for now. */
+    fun detectAndProbeAsync(
+        mode: ExecutionMode,
+        wslDistribution: String,
+        deadline: Duration = DEFAULT_PROBE_DEADLINE,
+    ): SageRuntimeProbeHandle<SageRuntimeDetectionResult> {
+        require(!deadline.isNegative && !deadline.isZero) { "Runtime probe deadline must be positive" }
+        val cancellation = MutableRuntimeCancellation()
+        val control = RuntimeControl(RuntimeDeadline.after(deadline), cancellation)
+        val future = CompletableFuture.supplyAsync({
+            when (mode) {
+                ExecutionMode.NATIVE -> {
+                    val executable = SageAutoDetect.detectNativeSage()
+                    if (executable.isNullOrBlank()) {
+                        SageRuntimeDetectionResult(mode, null, null, "Native Sage executable was not found")
+                    } else {
+                        val result = probe.probe(RuntimeProbeRequest(Path.of(executable), control = control))
+                        SageRuntimeDetectionResult(
+                            mode,
+                            executable,
+                            result,
+                            if (result.status == RuntimeExecutionStatus.SUCCESS) {
+                                "Validated " + executable
+                            } else {
+                                "Sage probe failed with " + result.status
+                            },
+                        )
+                    }
+                }
+                ExecutionMode.WSL -> {
+                    val executable = SageAutoDetect.detectWslSage(wslDistribution)
+                    SageRuntimeDetectionResult(
+                        mode,
+                        executable,
+                        null,
+                        if (executable == null) {
+                            "Sage executable was not found in WSL"
+                        } else {
+                            "WSL Sage discovered; target-aware probe is not available yet"
+                        },
+                    )
+                }
+                ExecutionMode.DOCKER -> {
+                    val image = SageAutoDetect.detectDockerImage()
+                    SageRuntimeDetectionResult(
+                        mode,
+                        image,
+                        null,
+                        if (image == null) {
+                            "Sage Docker image was not found"
+                        } else {
+                            "Docker Sage image discovered; target-aware probe is not available yet"
+                        },
+                    )
+                }
+            }
+        }, executor)
+        return SageRuntimeProbeHandle(future, cancellation)
+    }
+
+    override fun dispose() {
+        executor.shutdownNow()
+    }
+
+    companion object {
+        val DEFAULT_PROBE_DEADLINE: Duration = Duration.ofSeconds(10)
+        const val DEFAULT_PROBE_OUTPUT_BYTES: Int = 64 * 1024
+
+        @JvmStatic
+        fun getInstance(): SageRuntimeService = ApplicationManager.getApplication().getService(SageRuntimeService::class.java)
+    }
+
+    private object SageThreadFactory : ThreadFactory {
+        private val counter = AtomicInteger()
+        override fun newThread(runnable: Runnable): Thread = Thread(runnable, "sage-runtime-service-" + counter.incrementAndGet()).apply { isDaemon = true }
+    }
+}
+
+data class SageRuntimeDetectionResult(
+    val mode: ExecutionMode,
+    val discoveredValue: String?,
+    val probe: RuntimeProbeResult?,
+    val diagnostic: String?,
+) {
+    val isReady: Boolean
+        get() = when (mode) {
+            ExecutionMode.NATIVE -> probe?.status == RuntimeExecutionStatus.SUCCESS
+            ExecutionMode.WSL, ExecutionMode.DOCKER -> !discoveredValue.isNullOrBlank()
+        }
+}
+
+class SageRuntimeProbeHandle<T> internal constructor(
+    val future: CompletableFuture<T>,
+    private val cancellation: MutableRuntimeCancellation,
+) {
+    fun cancel() {
+        cancellation.cancel()
+    }
+}
