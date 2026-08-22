@@ -107,6 +107,8 @@
 - 显式 replay scoped import：exit `0`，`REPLAY` 边界可审计。
 - `git diff --check`：exit `0`。
 - 本轮 conflict 诊断保留原 Dynamic merge 与 fail-closed gate，新增 deterministic `sourceDigest`/`sourceDigests`、声明计数、distinct signature 计数和排序后的 `signatureKeys`；真实 10.9 conflict recheck 重建 `84159` entries/`24` diagnostics，5 个 conflicts 均包含这些字段，但仍未被标记为已解决。
+- core normalizer 红测首次运行 `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain` 真实 exit `1`：25 tests 中 5 个新增 overload 规则测试失败，暴露旧实现只按参数名分组，未能区分可证明不相交类型，也未能对 Unknown、Literal/宽类型和歧义 arity fail closed；记录此失败后再修复。
+- 首次实现通用 predicate 后 core 测试仍真实 exit `1`：25 tests 中已有基线 `normalizerBuildsVersionedIndexFromRuntimeSources` 与 `extractorParsesClassesMethodsPropertiesAliasesAndOverloads` 失败，说明规则过窄/改变了既有 overload 兼容行为；新增测试未失败。已记录，先恢复既有行为，再收紧仅针对真实冲突的安全判定。
 
 ## 7. 下一步
 

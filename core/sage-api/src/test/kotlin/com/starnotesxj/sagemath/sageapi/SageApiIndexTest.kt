@@ -164,6 +164,180 @@ class SageApiIndexTest {
     }
 
     @Test
+    fun provablyDisjointKnownParameterSignaturesRemainOverloads() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "fixture-a.pyi")
+        val other = SageApiSourceRef(SageApiSourceKind.SIGNATURE, "fixture-b.json")
+        val raw = listOf(
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = source,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("value", SageTypeRef.known("str"))),
+                        returnType = SageTypeRef.known("String"),
+                    ),
+                ),
+            ),
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = other,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("value", SageTypeRef.known("bytes"))),
+                        returnType = SageTypeRef.known("Bytes"),
+                    ),
+                ),
+            ),
+        )
+
+        val result = SageApiNormalizer().normalize(SageApiVersion("10.6", "3.11"), raw)
+        val entry = result.index.entry("sage.all.parse", SageApiSymbolKind.FUNCTION)
+
+        assertNotNull(entry)
+        assertEquals(2, entry.signatures.size)
+        assertEquals(setOf("String", "Bytes"), entry.signatures.mapNotNull { it.returnType.expression }.toSet())
+        assertEquals(SageApiDynamicity.STATIC, entry.dynamicity)
+        assertTrue(result.diagnostics.none { it.kind == SageApiDiagnosticKind.CONFLICT })
+    }
+
+    @Test
+    fun unknownParameterTypeDoesNotJustifyDisjointOverloadRepresentation() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "fixture-a.pyi")
+        val other = SageApiSourceRef(SageApiSourceKind.SIGNATURE, "fixture-b.json")
+        val raw = listOf(
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = source,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("left")),
+                        returnType = SageTypeRef.known("String"),
+                    ),
+                ),
+            ),
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = other,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("right", SageTypeRef.known("bytes"))),
+                        returnType = SageTypeRef.known("Bytes"),
+                    ),
+                ),
+            ),
+        )
+
+        val result = SageApiNormalizer().normalize(SageApiVersion("10.6", "3.11"), raw)
+        val entry = result.index.entry("sage.all.parse", SageApiSymbolKind.FUNCTION)
+
+        assertNotNull(entry)
+        assertEquals(SageApiDynamicity.DYNAMIC, entry.dynamicity)
+        assertEquals(SageTypeState.DYNAMIC, entry.signatures.single().returnType.state)
+        assertEquals(1, result.diagnostics.count { it.kind == SageApiDiagnosticKind.CONFLICT })
+    }
+
+    @Test
+    fun literalAndWideParameterTypesRemainDynamicBecauseTheyMayOverlap() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "fixture-a.pyi")
+        val other = SageApiSourceRef(SageApiSourceKind.SIGNATURE, "fixture-b.json")
+        val raw = listOf(
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = source,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("literal", SageTypeRef.known("Literal[0]"))),
+                        returnType = SageTypeRef.known("Zero"),
+                    ),
+                ),
+            ),
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = other,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("wide", SageTypeRef.known("int"))),
+                        returnType = SageTypeRef.known("Integer"),
+                    ),
+                ),
+            ),
+        )
+
+        val result = SageApiNormalizer().normalize(SageApiVersion("10.6", "3.11"), raw)
+        val entry = result.index.entry("sage.all.parse", SageApiSymbolKind.FUNCTION)
+
+        assertNotNull(entry)
+        assertEquals(SageApiDynamicity.DYNAMIC, entry.dynamicity)
+        assertEquals(SageTypeState.DYNAMIC, entry.signatures.single().returnType.state)
+        assertEquals(1, result.diagnostics.count { it.kind == SageApiDiagnosticKind.CONFLICT })
+    }
+
+    @Test
+    fun differingArityRemainsDynamicBecauseCallShapeIsAmbiguous() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "fixture-a.pyi")
+        val other = SageApiSourceRef(SageApiSourceKind.SIGNATURE, "fixture-b.json")
+        val raw = listOf(
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = source,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("value", SageTypeRef.known("str"))),
+                        returnType = SageTypeRef.known("String"),
+                    ),
+                ),
+            ),
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = other,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(
+                            SageApiParameter("value", SageTypeRef.known("bytes")),
+                            SageApiParameter("encoding", SageTypeRef.known("str")),
+                        ),
+                        returnType = SageTypeRef.known("Bytes"),
+                    ),
+                ),
+            ),
+        )
+
+        val result = SageApiNormalizer().normalize(SageApiVersion("10.6", "3.11"), raw)
+        val entry = result.index.entry("sage.all.parse", SageApiSymbolKind.FUNCTION)
+
+        assertNotNull(entry)
+        assertEquals(SageApiDynamicity.DYNAMIC, entry.dynamicity)
+        assertEquals(SageTypeState.DYNAMIC, entry.signatures.single().returnType.state)
+        assertEquals(1, result.diagnostics.count { it.kind == SageApiDiagnosticKind.CONFLICT })
+    }
+
+    @Test
+    fun unknownReturnTypeDoesNotJustifyDisjointOverloadRepresentation() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "fixture-a.pyi")
+        val other = SageApiSourceRef(SageApiSourceKind.SIGNATURE, "fixture-b.json")
+        val raw = listOf(
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = source,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("text", SageTypeRef.known("str"))),
+                        returnType = SageTypeRef.unknown(),
+                    ),
+                ),
+            ),
+            SageRawSymbol(
+                qualifiedName = "sage.all.parse", kind = SageApiSymbolKind.FUNCTION, source = other,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("binary", SageTypeRef.known("bytes"))),
+                        returnType = SageTypeRef.known("Bytes"),
+                    ),
+                ),
+            ),
+        )
+
+        val result = SageApiNormalizer().normalize(SageApiVersion("10.6", "3.11"), raw)
+        val entry = result.index.entry("sage.all.parse", SageApiSymbolKind.FUNCTION)
+
+        assertNotNull(entry)
+        assertEquals(SageApiDynamicity.DYNAMIC, entry.dynamicity)
+        assertEquals(SageTypeState.DYNAMIC, entry.signatures.single().returnType.state)
+        assertEquals(1, result.diagnostics.count { it.kind == SageApiDiagnosticKind.CONFLICT })
+    }
+
+    @Test
     fun coverageReportSeparatesMissingNoSignatureDynamicAndConflicts() {
         val result = SageApiNormalizer().normalize(
             SageApiVersion("10.6", "3.11"),

@@ -67,9 +67,78 @@ class SageApiNormalizer {
     private fun conflictingSignatures(symbols: List<SageRawSymbol>): Boolean {
         val signatures = symbols.flatMap { it.signatures }.distinct()
         if (signatures.size < 2) return false
-        return signatures.groupBy { it.parameters.map(SageApiParameter::name) }.values.any { group ->
-            group.map { it.returnType }.distinct().size > 1
+        return signatures.withIndex().any { (index, signature) ->
+            signatures.drop(index + 1).any { other -> !canCoexistAsOverloads(signature, other) }
         }
+    }
+
+    /**
+     * Keeps an overload only when its call shape is provably disjoint from the
+     * other signature. Unknown types, optional/variadic shapes, and ambiguous
+     * arity remain Dynamic rather than being guessed into an overload set.
+     */
+    private fun canCoexistAsOverloads(left: SageApiSignature, right: SageApiSignature): Boolean {
+        if (left.returnType.state != SageTypeState.KNOWN || right.returnType.state != SageTypeState.KNOWN) {
+            return false
+        }
+        if (left.parameters.size != right.parameters.size) return false
+        if (left.parameters.any { it.type.state != SageTypeState.KNOWN } || right.parameters.any { it.type.state != SageTypeState.KNOWN }) {
+            return false
+        }
+        if (containsLiteralAndWideType(left, right)) return false
+        if (sameParameterShape(left, right)) return left.returnType == right.returnType
+
+        // A known identical result remains safe for an otherwise-known call
+        // shape, including existing optional-parameter declarations. It does
+        // not make unknown, literal/wide, or arity-ambiguous declarations safe.
+        if (left.returnType == right.returnType) return true
+        if (left.parameters.any { it.optional || it.variadic } || right.parameters.any { it.optional || it.variadic }) {
+            return false
+        }
+        return left.parameters.zip(right.parameters).any { (leftParameter, rightParameter) ->
+            definitelyDisjointTypes(leftParameter.type, rightParameter.type)
+        }
+    }
+
+    private fun containsLiteralAndWideType(left: SageApiSignature, right: SageApiSignature): Boolean =
+        left.parameters.zip(right.parameters).any { (leftParameter, rightParameter) ->
+            (isLiteral(leftParameter.type) && isWideType(rightParameter.type)) ||
+                (isLiteral(rightParameter.type) && isWideType(leftParameter.type))
+        }
+
+    private fun isLiteral(type: SageTypeRef): Boolean = type.expression?.startsWith("Literal[") == true
+
+    private fun isWideType(type: SageTypeRef): Boolean =
+        type.expression != null && !isLiteral(type) && !type.expression.contains("|")
+
+    private fun sameParameterShape(left: SageApiSignature, right: SageApiSignature): Boolean =
+        left.parameters.size == right.parameters.size && left.parameters.zip(right.parameters).all { (leftParameter, rightParameter) ->
+            leftParameter.type == rightParameter.type &&
+                leftParameter.optional == rightParameter.optional &&
+                leftParameter.keywordOnly == rightParameter.keywordOnly &&
+                leftParameter.variadic == rightParameter.variadic
+        }
+
+    private fun definitelyDisjointTypes(left: SageTypeRef, right: SageTypeRef): Boolean {
+        if (left.state != SageTypeState.KNOWN || right.state != SageTypeState.KNOWN) return false
+        val leftExpression = left.expression ?: return false
+        val rightExpression = right.expression ?: return false
+        if (leftExpression == rightExpression) return false
+        if (leftExpression.startsWith("Literal[") || rightExpression.startsWith("Literal[")) return false
+        if (leftExpression.contains("|") || rightExpression.contains("|")) return false
+        if (leftExpression in TEXT_TYPES && rightExpression in BYTE_TYPES) return true
+        if (leftExpression in BYTE_TYPES && rightExpression in TEXT_TYPES) return true
+        if (leftExpression in TEXT_TYPES && rightExpression in NUMERIC_TYPES) return true
+        if (leftExpression in NUMERIC_TYPES && rightExpression in TEXT_TYPES) return true
+        if (leftExpression in BYTE_TYPES && rightExpression in NUMERIC_TYPES) return true
+        if (leftExpression in NUMERIC_TYPES && rightExpression in BYTE_TYPES) return true
+        return false
+    }
+
+    private companion object {
+        val TEXT_TYPES = setOf("str", "builtins.str")
+        val BYTE_TYPES = setOf("bytes", "builtins.bytes")
+        val NUMERIC_TYPES = setOf("int", "builtins.int", "float", "builtins.float", "complex", "builtins.complex")
     }
 
     private fun confidenceRank(value: SageApiConfidence): Int = when (value) {

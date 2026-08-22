@@ -1,4 +1,4 @@
-# 下一轮任务：推进 Sage 10.9 conflicts 到通用合并决策
+# 下一轮任务：推进 Sage 10.9 conflicts 后的可消费质量门
 
 > 当前主线仍是 Sage 全量代码智能；本文件只定义下一限定切片，不代表全量智能或发行完成。
 
@@ -12,14 +12,14 @@
   - `distinctSignatureCount`；
   - 排序后的 `signatureKeys`。
 - 47 个 importer/generator Python 测试、四文件 `py_compile`、`git diff --check` 已通过；本轮没有修改 product、plugin、bundled index、installer 或 release。
+- core:sage-api 的 overload 安全边界已加入回归：已知且证明不相交的参数类型可保留 overload；同形状不同返回、Unknown 参数/返回、Literal/宽类型重叠、歧义 arity 保持 Dynamic/CONFLICT。core test 已从首次红测 25 tests/5 failures 修复至真实 exit `0`。
 
 ## 下一限定切片
 
-1. 使用真实 10.9 的 5 个 conflict 元数据，逐项确认它们是同一 stub 文件内的重复声明、合法 overload 形状还是实际不兼容签名。
-2. 先写回归测试，再设计**通用** merge/representation 规则；禁止按具体函数名写 Kotlin 特例，禁止用 `--allow-conflicts` 把问题伪装成成功。
-3. 保持 Dynamic/Unknown 安全边界；只有规则和测试能解释所有来源时，才更新 `isComplete`/gate 语义。
-4. 选择一小组人工扩展的 expected contract，定义可消费 index 的最小质量门；不得从当前 index 自动反推全量 expected。
-5. 以 ignored `build/sage-api-real/` 做真实 artifact recheck；不复制 84159-entry index 到 bundled/resource，不进入 product/installer/release。
+1. 将本轮通用 overload compatibility 规则接入真实 generator/消费链，逐项解释 5 个 10.9 conflicts；在 Unknown、同形状不同返回、Literal/宽类型重叠和歧义 arity 未有额外证据前，不降低其 Dynamic/CONFLICT gate。
+2. 扩大一小组人工 expected contract，并把参数/返回/文档质量门拆成可审计的 scoped checks；不得从当前 index 自动反推全量 expected。
+3. 设计可消费的 versioned API/type/document index slice，补充参数提示、文档提示和 source-map 所需的 provenance，不把 conflict resolver 当作全量智能完成。
+4. 以 ignored `build/sage-api-real/` 做真实 artifact recheck；不复制 84159-entry index 到 bundled/resource，不进入 product/installer/release。
 
 ## 限定文件
 
