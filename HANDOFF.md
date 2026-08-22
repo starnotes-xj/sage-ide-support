@@ -291,4 +291,34 @@
 
 - 当前 checked-in manifest 仍是 `FIXTURE`，不是真实 Sage runtime/stubgen artifact；本轮未伪造真实 runtime 证据。
 - 本轮未修改 bundled JSON、插件源码、product、installer、release 或官方 checkout；未执行 product fresh build、installer smoke、release audit 或 FinalCheck。
-- 本轮代码与测试尚未提交；下一步可在审阅后提交本切片。
+- 该 tree digest/provenance 切片已提交：`7dc74b7 锁定 Sage artifact 的内容完整性`。
+- 本轮新错误记录：新增 source metadata 一致性回归首次运行 `python -m unittest tools/sage-api-index/test_generate.py`，真实 exit code `1`；测试插入点位于 `ManifestContractTest` 类，新增方法多缩进一级，触发 `IndentationError: unexpected indent`。已记录后只修复测试缩进。
+- 本轮新错误记录：修复测试缩进后运行同一命令，真实 exit code `1`；19 tests 中 2 failures：locator drift 与 missing entry source 均未被 generator 拒绝，说明 manifest/index consistency validator 尚未实现；已记录后读取对应测试与 build 范围。
+- 本轮新错误记录：调整 locator drift 测试后再次运行同一命令，真实 exit code `1`；locator 修改会同步改变生成 locator，当前测试不能证明外部 drift；missing entry source 仍因复用非空 root 被重新提取而未触发。已记录后仅修正测试为直接 validator contract 与空 source root。
+- 本轮新错误记录：修正 locator digest 后运行同一命令，真实 exit code `1`；locator drift 仍未触发预期文案，empty root 则在 manifest parse 阶段以 `source manifest root does not exist` 失败而非 consistency validator 文案。已记录后调整测试断言为 fail-closed 的实际边界，并继续收敛 validator。
+
+## 本轮增量：manifest 与生成 index source metadata 一致性契约（2026-08-22）
+
+### 实现
+
+- `tools/sage-api-index/generate.py` 新增 `validate_source_contract`，双向校验 object manifest source 与生成 index 的 kind、locator、treeDigest、fileCount、files、entry sources 和 sourceDigests。
+- source metadata 直接来自实际扫描结果，不再从归一化后 entries 反推文件清单；即使文件没有可提取 symbol，也不会从 `files` 中静默消失。
+- object manifest source locator 必须唯一；空 source、未知 locator、source kind 不一致、文件 metadata 漂移和 sourceDigests 漂移均 fail-closed。
+- 保持旧数组 manifest、`--source-root` 和无声明 digest 路径兼容；没有增加函数名特例。
+- `tools/sage-api-index/test_generate.py` 增至 21 tests，覆盖 locator、空 source、metadata 漂移、重复 locator、多 source 顺序与旧兼容路径。
+
+### Fresh 验证（真实 exit code）
+
+- `python -m unittest tools/sage-api-index/test_generate.py`：exit code `0`，21 tests completed，0 failures。
+- `python -m py_compile tools/sage-api-index/generate.py tools/sage-api-index/test_generate.py`：exit code `0`。
+- `./gradlew.bat :core:sage-api:test -PrunSageApiTests=true --no-daemon --console=plain`：exit code `0`，BUILD SUCCESSFUL；6 actionable tasks up-to-date。
+- `git diff --check`：exit code `0`；仅有 LF/CRLF warning。
+
+### 边界与风险
+
+- 当前 contract 只由 checked-in `FIXTURE` 与合成临时 sources 验证，不代表真实 Sage runtime/stubgen artifact 已接入。
+- 本轮未修改 source fixture、bundled resource、插件源码、product、installer、release 或官方 checkout。
+- 本轮未执行 product fresh build、installer smoke、release audit 或 FinalCheck；限定切片尚未提交。
+- 本轮新错误记录：补充未知 entry source locator 回归后运行 `python -m unittest tools/sage-api-index/test_generate.py`，真实 exit code `1`；21 tests 中 1 failure，`validate_source_contract` 未拒绝不属于任何 manifest source 的 entry locator。已记录后只补齐该双向覆盖校验。
+- 本轮新错误记录：补充 manifest locator 前缀内的 phantom file 回归后运行同一命令，真实 exit code `1`；21 tests 中 1 failure，validator 仅校验 locator 前缀，尚未确认 entry source 文件属于实际扫描的 files。已记录后只补齐 file membership 校验。
+- 补齐 unknown/phantom entry source 双向校验并增加 multi-source byte-stable 回归后，最终 Python 仍为 21 tests 全通过；验证证据以本节命令为准。

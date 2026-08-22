@@ -8,12 +8,177 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate import validate_index
+from generate import validate_index, validate_source_contract
 
 ROOT = Path(__file__).resolve().parent
 GENERATOR = ROOT / "generate.py"
 
 class ManifestContractTest(unittest.TestCase):
+    def test_manifest_index_source_metadata_contract_rejects_locator_drift(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            shutil.copytree(ROOT / "fixtures" / "sage", source / "sage")
+            manifest = root / "manifest.json"
+            output = root / "index.json"
+            manifest.write_text(json.dumps({
+                "artifactId": "fixture-contract-consistency",
+                "sageVersion": "10.6",
+                "pythonVersion": "3.11",
+                "provenance": {"kind": "FIXTURE", "generator": "test_generate", "source": "checked-in"},
+                "sources": [{"root": "stubs", "kind": "FIXTURE", "locator": "fixture-contract-consistency/10.6"}],
+            }), encoding="utf-8")
+            command = [
+                sys.executable, str(GENERATOR), "--source-manifest", str(manifest),
+                "--source-base", str(root), "--sage-version", "10.6", "--python-version", "3.11",
+                "--output", str(output), "--expected", str(ROOT / "expected-high-value.json"), "--allow-missing",
+            ]
+            generated = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(generated.returncode, 0, generated.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            source_metadata = index["sources"][0]
+            self.assertEqual(source_metadata["kind"], "FIXTURE")
+            self.assertEqual(source_metadata["locator"], "fixture-contract-consistency/10.6")
+            self.assertEqual(source_metadata["fileCount"], len(source_metadata["files"]))
+            self.assertEqual(index["sourceDigests"], {source["locator"].split(":")[0]: source["digest"] for entry in index["entries"] for source in entry["sources"]})
+
+            drifted = dict(index)
+            drifted["sources"] = [dict(source_metadata, locator="wrong-locator")]
+            metadata = {"sourceSpecs": [{"kind": "FIXTURE", "extractorKind": "STUB", "locator": "fixture-contract-consistency/10.6", "treeDigest": source_metadata["treeDigest"]}]}
+            with self.assertRaisesRegex(ValueError, "source 0 locator"):
+                validate_source_contract(drifted, metadata)
+
+    def test_manifest_index_source_metadata_contract_rejects_missing_entry_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "stubs"
+            shutil.copytree(ROOT / "fixtures" / "sage", source / "sage")
+            (root / "empty").mkdir()
+            manifest = root / "manifest.json"
+            output = root / "index.json"
+            manifest.write_text(json.dumps({
+                "artifactId": "fixture-contract-missing-source",
+                "sageVersion": "10.6",
+                "pythonVersion": "3.11",
+                "provenance": {"kind": "FIXTURE", "generator": "test_generate", "source": "checked-in"},
+                "sources": [
+                    {"root": "stubs", "kind": "FIXTURE", "locator": "fixture-contract-missing-source/10.6"},
+                    {"root": "empty", "kind": "FIXTURE", "locator": "fixture-contract-missing-source/empty"},
+                ],
+            }), encoding="utf-8")
+            result = subprocess.run([
+                sys.executable, str(GENERATOR), "--source-manifest", str(manifest),
+                "--source-base", str(root), "--sage-version", "10.6", "--python-version", "3.11",
+                "--output", str(output), "--allow-missing",
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("source manifest entry 1 has no extracted", result.stderr)
+
+    def test_manifest_index_source_metadata_contract_rejects_metadata_drift(self):
+        digest = "a" * 64
+        metadata = {"sourceSpecs": [{
+            "kind": "FIXTURE",
+            "extractorKind": "STUB",
+            "locator": "fixture-contract/10.6",
+            "treeDigest": digest,
+            "fileCount": 1,
+            "files": ["sage.pyi"],
+        }]}
+        entry = {
+            "qualifiedName": "sage",
+            "kind": "MODULE",
+            "dynamicity": "STATIC",
+            "confidence": "HIGH",
+            "parents": [],
+            "protocols": [],
+            "aliases": [],
+            "sources": [{"kind": "STUB", "locator": "fixture-contract/10.6/sage.pyi", "digest": digest}],
+            "signatures": [],
+        }
+        base = {
+            "sources": [{
+                "kind": "FIXTURE",
+                "locator": "fixture-contract/10.6",
+                "treeDigest": digest,
+                "fileCount": 1,
+                "files": ["fixture-contract/10.6/sage.pyi"],
+            }],
+            "sourceDigests": {"fixture-contract/10.6/sage.pyi": digest},
+            "entries": [entry],
+        }
+        validate_source_contract(base, metadata)
+        cases = [
+            ({**base, "sources": [{**base["sources"][0], "fileCount": 2}]}, "file metadata"),
+            ({**base, "sources": [{**base["sources"][0], "files": ["fixture-contract/10.6/other.pyi"]}]}, "file metadata"),
+            ({**base, "sources": [{**base["sources"][0], "treeDigest": "b" * 64}]}, "treeDigest"),
+            ({**base, "sourceDigests": {}}, "source digests"),
+            ({
+                **base,
+                "entries": [entry, {**entry, "qualifiedName": "rogue", "sources": [{"kind": "STUB", "locator": "rogue/sage.pyi", "digest": digest}]}],
+                "sourceDigests": {**base["sourceDigests"], "rogue/sage.pyi": digest},
+            }, "does not belong to a manifest source"),
+            ({
+                **base,
+                "entries": [entry, {**entry, "qualifiedName": "phantom", "sources": [{"kind": "STUB", "locator": "fixture-contract/10.6/phantom.pyi", "digest": digest}]}],
+                "sourceDigests": {**base["sourceDigests"], "fixture-contract/10.6/phantom.pyi": digest},
+            }, "does not match a scanned source file"),
+        ]
+        for index, expected in cases:
+            with self.subTest(expected=expected):
+                with self.assertRaisesRegex(ValueError, expected):
+                    validate_source_contract(index, metadata)
+
+    def test_manifest_index_source_metadata_contract_rejects_duplicate_locator(self):
+        source = {
+            "kind": "FIXTURE",
+            "extractorKind": "STUB",
+            "locator": "duplicate",
+            "treeDigest": "a" * 64,
+            "fileCount": 0,
+            "files": [],
+        }
+        with self.assertRaisesRegex(ValueError, "locators must be unique"):
+            validate_source_contract({"sources": [{}, {}], "entries": [], "sourceDigests": {}}, {"sourceSpecs": [source, dict(source)]})
+
+    def test_manifest_index_source_metadata_contract_preserves_multiple_source_order(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source_a = root / "stubs-a"
+            source_b = root / "stubs-b"
+            shutil.copytree(ROOT / "fixtures" / "sage" / "matrix", source_a / "sage" / "matrix")
+            shutil.copytree(ROOT / "fixtures" / "sage" / "modules", source_b / "sage" / "modules")
+            manifest = root / "manifest.json"
+            output = root / "index.json"
+            manifest.write_text(json.dumps({
+                "artifactId": "fixture-multi-source",
+                "sageVersion": "10.6",
+                "pythonVersion": "3.11",
+                "provenance": {"kind": "FIXTURE", "generator": "test_generate", "source": "checked-in"},
+                "sources": [
+                    {"root": "stubs-b", "kind": "FIXTURE", "locator": "fixture-multi-source/b"},
+                    {"root": "stubs-a", "kind": "FIXTURE", "locator": "fixture-multi-source/a"},
+                ],
+            }), encoding="utf-8")
+            result = subprocess.run([
+                sys.executable, str(GENERATOR), "--source-manifest", str(manifest),
+                "--source-base", str(root), "--sage-version", "10.6", "--python-version", "3.11",
+                "--output", str(output), "--allow-missing",
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            index = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual([source["locator"] for source in index["sources"]], ["fixture-multi-source/b", "fixture-multi-source/a"])
+            self.assertEqual(index["sources"][0]["fileCount"], len(index["sources"][0]["files"]))
+            self.assertEqual(index["sources"][1]["fileCount"], len(index["sources"][1]["files"]))
+            second_output = root / "index-second.json"
+            second_command = [
+                sys.executable, str(GENERATOR), "--source-manifest", str(manifest),
+                "--source-base", str(root), "--sage-version", "10.6", "--python-version", "3.11",
+                "--output", str(second_output), "--allow-missing",
+            ]
+            second = subprocess.run(second_command, capture_output=True, text=True)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(output.read_bytes(), second_output.read_bytes())
+
     def test_manifest_contract_requires_identity_and_provenance(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -241,9 +241,8 @@ def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_versio
         index = {**metadata, **index}
         index["sources"] = []
         for source in metadata.get("sourceSpecs", []):
-            source_spec = SourceSpec(Path("."), source["extractorKind"], source["locator"])
-            source_files = sorted({item["locator"].split(":")[0] for entry in entries for item in entry["sources"] if item["kind"] == source["extractorKind"] and item["locator"].startswith(source["locator"] + "/")})
-            source_data = {"kind": source["kind"], "locator": source["locator"], "fileCount": len(source_files), "files": source_files}
+            source_files = [f"{source['locator'].rstrip('/')}/{path}" for path in source.get("files", [])]
+            source_data = {"kind": source["kind"], "locator": source["locator"], "fileCount": source.get("fileCount", len(source_files)), "files": source_files}
             if source.get("treeDigest"):
                 source_data["treeDigest"] = source["treeDigest"]
             index["sources"].append(source_data)
@@ -428,7 +427,7 @@ def parse_source_manifest(path: Path, source_base: Path | None = None) -> tuple[
                 raise ValueError(f"source manifest {field} must be a nonblank string")
         validate_provenance(value["provenance"])
         items = value["sources"]
-        metadata = {"artifactId": value["artifactId"], "sageVersion": value["sageVersion"], "pythonVersion": value["pythonVersion"], "provenance": value["provenance"], "sourceManifest": path.name, "sourceSpecs": [{"kind": item.get("kind"), "extractorKind": "STUB" if item.get("kind") == "FIXTURE" else item.get("kind"), "locator": item.get("locator"), "treeDigest": item.get("treeDigest")} for item in items if isinstance(item, dict)]}
+        metadata = {"artifactId": value["artifactId"], "sageVersion": value["sageVersion"], "pythonVersion": value["pythonVersion"], "provenance": value["provenance"], "sourceManifest": path.name, "sourceSpecs": []}
     else:
         raise ValueError("source manifest must be a JSON array or artifact object")
     if not isinstance(items, list) or not items:
@@ -455,13 +454,55 @@ def parse_source_manifest(path: Path, source_base: Path | None = None) -> tuple[
         if declared_digest is not None and (not isinstance(declared_digest, str) or not is_sha256(declared_digest)):
             raise ValueError(f"source manifest entry {index}.treeDigest is invalid")
         spec = SourceSpec(source_root, "STUB" if kind == "FIXTURE" else kind, locator, module_prefix)
-        actual = tree_metadata(spec, discover(source_root))["treeDigest"]
+        actual_metadata = tree_metadata(spec, discover(source_root))
+        actual = actual_metadata["treeDigest"]
         if declared_digest is not None and actual != declared_digest:
             raise ValueError(f"source manifest entry {index} tree digest mismatch: expected {declared_digest}, got {actual}")
         if metadata:
-            metadata["sourceSpecs"][index]["treeDigest"] = actual
+            metadata["sourceSpecs"].append({"kind": kind, "extractorKind": spec.kind, "locator": locator, **actual_metadata})
         specs.append(spec)
     return specs, metadata
+
+def validate_source_contract(index: dict[str, Any], metadata: dict[str, Any]) -> None:
+    expected = metadata.get("sourceSpecs", [])
+    actual = index.get("sources", [])
+    expected_locators = [source.get("locator") for source in expected]
+    if len(expected_locators) != len(set(expected_locators)):
+        raise ValueError("source manifest locators must be unique")
+    if len(expected) != len(actual):
+        raise ValueError("generated index sources do not match manifest source count")
+    for position, (manifest_source, index_source) in enumerate(zip(expected, actual)):
+        for field in ("kind", "locator"):
+            if index_source.get(field) != manifest_source.get(field):
+                raise ValueError(f"generated index source {position} {field} does not match manifest")
+        expected_files = [f"{manifest_source['locator'].rstrip('/')}/{path}" for path in manifest_source.get("files", [])]
+        if index_source.get("fileCount") != manifest_source.get("fileCount") or index_source.get("files") != expected_files:
+            raise ValueError(f"generated index source {position} file metadata does not match scanned source")
+        if manifest_source.get("treeDigest") and index_source.get("treeDigest") != manifest_source["treeDigest"]:
+            raise ValueError(f"generated index source {position} treeDigest does not match manifest")
+        expected_file_locators = set(expected_files)
+        entry_sources = [
+            source
+            for entry in index.get("entries", [])
+            for source in entry.get("sources", [])
+            if source["kind"] == manifest_source.get("extractorKind")
+            and source["locator"].split(":")[0] in expected_file_locators
+        ]
+        if not entry_sources:
+            raise ValueError(f"source manifest entry {position} has no extracted entries")
+        digest_keys = {source["locator"].split(":")[0] for source in entry_sources}
+        if not digest_keys.issubset(index.get("sourceDigests", {})):
+            raise ValueError(f"source manifest entry {position} is missing source digests")
+    entry_sources = [source for entry in index.get("entries", []) for source in entry.get("sources", [])]
+    for source in entry_sources:
+        source_locator = source["locator"].split(":")[0]
+        candidates = [manifest_source for manifest_source in expected if source["kind"] == manifest_source.get("extractorKind")]
+        if not any(source_locator in {f"{candidate['locator'].rstrip('/')}/{path}" for path in candidate.get("files", [])} for candidate in candidates):
+            if any(source["locator"].startswith(candidate["locator"].rstrip("/") + "/") for candidate in candidates):
+                raise ValueError(f"entry source locator {source['locator']} does not match a scanned source file")
+            raise ValueError(f"entry source locator {source['locator']} does not belong to a manifest source")
+    if index.get("sourceDigests") != source_digests(index.get("entries", [])):
+        raise ValueError("generated index sourceDigests do not match entry sources")
 
 def build(args: argparse.Namespace) -> int:
     if args.source_manifest is None and args.source_root is None:
@@ -475,6 +516,8 @@ def build(args: argparse.Namespace) -> int:
         raise ValueError("no .pyi/.py sources found in configured source roots")
     raw = [symbol for spec, path in paths for symbol in AstExtractor(spec).extract_path(path)]
     index, diagnostics = normalize(raw, metadata.get("sageVersion", args.sage_version), metadata.get("pythonVersion", args.python_version), metadata)
+    if metadata:
+        validate_source_contract(index, metadata)
     validate_index(index)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
