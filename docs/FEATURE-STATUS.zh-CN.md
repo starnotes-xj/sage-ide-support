@@ -1,6 +1,6 @@
 # 功能实现状态与版本边界
 
-> 更新时间：2026-08-22。本文按代码、测试和最终构建证据整理；“已实现”不等于所有平台都已验收。
+> 更新时间：2026-08-22（本轮文档同步）。本文按代码、测试和最终构建证据整理；“已实现”不等于所有平台都已验收。
 >
 > 产品首要目标已明确为 SageMath 全量代码智能：API 索引、类型推断、补全、参数/文档提示、跳转和 source-map；Jupyter 仅保留为后续可选兼容层。
 
@@ -19,7 +19,7 @@
 
 | 能力域 | 当前状态 | 证据/范围 |
 |---|---|---|
-| Sage 文件与语言基线 | 部分实现 | `.sage` 文件类型、lexer/parser、`^/^^` 预解析相关分析、generator sugar、隐式 `sage.all`、类型 provider、postfix templates、检查和模板已有迁移基线；但 Sage API 全量索引、类型传播和覆盖率验收尚未完成。 |
+| Sage 文件与语言基线 | 部分实现 | `.sage` 文件类型、lexer/parser、`^/^^` 预解析相关分析、generator sugar、隐式 `sage.all`、类型 provider、postfix templates、检查和模板已有迁移基线；当前已增加数据驱动 factory return type 与 indexed member provider，但全量 API/type/document index、类型传播和覆盖率验收尚未完成。 |
 | Sage 运行配置 | 部分可运行 | Native/WSL/Docker 运行配置、参数、工作目录、自动检测和当前文件运行已存在；WSL/Docker 主要是命令适配与发现，不等于完整 Runtime Manager。 |
 | Sage 调试入口 | 部分可运行 | Native/WSL 调试命令状态和 launcher 已存在；跨平台、source map、稳定调试验收仍未完成。 |
 | CTF 执行模型 | 已实现基础 | `CtfProjectProfile`、执行目标、stdin/参数/环境/工作目录、flag pattern、可选 timeout、输出上限和 `ExecutionResult` 已有纯 JVM 模型/测试。 |
@@ -36,7 +36,7 @@
 4. **CTF Profile**：领域模型存在，但没有 Challenge Project/Profile 的完整 IDE UI、持久化项目结构、运行历史、flag 命中展示和 evidence 管理。
 5. **运行结果记录**：stdout/stderr/退出码/耗时等底层结果契约存在；没有完整的 solve run history、结果摘要和可追溯题目 evidence 工作流。
 6. **Sage 预解析双层模型**：已有 lexer/parser/分析基础，但 source-map、原始 `.sage` 到生成 Python 的诊断/跳转/重命名/断点闭环尚未完成。
-7. **Sage 全量代码智能**：当前只有部分 `SageTypeProvider`、隐式补全和少量特殊规则；尚无按 Sage 版本生成的完整 API/type/document index、统一类型传播引擎、覆盖率报告和全量 completion/signature golden tests。
+7. **Sage 全量代码智能**：已形成第一条可运行的数据驱动链路：`core:sage-api` 提供版本化模型、normalizer、稳定 JSON、严格 reader/loader、不可变 query；`plugins:sage-core` 消费 bundled/external index，支持唯一 KNOWN factory return type、矩阵成员补全、父类/别名闭包和 Unknown/Dynamic 拒绝，并已有 core 回归测试及 plugin Kotlin 编译证据。仍未完成真实 Sage Runtime/`sage-pycharm-stubgen` 全量生成、覆盖率报告、参数/文档/跳转/source-map、plugin completion/type integration tests（受本地 module descriptor 解析阻塞）和完整 type engine。
 8. **许可证/SBOM**：构建产物、SPDX、第三方库清单和根级法律文件已生成；当前 audit 仍有 8 个 warning，签名、`NOASSERTION`、WIP 和 `GPL-2.0` 审查未完成。
 9. **跨平台发行**：Windows x64/aarch64 已构建；Linux/macOS installer、真实 arm64 主机 smoke 和自动更新/公证未完成。
 

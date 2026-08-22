@@ -4,6 +4,32 @@
 
 P1 已完成主要 Community 产品接入与 Windows 双架构 hardened installer 验证；P2 CTF MVP 尚未实现。当前下一条核心产品主线是 SageMath 全量代码智能（API 索引、类型推断、补全和提示），Jupyter 降为后续可选兼容层。
 
+**本轮状态同步（2026-08-22）**：已提交 `8e47fa8`，完成第一条可运行的数据驱动 Sage API 链路：版本化模型/normalizer、严格 JSON reader/loader、不可变 query、唯一 KNOWN factory return type、父类/别名成员闭包和矩阵成员补全消费。core 测试与 Sage Core Kotlin 编译通过；bundled index 仍是最小矩阵 slice，不代表全量 Sage 覆盖。
+
+### 本轮文档结论：未完成项与优先级
+
+**仍未完成的高影响事项：**
+
+1. **真实 Sage API 生成链路**：尚未从真实 Sage Runtime、`sage-pycharm-stubgen`、签名和文档生成全量、版本绑定的 index；当前 bundled JSON 只是矩阵回归 slice。
+2. **Sage IDE 智能闭环**：参数/文档提示、完整类型传播、项目/用户 stub 合并、跳转、source-map、重命名、诊断和 product-level completion/type integration tests 尚未完成。
+3. **插件测试工具链**：`plugins:sage-core` 测试被本地 PyCharm module descriptor 的 `module/namespace` 字段解析错误阻塞，尚未获得真实 completion/type integration 证据。
+4. **CTF MVP**：`plugins/ctf-tools`、Challenge Profile UI、flag 扫描、运行历史、evidence 和 Crypto/Encoding 工作区尚未实现。
+5. **Runtime Manager 产品闭环**：Catalog、Settings/Project SDK adapter、切换/移除 UX、签名 Catalog、远程/WSL/Docker target-aware probe 尚未完成。
+6. **发行门**：Authenticode、SPDX `NOASSERTION`/WIP/`GPL-2.0` 法律审批、Linux/macOS 包、真实 arm64 主机 smoke、自动更新尚未完成。
+
+**下一步优先目标（已选定）：真实 Sage API index 生成流水线 + 可审计覆盖率报告。**
+
+选择理由：它是当前最高杠杆、最贴合产品核心差异化且能直接解锁后续类型传播/补全/参数/文档功能的基础设施；相比继续添加单个 Kotlin 特例或提前做 CTF UI，它能一次性扩大可用 API 面，并验证“数据驱动而非函数特例”的架构是否成立。
+
+下一阶段的可交付边界：
+
+- 固定首个支持矩阵（Sage 版本、Python 版本、stubgen/runtime 来源）；
+- 在 `tools/sage-api-index/` 建立可重复生成命令，输出 schema-validated JSON 和 coverage/diff report；
+- 首先覆盖真实 `sage.all`、matrix、vector、polynomial、finite field、number theory、crypto 等高价值域；
+- 为生成器写 fixture/golden/negative tests，并让 bundled index 由生成产物替换或明确标记为测试 fallback；
+- 以至少一个真实 Runtime 生成 artifact 驱动 `plugins:sage-core` completion/type integration test；
+- 保持 Unknown/Dynamic 安全边界，不在插件侧新增名称特例。
+
 功能实现矩阵与 Community/Pro 边界见 [`FEATURE-STATUS.zh-CN.md`](FEATURE-STATUS.zh-CN.md)。
 
 ## 工程关系

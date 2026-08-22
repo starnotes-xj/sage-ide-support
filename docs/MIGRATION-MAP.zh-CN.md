@@ -9,13 +9,13 @@
 
 ## 当前迁移内容
 
-> 当前实际状态：Sage Core 语言/运行基线已迁移并通过构建/测试；`core:model` 与 `core:runtime` 基础已存在；Sage 全量 API/type index、类型传播、完整补全/提示和 source-map 尚未完成；CTF Profile UI、CTF 工具、运行历史/evidence 和完整 Runtime Manager 仍待实现。完整矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
+> 当前实际状态：Sage Core 语言/运行基线已迁移并通过构建/测试；`core:model` 与 `core:runtime` 基础已存在。`core:sage-api` 与 `plugins:sage-core` 已形成第一条可运行的数据驱动 API 链路（版本化 index、严格 loader/query、factory return type、父类/别名成员补全），但仍是最小矩阵 slice；真实 Sage Runtime/`sage-pycharm-stubgen` 全量生成、类型传播扩展、完整补全/提示、source-map、CTF Profile UI、CTF 工具、运行历史/evidence 和完整 Runtime Manager 仍待实现。完整矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
 
 | 源能力 | 当前来源 | 目标位置 | 状态 |
 |---|---|---|---|
 | Sage 文件类型、语言和图标 | `src/main/kotlin/.../sugar` | `plugins/sage-core/src/main/kotlin/.../sugar` | 已迁移基线 |
 | Sage parser / lexer | `src/main/kotlin/.../parser`、`com/jetbrains/python/parsing` | `plugins/sage-core/...` | 已迁移基线 |
-| Sage 类型、隐式 namespace、postfix | `src/main/kotlin/.../type`、`sugar` | `plugins/sage-core/...` | 部分实现；全量 API/type index 待完成 |
+| Sage 类型、隐式 namespace、postfix | `src/main/kotlin/.../type`、`sugar` | `plugins/sage-core/...` | 部分实现；已接入 `core:sage-api` immutable index、factory return type 和 indexed members；全量 index/type engine 待完成 |
 | Native/WSL/Docker 运行 | `src/main/kotlin/.../run` | `plugins/sage-core/...` | 已迁移基线 |
 | Sage 模板、图标、plugin.xml | `src/main/resources` | `plugins/sage-core/src/main/resources` | 已迁移基线 |
 | 平台测试和 testData | `src/test` | `plugins/sage-core/src/test` | 已迁移基线 |

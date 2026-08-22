@@ -2,7 +2,7 @@
 
 > 项目定位：面向 SageMath 的专业科学计算 IDE，并对 CTF（尤其是密码学、数论、逆向与取证工作流）做一等公民优化。
 >
-> 当前状态：P1 Community 产品接入与 Windows 双架构构建链已打通；P2 CTF MVP 尚未完成。详细实现矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
+> 当前状态（2026-08-22）：P1 Community 产品接入与 Windows 双架构构建链已打通；P2 CTF MVP 尚未完成。Sage intelligence 已从设计进入第一条可运行的数据驱动链路，但 bundled index 仍为最小矩阵 slice，尚未达到全量 API 智能验收。详细实现矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
 >
 > 创建日期：2026-08-19
 
@@ -458,8 +458,8 @@ Sage 和 CTF 项目会执行任意 Python/Cython/本地代码，因此产品必�
 - [x] 运行核心模块测试、Sage plugin build、Windows installer 和 x64 smoke；
 - [x] 完成 sidecar、法律文件 overlay、release audit 和 FinalCheck 基础验证；
 - [ ] 实现 `plugins/ctf-tools`、CTF Profile UI、flag/evidence/run history；
-- [ ] 实现 Runtime Manager Catalog、Settings/Project SDK adapter 和签名 Catalog；
-- [ ] 实现 Sage API index、全量类型推断、补全/签名/文档提示和 source-map 验收；
+- [ ] 实现 Runtime Manager Catalog、Settings/Project SDK adapter 和签名 Catalog；（当前不是下一优先级，需待 Sage API 生成链路稳定后推进）
+- [~] 已实现 Sage API index 第一条可运行链路：版本化模型/normalizer、严格 loader/query、factory return type、父类/别名成员补全；仍需真实 Runtime/stubgen 全量生成、覆盖率、完整类型引擎、参数/文档/跳转/source-map 验收；
 - [ ] 补 doctest、PCAP/二进制/GDB/LLDB；
 - [ ] 后续再加入可选 Jupyter/富输出兼容层；
 - [ ] 完成 Linux/macOS、签名、法律审批、arm64 smoke、自动更新和 Pro 线。
