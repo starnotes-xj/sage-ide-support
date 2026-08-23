@@ -53,8 +53,8 @@ class SageDebugCommandLineState(
             ?: throw ExecutionException("The verified SageMath runtime has no usable bundled Python interpreter")
         val commandLine = if (mode == ExecutionMode.WSL) {
             GeneralCommandLine(
-                "wsl.exe", "-d", settings.wslDistribution, "--", "bash", "-lc",
-                wslDebugScript(settings.wslCondaEnvironment, executables.sage, bundledPython),
+                "wsl.exe", "-d", settings.wslDistribution, "--exec", "/bin/bash", "-lc",
+                wslDebugScript(settings.wslCondaEnvironment, executables.sage, bundledPython, settings.wslCondaExecutable),
                 // bash -c uses the next item as $0; the debugger's injected
                 // arguments follow it and are forwarded by wslDebugScript.
                 "sage-debug-entry",

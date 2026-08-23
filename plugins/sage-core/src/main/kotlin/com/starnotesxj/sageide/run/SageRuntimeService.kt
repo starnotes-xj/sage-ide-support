@@ -11,6 +11,11 @@ import com.starnotesxj.sagemath.runtime.RuntimeExecutionStatus
 import com.starnotesxj.sagemath.runtime.RuntimeProbe
 import com.starnotesxj.sagemath.runtime.RuntimeProbeRequest
 import com.starnotesxj.sagemath.runtime.RuntimeProbeResult
+import com.starnotesxj.sagemath.runtime.ResolvedRuntimeExecutables
+import com.starnotesxj.sagemath.runtime.RuntimeDiagnostic
+import com.starnotesxj.sagemath.runtime.RuntimeDiagnosticCode
+import com.starnotesxj.sagemath.runtime.RuntimeOperationResult
+import com.starnotesxj.sagemath.runtime.RuntimeTarget
 import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
@@ -46,6 +51,57 @@ class SageRuntimeService : Disposable {
         return configuredExecutable.trim().takeIf { it.isNotEmpty() } ?: SageAutoDetect.detectNativeSage()
     }
 
+    /** Resolves an externally managed Sage installation inside WSL Conda. */
+    fun resolveWslExecutables(
+        distribution: String,
+        condaEnvironment: String,
+        condaExecutable: String,
+        sageExecutable: String,
+        deadline: Duration = DEFAULT_PROBE_DEADLINE,
+    ): RuntimeOperationResult<ResolvedRuntimeExecutables> {
+        require(!deadline.isNegative && !deadline.isZero) { "WSL runtime probe deadline must be positive" }
+        val runtime = SageAutoDetect.detectWslRuntime(
+            distribution,
+            condaEnvironment,
+            condaExecutable,
+            sageExecutable,
+            timeoutMillis = deadline.toMillis().coerceAtLeast(1),
+        )
+            ?: return RuntimeOperationResult(
+                null,
+                listOf(
+                    RuntimeDiagnostic(
+                        RuntimeDiagnosticCode.TARGET_PROBE_FAILED,
+                        "WSL_RUNTIME_RESOLVE",
+                        "WSL Sage/Conda could not be discovered or activated",
+                        details = mapOf("distribution" to distribution, "condaEnvironment" to condaEnvironment.ifBlank { "sage" }),
+                    ),
+                ),
+                false,
+            )
+        val python = runtime.pythonExecutable
+            ?: return RuntimeOperationResult(
+                null,
+                listOf(
+                    RuntimeDiagnostic(
+                        RuntimeDiagnosticCode.RUNTIME_PYTHON_UNAVAILABLE,
+                        "WSL_RUNTIME_RESOLVE",
+                        "The WSL Conda Sage environment does not expose a Python interpreter",
+                        details = mapOf("sageExecutable" to runtime.sageExecutable),
+                    ),
+                ),
+                false,
+            )
+        return RuntimeOperationResult(
+            ResolvedRuntimeExecutables(
+                sage = runtime.sageExecutable,
+                python = python,
+                runtimeRoot = null,
+                target = RuntimeTarget.Wsl(runtime.distribution),
+            ),
+        )
+    }
+
     fun probeConfiguredNativeAsync(
         configuredExecutable: String,
         deadline: Duration = DEFAULT_PROBE_DEADLINE,
@@ -54,7 +110,7 @@ class SageRuntimeService : Disposable {
         return probeAsync(Path.of(executable), deadline)
     }
 
-    /** Detects and validates native Sage; WSL/Docker remain discovery-only for now. */
+    /** Detects and validates native Sage; WSL now probes the configured Conda environment. */
     fun detectAndProbeAsync(
         mode: ExecutionMode,
         wslDistribution: String,
@@ -84,15 +140,22 @@ class SageRuntimeService : Disposable {
                     }
                 }
                 ExecutionMode.WSL -> {
-                    val executable = SageAutoDetect.detectWslSage(wslDistribution)
+                    val state = SageRunSettings.getInstance().getState()
+                    val runtime = SageAutoDetect.detectWslRuntime(
+                        distribution = wslDistribution,
+                        condaEnvironment = state.wslCondaEnvironment,
+                        condaExecutable = state.wslCondaExecutable,
+                        sageExecutable = state.sageExecutable,
+                        timeoutMillis = deadline.toMillis().coerceAtLeast(1),
+                    )
                     SageRuntimeDetectionResult(
                         mode,
-                        executable,
+                        runtime?.sageExecutable,
                         null,
-                        if (executable == null) {
-                            "Sage executable was not found in WSL"
+                        if (runtime == null) {
+                            "WSL Sage/Conda environment was not found or could not be activated"
                         } else {
-                            "WSL Sage discovered; target-aware probe is not available yet"
+                            "Validated WSL Sage ${runtime.version ?: "runtime"} in conda environment '${runtime.condaEnvironment}'"
                         },
                     )
                 }

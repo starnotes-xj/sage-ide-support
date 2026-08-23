@@ -50,8 +50,9 @@ class SageCommandLineState(
                     s.wslCondaEnvironment,
                     executables.sage,
                     sageArguments + toWslPath(configuration.scriptPath) + scriptArguments,
+                    s.wslCondaExecutable,
                 )
-                GeneralCommandLine("wsl.exe", "-d", target.distribution, "--", "bash", "-lc", command)
+                GeneralCommandLine("wsl.exe", "-d", target.distribution, "--exec", "/bin/bash", "-lc", command)
             }
 
             ExecutionMode.DOCKER -> dockerCommandLine(s, scriptArguments, executables.sage)

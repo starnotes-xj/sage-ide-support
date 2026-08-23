@@ -28,6 +28,7 @@ class SageRunSettingsConfigurable : Configurable {
     private val sageExecutableField = JBTextField()
     private val wslDistributionField = JBTextField()
     private val wslCondaEnvironmentField = JBTextField()
+    private val wslCondaExecutableField = JBTextField()
     private val dockerImageField = JBTextField()
     private val dockerContainerDirField = JBTextField()
     private val dockerCommandField = JBTextField()
@@ -58,7 +59,8 @@ class SageRunSettingsConfigurable : Configurable {
         cardRow(wslCard, 0, "Sage executable (inside WSL):", sageExecutableField)
         cardRow(wslCard, 1, "WSL distribution:", wslDistributionField)
         cardRow(wslCard, 2, "Conda environment:", wslCondaEnvironmentField)
-        cardRow(wslCard, 3, "Additional sage parameters:", sageParametersField)
+        cardRow(wslCard, 3, "Conda executable (optional):", wslCondaExecutableField)
+        cardRow(wslCard, 4, "Additional sage parameters:", sageParametersField)
 
         cardRow(dockerCard, 0, "Docker image:", dockerImageField)
         cardRow(dockerCard, 1, "Container mount directory:", dockerContainerDirField)
@@ -98,9 +100,17 @@ class SageRunSettingsConfigurable : Configurable {
                         }
                     }
                     ExecutionMode.WSL -> {
-                        val result = SageAutoDetect.detectWslSage(wslDistributionField.text)
+                        val result = SageAutoDetect.detectWslRuntime(
+                            distribution = wslDistributionField.text,
+                            condaEnvironment = wslCondaEnvironmentField.text,
+                            condaExecutable = wslCondaExecutableField.text,
+                            sageExecutable = sageExecutableField.text,
+                        )
                         SwingUtilities.invokeLater {
-                            if (result != null) sageExecutableField.text = result
+                            if (result != null) {
+                                sageExecutableField.text = result.sageExecutable
+                                wslCondaExecutableField.text = result.condaExecutable.orEmpty()
+                            }
                             detectButton.isEnabled = true
                         }
                     }
@@ -142,6 +152,7 @@ class SageRunSettingsConfigurable : Configurable {
             s.sageParameters != sageParametersField.text ||
             s.wslDistribution != wslDistributionField.text ||
             s.wslCondaEnvironment != wslCondaEnvironmentField.text ||
+            s.wslCondaExecutable != wslCondaExecutableField.text ||
             s.dockerImage != dockerImageField.text ||
             s.dockerContainerDir != dockerContainerDirField.text ||
             s.dockerCommand != dockerCommandField.text
@@ -154,6 +165,7 @@ class SageRunSettingsConfigurable : Configurable {
         s.sageParameters = sageParametersField.text
         s.wslDistribution = wslDistributionField.text
         s.wslCondaEnvironment = wslCondaEnvironmentField.text
+        s.wslCondaExecutable = wslCondaExecutableField.text
         s.dockerImage = dockerImageField.text
         s.dockerContainerDir = dockerContainerDirField.text
         s.dockerCommand = dockerCommandField.text
@@ -166,6 +178,7 @@ class SageRunSettingsConfigurable : Configurable {
         sageParametersField.text = s.sageParameters
         wslDistributionField.text = s.wslDistribution
         wslCondaEnvironmentField.text = s.wslCondaEnvironment
+        wslCondaExecutableField.text = s.wslCondaExecutable
         dockerImageField.text = s.dockerImage
         dockerContainerDirField.text = s.dockerContainerDir
         dockerCommandField.text = s.dockerCommand

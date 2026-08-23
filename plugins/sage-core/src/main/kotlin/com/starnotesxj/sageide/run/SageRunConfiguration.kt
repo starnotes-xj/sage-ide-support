@@ -14,6 +14,7 @@ import com.intellij.openapi.util.JDOMExternalizerUtil
 import com.jetbrains.python.run.AbstractPythonRunConfiguration
 import com.jetbrains.python.run.DebugAwareConfiguration
 import com.starnotesxj.sageide.runtime.SageRuntimeSdkService
+import com.starnotesxj.sageide.runtime.SageRuntimeSdkType
 import com.starnotesxj.sageide.sugar.SageIcons
 import com.starnotesxj.sagemath.runtime.ResolvedRuntimeExecutables
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnostic
@@ -61,11 +62,46 @@ class SageRunConfiguration(
         return RuntimeOperationResult(sdk)
     }
 
-    fun resolveSageExecutables(): RuntimeOperationResult<ResolvedRuntimeExecutables> =
-        resolveSageSdk().let { result ->
-            if (!result.succeeded) RuntimeOperationResult(null, result.diagnostics, false)
-            else SageRuntimeSdkService.getInstance().resolveSdkExecutables(result.value!!)
+    fun resolveSageExecutables(): RuntimeOperationResult<ResolvedRuntimeExecutables> {
+        val configured = sageSdkName?.trim().orEmpty()
+        val sdkResult = resolveSageSdk()
+        if (sdkResult.succeeded) {
+            val sdk = sdkResult.value!!
+            if (sdk.sdkType === SageRuntimeSdkType.getInstance()) {
+                return SageRuntimeSdkService.getInstance().resolveSdkExecutables(sdk)
+            }
+            val settings = SageRunSettings.getInstance().getState()
+            if (configured.isEmpty() && settings.executionMode == ExecutionMode.WSL.name) {
+                return SageRuntimeService.getInstance().resolveWslExecutables(
+                    distribution = settings.wslDistribution,
+                    condaEnvironment = settings.wslCondaEnvironment,
+                    condaExecutable = settings.wslCondaExecutable,
+                    sageExecutable = settings.sageExecutable,
+                )
+            }
+            return RuntimeOperationResult(
+                null,
+                listOf(
+                    RuntimeDiagnostic(
+                        RuntimeDiagnosticCode.RUNTIME_INVALID,
+                        "RUN_SDK_RESOLVE",
+                        "The selected project SDK is not a SageMath Runtime SDK",
+                    ),
+                ),
+                false,
+            )
         }
+        val settings = SageRunSettings.getInstance().getState()
+        if (configured.isEmpty() && settings.executionMode == ExecutionMode.WSL.name) {
+            return SageRuntimeService.getInstance().resolveWslExecutables(
+                distribution = settings.wslDistribution,
+                condaEnvironment = settings.wslCondaEnvironment,
+                condaExecutable = settings.wslCondaExecutable,
+                sageExecutable = settings.sageExecutable,
+            )
+        }
+        return RuntimeOperationResult(null, sdkResult.diagnostics, false)
+    }
 
     override fun getState(executor: com.intellij.execution.Executor, environment: ExecutionEnvironment) =
         if (executor.id == "Debug") {
@@ -79,9 +115,8 @@ class SageRunConfiguration(
     override fun canRunUnderDebug(): Boolean = true
 
     override fun checkConfiguration() {
-        // Sage execution is launcher-based, but the launcher must come from a
-        // verified Runtime SDK whose manifest declares bundled Python. This
-        // avoids silently falling back to an unrelated system interpreter.
+        // Managed SDKs remain manifest-verified. When no SDK is selected, WSL
+        // is allowed only through the explicitly configured Conda environment.
         if (scriptPath.isBlank()) {
             throw RuntimeConfigurationException("The Sage script path is empty")
         }

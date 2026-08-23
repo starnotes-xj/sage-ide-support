@@ -10,30 +10,47 @@ internal fun toWslPath(windowsPath: String): String {
 /** Quotes one argument for a POSIX shell without allowing shell expansion. */
 internal fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
 
-internal fun wslCondaPrelude(environment: String): String = """
-    set -e
-    if [ -f "${'$'}HOME/.bashrc" ]; then . "${'$'}HOME/.bashrc" >/dev/null 2>&1 || true; fi
-    for conda_sh in \
-        "${'$'}HOME/miniconda3/etc/profile.d/conda.sh" \
-        "${'$'}HOME/anaconda3/etc/profile.d/conda.sh" \
-        "${'$'}HOME/mambaforge/etc/profile.d/conda.sh" \
-        "${'$'}HOME/miniforge3/etc/profile.d/conda.sh" \
-        "/opt/conda/etc/profile.d/conda.sh"; do
-        if [ -f "${'$'}conda_sh" ]; then . "${'$'}conda_sh"; break; fi
-    done
-    if ! type conda >/dev/null 2>&1; then
-        echo "Sage IDE Support: conda was not found in WSL" >&2
-        exit 127
-    fi
-    conda activate ${shellQuote(environment.ifBlank { "sage" })}
-""".trimIndent()
+internal fun wslCondaPrelude(environment: String, condaExecutable: String? = null): String = buildString {
+    appendLine("set -e")
+    appendLine("if [ -f \"${'$'}HOME/.bashrc\" ]; then . \"${'$'}HOME/.bashrc\" >/dev/null 2>&1 || true; fi")
+    val configuredConda = condaExecutable?.trim()?.takeIf { it.isNotEmpty() }
+    if (configuredConda != null) {
+        appendLine("conda_executable=${shellQuote(configuredConda)}")
+        appendLine("if [ ! -x \"${'$'}conda_executable\" ]; then echo \"Sage IDE Support: configured conda executable was not found in WSL\" >&2; exit 127; fi")
+        appendLine("eval \"${'$'}(\"${'$'}conda_executable\" shell.bash hook)\"")
+    }
+    else {
+        appendLine("for conda_sh in \\")
+        appendLine("    \"${'$'}HOME/miniconda3/etc/profile.d/conda.sh\" \\")
+        appendLine("    \"${'$'}HOME/anaconda3/etc/profile.d/conda.sh\" \\")
+        appendLine("    \"${'$'}HOME/mambaforge/etc/profile.d/conda.sh\" \\")
+        appendLine("    \"${'$'}HOME/miniforge3/etc/profile.d/conda.sh\" \\")
+        appendLine("    \"/opt/conda/etc/profile.d/conda.sh\"; do")
+        appendLine("    if [ -f \"${'$'}conda_sh\" ]; then . \"${'$'}conda_sh\"; conda_executable=\"${'$'}{conda_sh%/etc/profile.d/conda.sh}/bin/conda\"; break; fi")
+        appendLine("done")
+        appendLine("if ! type conda >/dev/null 2>&1; then")
+        appendLine("    for conda_executable in \\")
+        appendLine("        \"${'$'}HOME/miniconda3/bin/conda\" \\")
+        appendLine("        \"${'$'}HOME/anaconda3/bin/conda\" \\")
+        appendLine("        \"${'$'}HOME/mambaforge/bin/conda\" \\")
+        appendLine("        \"${'$'}HOME/miniforge3/bin/conda\" \\")
+        appendLine("        \"/opt/conda/bin/conda\"; do")
+        appendLine("        if [ -x \"${'$'}conda_executable\" ]; then eval \"${'$'}(\"${'$'}conda_executable\" shell.bash hook)\"; break; fi")
+        appendLine("    done")
+        appendLine("fi")
+    }
+    appendLine("if ! type conda >/dev/null 2>&1; then echo \"Sage IDE Support: conda was not found in WSL\" >&2; exit 127; fi")
+    append("conda activate ")
+    append(shellQuote(environment.ifBlank { "sage" }))
+}
 
 internal fun wslRunScript(
     environment: String,
     executable: String,
     arguments: List<String>,
+    condaExecutable: String? = null,
 ): String = buildString {
-    appendLine(wslCondaPrelude(environment))
+    appendLine(wslCondaPrelude(environment, condaExecutable))
     append("exec ")
     append(shellQuote(executable))
     arguments.forEach { append(' ').append(shellQuote(it)) }
@@ -46,8 +63,13 @@ internal fun wslRunScript(
  * Windows paths such as the PyCharm helper path to /mnt/<drive>/..., and then
  * forwards every argument to the Sage Python entry point.
  */
-internal fun wslDebugScript(environment: String, executable: String, pythonExecutable: String? = null): String = """
-    ${wslCondaPrelude(environment)}
+internal fun wslDebugScript(
+    environment: String,
+    executable: String,
+    pythonExecutable: String? = null,
+    condaExecutable: String? = null,
+): String = """
+    ${wslCondaPrelude(environment, condaExecutable)}
     map_arg() {
         case "$1" in
             [A-Za-z]:[\\/]* )

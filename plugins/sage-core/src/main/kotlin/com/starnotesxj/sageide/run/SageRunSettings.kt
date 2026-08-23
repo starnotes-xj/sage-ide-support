@@ -26,6 +26,8 @@ class SageRunSettings : PersistentStateComponent<SageRunSettings.State> {
         var sageExecutable: String = ""
         var wslDistribution: String = "Ubuntu"
         var wslCondaEnvironment: String = "sage"
+        /** Optional absolute WSL path to conda; blank uses standard locations. */
+        var wslCondaExecutable: String = ""
         var dockerImage: String = "sagemath/sagemath"
         var dockerContainerDir: String = "/mnt/sage"
         var dockerCommand: String = "sage"

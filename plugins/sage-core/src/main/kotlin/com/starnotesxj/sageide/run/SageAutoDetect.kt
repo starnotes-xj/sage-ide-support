@@ -10,34 +10,99 @@ import java.util.concurrent.ConcurrentHashMap
  * Detected paths are used to pre-fill the settings; when nothing is found
  * the user fills the fields manually.
  */
+data class WslSageRuntime(
+    val distribution: String,
+    val condaEnvironment: String,
+    val condaExecutable: String?,
+    val sageExecutable: String,
+    val pythonExecutable: String?,
+    val version: String?,
+)
+
 object SageAutoDetect {
 
-    private val WSL_PROBE = """
-        set -e
-        if [ -f "${'$'}HOME/.bashrc" ]; then . "${'$'}HOME/.bashrc" >/dev/null 2>&1 || true; fi
-        for conda_sh in \
-            "${'$'}HOME/miniconda3/etc/profile.d/conda.sh" \
-            "${'$'}HOME/anaconda3/etc/profile.d/conda.sh" \
-            "${'$'}HOME/mambaforge/etc/profile.d/conda.sh" \
-            "${'$'}HOME/miniforge3/etc/profile.d/conda.sh" \
-            "/opt/conda/etc/profile.d/conda.sh"; do
-            if [ -f "${'$'}conda_sh" ]; then . "${'$'}conda_sh"; break; fi
-        done
-        if type conda >/dev/null 2>&1; then
-            conda activate sage >/dev/null 2>&1
-            command -v sage
-        else
-            for p in "${'$'}HOME/miniconda3/envs/sage/bin/sage" "${'$'}HOME/anaconda3/envs/sage/bin/sage" \
-                "${'$'}HOME/mambaforge/envs/sage/bin/sage" "/usr/bin/sage" "/usr/local/bin/sage"; do
-                [ -x "${'$'}p" ] && echo "${'$'}p" && break
-            done
-        fi
-    """.trimIndent()
+    /**
+     * Detects the actual WSL environment through an explicit bash executable.
+     * `wsl.exe --exec` is intentional: the distribution's default shell may be
+     * zsh, while conda's `shell.bash hook` must be evaluated by bash.
+     */
+    fun detectWslRuntime(
+        distribution: String,
+        condaEnvironment: String,
+        condaExecutable: String,
+        sageExecutable: String,
+        timeoutMillis: Long = 60_000,
+    ): WslSageRuntime? {
+        val output = exec(
+            GeneralCommandLine(
+                "wsl.exe", "-d", distribution, "--exec", "/bin/bash", "-lc",
+                wslProbeScript(condaEnvironment, condaExecutable, sageExecutable),
+            ),
+            timeoutMillis,
+        ) ?: return null
+        if (output.exitCode != 0 || output.isTimeout) return null
+        val values = output.stdout.lineSequence()
+            .mapNotNull { line -> line.split('=', limit = 2).takeIf { it.size == 2 } }
+            .associate { it[0].trim() to it[1].trim() }
+        val sage = values["SAGE"]?.takeIf { it.isNotBlank() } ?: return null
+        return WslSageRuntime(
+            distribution = distribution.trim(),
+            condaEnvironment = condaEnvironment.trim().ifBlank { "sage" },
+            condaExecutable = values["CONDA"]?.takeIf { it.isNotBlank() },
+            sageExecutable = sage,
+            pythonExecutable = values["PYTHON"]?.takeIf { it.isNotBlank() },
+            version = values["VERSION"]?.takeIf { it.isNotBlank() },
+        )
+    }
 
-    fun detectWslSage(distribution: String): String? {
-        val output = exec(GeneralCommandLine("wsl.exe", "-d", distribution, "--", "bash", "-lc", WSL_PROBE))
-            ?: return null
-        return output.stdout.trim().lines().firstOrNull()?.takeIf { it.isNotBlank() }
+    fun detectWslSage(distribution: String): String? =
+        detectWslRuntime(distribution, "sage", "", "")?.sageExecutable
+
+    fun probeWslScript(
+        condaEnvironment: String = "sage",
+        condaExecutable: String = "",
+        sageExecutable: String = "",
+    ): String = wslProbeScript(condaEnvironment, condaExecutable, sageExecutable)
+
+    private fun wslProbeScript(environment: String, configuredConda: String, configuredSage: String): String = buildString {
+        appendLine("set -e")
+        appendLine("if [ -f \"${'$'}HOME/.bashrc\" ]; then . \"${'$'}HOME/.bashrc\" >/dev/null 2>&1 || true; fi")
+        val conda = configuredConda.trim().takeIf { it.isNotEmpty() }
+        if (conda != null) {
+            appendLine("conda_executable=${shellQuote(conda)}")
+            appendLine("[ -x \"${'$'}conda_executable\" ] || exit 127")
+            appendLine("eval \"${'$'}(\"${'$'}conda_executable\" shell.bash hook)\"")
+        }
+        else {
+            appendLine("for conda_sh in \\")
+            appendLine("    \"${'$'}HOME/miniconda3/etc/profile.d/conda.sh\" \\")
+            appendLine("    \"${'$'}HOME/anaconda3/etc/profile.d/conda.sh\" \\")
+            appendLine("    \"${'$'}HOME/mambaforge/etc/profile.d/conda.sh\" \\")
+            appendLine("    \"${'$'}HOME/miniforge3/etc/profile.d/conda.sh\" \\")
+            appendLine("    \"/opt/conda/etc/profile.d/conda.sh\"; do")
+            appendLine("    if [ -f \"${'$'}conda_sh\" ]; then . \"${'$'}conda_sh\"; conda_executable=\"${'$'}{conda_sh%/etc/profile.d/conda.sh}/bin/conda\"; break; fi")
+            appendLine("done")
+            appendLine("if ! type conda >/dev/null 2>&1; then")
+            appendLine("    for conda_executable in \\")
+            appendLine("        \"${'$'}HOME/miniconda3/bin/conda\" \\")
+            appendLine("        \"${'$'}HOME/anaconda3/bin/conda\" \\")
+            appendLine("        \"${'$'}HOME/mambaforge/bin/conda\" \\")
+            appendLine("        \"${'$'}HOME/miniforge3/bin/conda\" \\")
+            appendLine("        \"/opt/conda/bin/conda\"; do")
+            appendLine("        if [ -x \"${'$'}conda_executable\" ]; then eval \"${'$'}(\"${'$'}conda_executable\" shell.bash hook)\"; break; fi")
+            appendLine("    done")
+            appendLine("fi")
+        }
+        appendLine("type conda >/dev/null 2>&1 || exit 127")
+        appendLine("conda activate ${shellQuote(environment.trim().ifBlank { "sage" })} >/dev/null 2>&1")
+        appendLine("sage_executable=${shellQuote(configuredSage.trim())}")
+        appendLine("if [ -z \"${'$'}sage_executable\" ]; then sage_executable=\"${'$'}(command -v sage || true)\"; fi")
+        appendLine("python_executable=\"${'$'}(command -v python || true)\"")
+        appendLine("[ -n \"${'$'}sage_executable\" ] && [ -x \"${'$'}sage_executable\" ] || exit 127")
+        appendLine("printf 'CONDA=%s\\n' \"${'$'}{conda_executable:-}\"")
+        appendLine("printf 'SAGE=%s\\n' \"${'$'}sage_executable\"")
+        appendLine("printf 'PYTHON=%s\\n' \"${'$'}python_executable\"")
+        appendLine("printf 'VERSION=%s\\n' \"${'$'}(\"${'$'}sage_executable\" --version 2>/dev/null || true)\"")
     }
 
     fun detectNativeSage(): String? {
@@ -52,9 +117,9 @@ object SageAutoDetect {
             ?.takeIf { it.isNotBlank() }
     }
 
-    private fun exec(commandLine: GeneralCommandLine): ProcessOutput? {
+    private fun exec(commandLine: GeneralCommandLine, timeoutMillis: Long = 10_000): ProcessOutput? {
         return try {
-            ExecUtil.execAndGetOutput(commandLine, 10_000)
+            ExecUtil.execAndGetOutput(commandLine, timeoutMillis.coerceIn(1, Int.MAX_VALUE.toLong()).toInt())
         }
         catch (_: Exception) {
             null
@@ -75,7 +140,7 @@ object WslHomeResolver {
         val output = try {
             // wsl.exe cold start can take well over ten seconds.
             ExecUtil.execAndGetOutput(
-                GeneralCommandLine("wsl.exe", "-d", distribution, "--", "bash", "-lc", "echo \$HOME"),
+                GeneralCommandLine("wsl.exe", "-d", distribution, "--exec", "/bin/bash", "-lc", "printf '%s\\n' \$HOME"),
                 60_000,
             )
         }
