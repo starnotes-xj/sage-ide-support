@@ -224,6 +224,7 @@
     <!-- Shared Sage execution settings (Settings | Tools | SageMath). -->
     <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRunSettings"/>
     <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRuntimeService"/>
+    <applicationService serviceImplementation="com.starnotesxj.sageide.runtime.SageRuntimeManagerService"/>
     <applicationService serviceImplementation="com.starnotesxj.sageide.runtime.SageRuntimeSdkService"/>
     <sdkType implementation="com.starnotesxj.sageide.runtime.SageRuntimeSdkType"/>
     <applicationService serviceImplementation="com.starnotesxj.sageide.completion.SageApiIndexService"/>

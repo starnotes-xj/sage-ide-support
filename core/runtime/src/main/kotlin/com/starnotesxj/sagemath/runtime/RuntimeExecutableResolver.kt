@@ -70,7 +70,7 @@ object RuntimeExecutableResolver {
             }
 
             is RuntimeTarget.RemoteSsh -> {
-                val root = remoteRoot?.trim()?.takeIf { it.isNotEmpty() }
+                val root = (remoteRoot ?: target.runtimeRoot)?.trim()?.takeIf { it.isNotEmpty() }
                     ?: return RuntimeOperationResult(
                         null,
                         listOf(

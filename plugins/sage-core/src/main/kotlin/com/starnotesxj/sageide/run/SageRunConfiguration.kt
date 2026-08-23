@@ -7,9 +7,18 @@ import com.intellij.execution.configurations.RunConfiguration
 import com.intellij.execution.configurations.RuntimeConfigurationException
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.projectRoots.ProjectJdkTable
+import com.intellij.openapi.projectRoots.Sdk
+import com.intellij.openapi.roots.ProjectRootManager
+import com.intellij.openapi.util.JDOMExternalizerUtil
 import com.jetbrains.python.run.AbstractPythonRunConfiguration
 import com.jetbrains.python.run.DebugAwareConfiguration
+import com.starnotesxj.sageide.runtime.SageRuntimeSdkService
 import com.starnotesxj.sageide.sugar.SageIcons
+import com.starnotesxj.sagemath.runtime.ResolvedRuntimeExecutables
+import com.starnotesxj.sagemath.runtime.RuntimeDiagnostic
+import com.starnotesxj.sagemath.runtime.RuntimeDiagnosticCode
+import com.starnotesxj.sagemath.runtime.RuntimeOperationResult
 
 /**
  * Sage run configurations execute the verified manifest launcher; the bundled
@@ -24,6 +33,39 @@ class SageRunConfiguration(
     var scriptPath: String = ""
 
     var scriptParameters: String = ""
+
+    /** Optional explicit SDK name; blank means inherit the project SDK. */
+    var sageSdkName: String? = null
+
+    fun resolveSageSdk(): RuntimeOperationResult<Sdk> {
+        val name = sageSdkName?.trim().orEmpty()
+        val sdk = if (name.isNotEmpty()) {
+            ProjectJdkTable.getInstance().findJdk(name)
+        }
+        else {
+            ProjectRootManager.getInstance(project).projectSdk
+        }
+        if (sdk == null) {
+            return RuntimeOperationResult(
+                null,
+                listOf(
+                    RuntimeDiagnostic(
+                        RuntimeDiagnosticCode.RUNTIME_NOT_INSTALLED,
+                        "RUN_SDK_RESOLVE",
+                        if (name.isNotEmpty()) "Configured SageMath SDK was not found" else "Project SDK is not configured",
+                    ),
+                ),
+                false,
+            )
+        }
+        return RuntimeOperationResult(sdk)
+    }
+
+    fun resolveSageExecutables(): RuntimeOperationResult<ResolvedRuntimeExecutables> =
+        resolveSageSdk().let { result ->
+            if (!result.succeeded) RuntimeOperationResult(null, result.diagnostics, false)
+            else SageRuntimeSdkService.getInstance().resolveSdkExecutables(result.value!!)
+        }
 
     override fun getState(executor: com.intellij.execution.Executor, environment: ExecutionEnvironment) =
         if (executor.id == "Debug") {
@@ -43,30 +85,24 @@ class SageRunConfiguration(
         if (scriptPath.isBlank()) {
             throw RuntimeConfigurationException("The Sage script path is empty")
         }
-        val target = when (runTargetMode()) {
-            ExecutionMode.NATIVE -> com.starnotesxj.sagemath.runtime.RuntimeTarget.Native
-            ExecutionMode.WSL -> com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl(SageRunSettings.getInstance().getState().wslDistribution)
-            ExecutionMode.DOCKER -> com.starnotesxj.sagemath.runtime.RuntimeTarget.Docker(SageRunSettings.getInstance().getState().dockerImage)
-        }
-        val resolution = com.starnotesxj.sageide.runtime.SageRuntimeSdkService.getInstance().currentExecutables(target)
+        val resolution = resolveSageExecutables()
         if (!resolution.succeeded) {
             throw RuntimeConfigurationException(resolution.diagnostics.firstOrNull()?.message ?: "The bundled SageMath Python is unavailable")
         }
     }
 
-    private fun runTargetMode(): ExecutionMode =
-        runCatching { ExecutionMode.valueOf(SageRunSettings.getInstance().getState().executionMode) }.getOrDefault(ExecutionMode.NATIVE)
-
     override fun writeExternal(element: org.jdom.Element) {
         super<AbstractPythonRunConfiguration>.writeExternal(element)
         element.setAttribute("scriptPath", scriptPath)
         element.setAttribute("scriptParameters", scriptParameters)
+        JDOMExternalizerUtil.writeField(element, "SAGE_SDK_NAME", sageSdkName)
     }
 
     override fun readExternal(element: org.jdom.Element) {
         super<AbstractPythonRunConfiguration>.readExternal(element)
         scriptPath = element.getAttributeValue("scriptPath") ?: ""
         scriptParameters = element.getAttributeValue("scriptParameters") ?: ""
+        sageSdkName = JDOMExternalizerUtil.readField(element, "SAGE_SDK_NAME")?.takeIf { it.isNotBlank() }
     }
 }
 

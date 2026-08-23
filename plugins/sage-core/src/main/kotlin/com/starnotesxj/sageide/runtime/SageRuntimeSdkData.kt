@@ -48,6 +48,7 @@ class SageRuntimeSdkAdditionalData(
                 element.setAttribute("targetHost", selectedTarget.host)
                 selectedTarget.user?.let { element.setAttribute("targetUser", it) }
                 element.setAttribute("targetPort", selectedTarget.port.toString())
+                selectedTarget.runtimeRoot?.let { element.setAttribute("targetRuntimeRoot", it) }
                 selectedTarget.targetPlatform?.let { savePlatform(element, it) }
                 saveMapping(element, selectedTarget.pathMapping)
             }
@@ -90,6 +91,7 @@ class SageRuntimeSdkAdditionalData(
                 user = element.getAttributeValue("targetUser"),
                 port = element.getAttributeValue("targetPort")?.toIntOrNull() ?: 22,
                 pathMapping = loadMapping(element),
+                runtimeRoot = element.getAttributeValue("targetRuntimeRoot"),
                 targetPlatform = loadPlatform(element),
             )
             else -> error("Unknown Sage runtime target")
@@ -143,7 +145,7 @@ object SageRuntimeSdkDisplay {
         RuntimeTarget.Native -> "Native"
         is RuntimeTarget.Wsl -> "WSL: ${target.distribution}"
         is RuntimeTarget.Docker -> "Docker: ${target.image}"
-        is RuntimeTarget.RemoteSsh -> "SSH: ${target.user?.let { "$it@" } ?: ""}${target.host}:${target.port}"
+        is RuntimeTarget.RemoteSsh -> "SSH: ${target.user?.let { "$it@" } ?: ""}${target.host}:${target.port}${target.runtimeRoot?.let { " ($it)" } ?: ""}"
     }
 
     fun sdkName(binding: RuntimeSdkBinding): String = "${runtimeLabel(binding.runtimeId)} (${targetLabel(binding.target)})"

@@ -60,6 +60,44 @@ class RuntimeManagerFeatureTest {
     }
 
     @Test
+    fun `service composition keeps installer and lifecycle on one install root`() {
+        val root = Files.createTempDirectory("sage-runtime-service-composition")
+        try {
+            val id = SageRuntimeId("10.6", platform)
+            val document = RuntimeCatalogDocument("test", artifacts = listOf(artifact("10.6", "https://mirror.example.invalid/sage.zip")))
+            val catalog = StaticRuntimeCatalog(listOf(artifact("10.6", "https://mirror.example.invalid/sage.zip")))
+            val installer = object : RuntimeInstaller {
+                override fun install(request: RuntimeInstallRequest): InstallResult {
+                    assertEquals(root.toAbsolutePath().normalize(), request.installRoot.toAbsolutePath().normalize())
+                    return InstallResult.Failed("TEST", RuntimeInstallException("TEST", "stop"), cleanupPerformed = true)
+                }
+            }
+            val service = SageRuntimeManager(
+                catalog = catalog,
+                installer = installer,
+                locator = FileRuntimeLocator(),
+                installRoot = root,
+            )
+            val selectedArtifact = service.available(RuntimeQuery(platform = platform)).single()
+            assertEquals(id, selectedArtifact.id)
+            val manifest = RuntimeManifest(
+                schemaVersion = 1,
+                runtimeId = id,
+                executable = "bin/sage",
+                files = listOf(RuntimeFileRecord("bin/sage", 1, "0".repeat(64))),
+                artifactSha256 = selectedArtifact.sha256,
+            )
+            val result = service.install(selectedArtifact, manifest)
+            assertTrue(result is InstallResult.Failed)
+            assertEquals("TEST", result.stage)
+            assertEquals(null, service.locate(id))
+        }
+        finally {
+            deleteTree(root)
+        }
+    }
+
+    @Test
     fun `remote catalog uses verified mirror and then verified offline cache`() {
         val document = RuntimeCatalogDocument(
             catalogId = "official",

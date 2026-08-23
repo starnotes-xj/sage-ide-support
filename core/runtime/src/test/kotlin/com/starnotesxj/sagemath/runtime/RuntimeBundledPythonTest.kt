@@ -95,6 +95,11 @@ class RuntimeBundledPythonTest {
             val remote = RuntimeExecutableResolver.resolve(runtime, RuntimeTarget.RemoteSsh("host"))
             assertFalse(remote.succeeded)
             assertEquals(RuntimeDiagnosticCode.PATH_MAPPING_REQUIRED, remote.diagnostics.single().code)
+            val remoteWithTargetRoot = RuntimeExecutableResolver.resolve(
+                runtime,
+                RuntimeTarget.RemoteSsh("host", runtimeRoot = "/opt/sage"),
+            )
+            assertEquals("/opt/sage/local/bin/python3", remoteWithTargetRoot.value?.python)
             val remoteWithRoot = RuntimeExecutableResolver.resolve(runtime, RuntimeTarget.RemoteSsh("host"), "/opt/sage")
             assertEquals("/opt/sage/local/bin/python3", remoteWithRoot.value?.python)
         }

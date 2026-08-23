@@ -6,8 +6,6 @@ import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.OSProcessHandler
 import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.runners.ExecutionEnvironment
-import com.starnotesxj.sageide.runtime.SageRuntimeSdkService
-import com.starnotesxj.sagemath.runtime.RuntimeTarget
 import java.nio.file.Paths
 
 /**
@@ -28,39 +26,35 @@ class SageCommandLineState(
         val s = SageRunSettings.getInstance().getState()
         val scriptArguments = tokenizeArguments(configuration.scriptParameters)
         val sageArguments = tokenizeArguments(s.sageParameters)
-        val mode = executionMode(s)
+        val resolved = configuration.resolveSageExecutables()
+        if (!resolved.succeeded) {
+            throw ExecutionException(resolved.diagnostics.firstOrNull()?.message ?: "The selected SageMath runtime is unavailable")
+        }
+        val executables = resolved.value!!
+        val mode = when (executables.target) {
+            com.starnotesxj.sagemath.runtime.RuntimeTarget.Native -> ExecutionMode.NATIVE
+            is com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl -> ExecutionMode.WSL
+            is com.starnotesxj.sagemath.runtime.RuntimeTarget.Docker -> ExecutionMode.DOCKER
+            is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh ->
+                throw ExecutionException("SSH SageMath execution requires a target transport")
+        }
         val commandLine = when (mode) {
-            ExecutionMode.NATIVE -> {
-                val resolved = SageRuntimeSdkService.getInstance().currentExecutables(RuntimeTarget.Native)
-                if (!resolved.succeeded) {
-                    throw ExecutionException(resolved.diagnostics.firstOrNull()?.message ?: "The verified SageMath runtime is unavailable")
-                }
-                GeneralCommandLine(resolved.value!!.sage)
-                    .withParameters(sageArguments)
-                    .withParameters(configuration.scriptPath)
-                    .withParameters(scriptArguments)
-            }
+            ExecutionMode.NATIVE -> GeneralCommandLine(executables.sage)
+                .withParameters(sageArguments)
+                .withParameters(configuration.scriptPath)
+                .withParameters(scriptArguments)
 
             ExecutionMode.WSL -> {
-                val resolved = SageRuntimeSdkService.getInstance().currentExecutables(RuntimeTarget.Wsl(s.wslDistribution))
-                if (!resolved.succeeded) {
-                    throw ExecutionException(resolved.diagnostics.firstOrNull()?.message ?: "The verified WSL SageMath runtime is unavailable")
-                }
+                val target = executables.target as com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl
                 val command = wslRunScript(
                     s.wslCondaEnvironment,
-                    resolved.value!!.sage,
+                    executables.sage,
                     sageArguments + toWslPath(configuration.scriptPath) + scriptArguments,
                 )
-                GeneralCommandLine("wsl.exe", "-d", s.wslDistribution, "--", "bash", "-lc", command)
+                GeneralCommandLine("wsl.exe", "-d", target.distribution, "--", "bash", "-lc", command)
             }
 
-            ExecutionMode.DOCKER -> {
-                val resolved = SageRuntimeSdkService.getInstance().currentExecutables(RuntimeTarget.Docker(s.dockerImage))
-                if (!resolved.succeeded) {
-                    throw ExecutionException(resolved.diagnostics.firstOrNull()?.message ?: "The verified Docker SageMath runtime is unavailable")
-                }
-                dockerCommandLine(s, scriptArguments, resolved.value!!.sage)
-            }
+            ExecutionMode.DOCKER -> dockerCommandLine(s, scriptArguments, executables.sage)
         }
         return try {
             OSProcessHandler(commandLine)
@@ -89,8 +83,5 @@ class SageCommandLineState(
             .withParameters(scriptName)
             .withParameters(scriptArguments)
     }
-
-    private fun executionMode(s: SageRunSettings.State): ExecutionMode =
-        runCatching { ExecutionMode.valueOf(s.executionMode) }.getOrDefault(ExecutionMode.NATIVE)
 
 }

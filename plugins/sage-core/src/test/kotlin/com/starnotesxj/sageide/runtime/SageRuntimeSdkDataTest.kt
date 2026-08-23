@@ -25,7 +25,7 @@ class SageRuntimeSdkDataTest {
     fun `additional data round trips target identity without credentials`() {
         val data = SageRuntimeSdkAdditionalData(
             id,
-            RuntimeTarget.RemoteSsh("sage.example.invalid", user = "ctf", port = 2201),
+            RuntimeTarget.RemoteSsh("sage.example.invalid", user = "ctf", port = 2201, runtimeRoot = "/opt/sage-runtime"),
         )
         val element = Element("additional")
 
@@ -37,11 +37,20 @@ class SageRuntimeSdkDataTest {
         assertEquals(data.target, restored.target)
         assertEquals("ssh", element.getAttributeValue("targetKind"))
         assertEquals("sage.example.invalid", element.getAttributeValue("targetHost"))
+        assertEquals("/opt/sage-runtime", element.getAttributeValue("targetRuntimeRoot"))
         assertNull(element.getAttributeValue("privateKey"))
         assertNull(element.getAttributeValue("password"))
         assertNull(element.getAttributeValue("token"))
         assertNull(element.getAttributeValue("pythonExecutable"))
         assertNull(element.getAttributeValue("pythonSdkName"))
+    }
+
+    @Test
+    fun `service facade exposes one canonical lifecycle instance`() {
+        val service = SageRuntimeManagerService()
+        assertEquals(service.installRoot, service.installRoot.toAbsolutePath().normalize())
+        assertTrue(service.installRoot.toString().replace('\\', '/').endsWith("/.sage-math-ctf-ide/runtimes"))
+        service.dispose()
     }
 
     @Test
@@ -70,6 +79,7 @@ class SageRuntimeSdkDataTest {
         assertTrue(label.contains("10.6"))
         assertTrue(label.contains("linux-x64"))
         assertTrue(label.contains("WSL: Ubuntu"))
+        assertTrue(SageRuntimeSdkDisplay.targetLabel(RuntimeTarget.RemoteSsh("host", runtimeRoot = "/opt/sage")).contains("/opt/sage"))
         assertTrue(!label.contains("RuntimeTarget.Wsl"))
     }
 }

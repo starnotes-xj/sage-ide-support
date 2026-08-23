@@ -65,7 +65,7 @@ class SageRuntimeSdkType private constructor() : SdkType(NAME) {
             ?: sdk.homePath?.let { "managed runtime at $it" }
 
     override fun sdkHasValidPath(sdk: Sdk): Boolean =
-        sdk.homePath?.let(::isValidSdkHome) == true && sdk.sdkAdditionalData is SageRuntimeSdkAdditionalData
+        SageRuntimeSdkService.getInstance().sdkAdapter.validate(sdk).succeeded
 
     override fun isLocalSdk(sdk: Sdk): Boolean =
         (sdk.sdkAdditionalData as? SageRuntimeSdkAdditionalData)?.target == RuntimeTarget.Native
@@ -130,6 +130,9 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
     private val detailsField = JBTextField()
     private val userField = JBTextField()
     private val portField = JBTextField("22")
+    private val runtimeRootField = JBTextField()
+    private val mappingLocalRootField = JBTextField()
+    private val mappingTargetRootField = JBTextField()
     private val statusLabel = JLabel()
     private var component: JPanel? = null
 
@@ -146,21 +149,29 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
     override fun createComponent(): JComponent {
         component?.let { return it }
         val panel = JPanel(GridBagLayout())
-        fun row(y: Int, label: String, field: JComponent) {
+        fun row(y: Int, label: String, field: JComponent): JLabel {
             val left = GridBagConstraints().apply {
                 gridx = 0; gridy = y; anchor = GridBagConstraints.WEST; insets = JBUI.insets(4)
             }
             val right = GridBagConstraints().apply {
                 gridx = 1; gridy = y; weightx = 1.0; fill = GridBagConstraints.HORIZONTAL; insets = JBUI.insets(4)
             }
-            panel.add(JLabel(label), left)
+            val labelComponent = JLabel(label)
+            panel.add(labelComponent, left)
             panel.add(field, right)
+            return labelComponent
         }
         row(0, "Target:", targetKind)
         row(1, "Distribution / image / host:", detailsField)
         row(2, "SSH user:", userField)
         row(3, "SSH port:", portField)
-        row(4, "Validation:", statusLabel)
+        val runtimeRootLabel = row(4, "SSH runtime root:", runtimeRootField)
+        val mappingLocalLabel = row(5, "Local mapping root:", mappingLocalRootField)
+        val mappingTargetLabel = row(6, "Target mapping root:", mappingTargetRootField)
+        row(7, "Validation:", statusLabel)
+        runtimeRootField.putClientProperty("sage.label", runtimeRootLabel)
+        mappingLocalRootField.putClientProperty("sage.label", mappingLocalLabel)
+        mappingTargetRootField.putClientProperty("sage.label", mappingTargetLabel)
         targetKind.addActionListener { updateFieldVisibility() }
         updateFieldVisibility()
         component = panel
@@ -205,24 +216,36 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
                 detailsField.text = ""
                 userField.text = ""
                 portField.text = "22"
+                runtimeRootField.text = ""
+                mappingLocalRootField.text = ""
+                mappingTargetRootField.text = ""
             }
             is RuntimeTarget.Wsl -> {
                 targetKind.selectedItem = TargetKind.WSL
                 detailsField.text = target.distribution
                 userField.text = ""
                 portField.text = "22"
+                runtimeRootField.text = ""
+                mappingLocalRootField.text = target.pathMapping?.localRoot?.toString().orEmpty()
+                mappingTargetRootField.text = target.pathMapping?.targetRoot.orEmpty()
             }
             is RuntimeTarget.Docker -> {
                 targetKind.selectedItem = TargetKind.DOCKER
                 detailsField.text = target.image
                 userField.text = ""
                 portField.text = "22"
+                runtimeRootField.text = ""
+                mappingLocalRootField.text = target.pathMapping?.localRoot?.toString().orEmpty()
+                mappingTargetRootField.text = target.pathMapping?.targetRoot.orEmpty()
             }
             is RuntimeTarget.RemoteSsh -> {
                 targetKind.selectedItem = TargetKind.SSH
                 detailsField.text = target.host
                 userField.text = target.user.orEmpty()
                 portField.text = target.port.toString()
+                runtimeRootField.text = target.runtimeRoot.orEmpty()
+                mappingLocalRootField.text = target.pathMapping?.localRoot?.toString().orEmpty()
+                mappingTargetRootField.text = target.pathMapping?.targetRoot.orEmpty()
             }
         }
         updateFieldVisibility()
@@ -231,19 +254,36 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
 
     private fun targetFromFields(): RuntimeTarget = when (targetKind.selectedItem as TargetKind) {
         TargetKind.NATIVE -> RuntimeTarget.Native
-        TargetKind.WSL -> RuntimeTarget.Wsl(detailsField.text.trim())
-        TargetKind.DOCKER -> RuntimeTarget.Docker(detailsField.text.trim())
+        TargetKind.WSL -> RuntimeTarget.Wsl(detailsField.text.trim(), pathMapping = mappingFromFields())
+        TargetKind.DOCKER -> RuntimeTarget.Docker(detailsField.text.trim(), pathMapping = mappingFromFields())
         TargetKind.SSH -> RuntimeTarget.RemoteSsh(
             host = detailsField.text.trim(),
             user = userField.text.trim().takeIf { it.isNotEmpty() },
             port = portField.text.trim().toIntOrNull() ?: 22,
+            runtimeRoot = runtimeRootField.text.trim().takeIf { it.isNotEmpty() },
+            pathMapping = mappingFromFields(),
         )
+    }
+
+    private fun mappingFromFields(): com.starnotesxj.sagemath.runtime.RuntimePathMapping? {
+        val local = mappingLocalRootField.text.trim()
+        val target = mappingTargetRootField.text.trim()
+        if (local.isEmpty() && target.isEmpty()) return null
+        if (local.isEmpty() || target.isEmpty()) error("Both mapping roots are required")
+        return com.starnotesxj.sagemath.runtime.RuntimePathMapping(Path.of(local), target)
     }
 
     private fun targetFromFieldsSafely(): RuntimeTarget? = runCatching { targetFromFields() }.getOrNull()
 
     private fun updateFieldVisibility() {
         val ssh = targetKind.selectedItem == TargetKind.SSH
+        val mapped = targetKind.selectedItem == TargetKind.WSL || targetKind.selectedItem == TargetKind.DOCKER || ssh
+        runtimeRootField.isVisible = ssh
+        mappingLocalRootField.isVisible = mapped
+        mappingTargetRootField.isVisible = mapped
+        (runtimeRootField.getClientProperty("sage.label") as? JComponent)?.isVisible = ssh
+        (mappingLocalRootField.getClientProperty("sage.label") as? JComponent)?.isVisible = mapped
+        (mappingTargetRootField.getClientProperty("sage.label") as? JComponent)?.isVisible = mapped
         detailsField.toolTipText = when (targetKind.selectedItem) {
             TargetKind.NATIVE -> "Uses the local host"
             TargetKind.WSL -> "WSL distribution name"
@@ -253,5 +293,7 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
         }
         userField.isEnabled = ssh
         portField.isEnabled = ssh
+        runtimeRootField.isEnabled = ssh
+        runtimeRootField.toolTipText = "Absolute POSIX path of the verified Sage runtime on the SSH host"
     }
 }

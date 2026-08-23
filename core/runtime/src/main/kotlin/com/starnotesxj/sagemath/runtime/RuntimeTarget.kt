@@ -33,10 +33,20 @@ sealed interface RuntimeTarget {
         val port: Int = 22,
         val pathMapping: RuntimePathMapping? = null,
         override val targetPlatform: PlatformTriple? = null,
+        /** Explicit absolute POSIX root of the verified runtime on the SSH host. */
+        val runtimeRoot: String? = null,
     ) : RuntimeTarget {
         init {
             require(host.isNotBlank()) { "Remote host must not be blank" }
             require(port in 1..65535) { "Remote SSH port must be valid" }
+            runtimeRoot?.let { root ->
+                require(root.startsWith("/") && !root.startsWith("//")) {
+                    "Remote SSH runtime root must be an absolute POSIX path"
+                }
+                require(root.none(Char::isISOControl) && '\\' !in root) {
+                    "Remote SSH runtime root must use printable POSIX path characters"
+                }
+            }
         }
     }
 }
