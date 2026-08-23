@@ -32,11 +32,23 @@ class SageDebugCommandLineStateTest {
     }
 
     @Test
-    fun `WSL debug wrapper activates conda and maps host gateway`() {
-        val command = wslDebugScript("sage", "/home/user/miniconda3/envs/sage/bin/sage")
+    fun `WSL debug wrapper uses explicit bundled Python path`() {
+        val command = wslDebugScript(
+            "sage",
+            "/home/user/miniconda3/envs/sage/bin/sage",
+            "/opt/sage/local/bin/python3",
+        )
         assertEquals(true, command.contains("conda activate 'sage'"))
         assertEquals(true, command.contains("host_ip="))
-        assertEquals(true, command.contains("python_executable='/home/user/miniconda3/envs/sage/bin/sage'"))
+        assertEquals(true, command.contains("python_executable='/opt/sage/local/bin/python3'"))
+        assertEquals(false, command.contains("%/sage"))
         assertEquals(true, command.contains("exec \"${'$'}python_executable\""))
+    }
+
+    @Test
+    fun `WSL debug wrapper fails closed without bundled Python`() {
+        kotlin.test.assertFailsWith<IllegalStateException> {
+            wslDebugScript("sage", "/opt/sage/bin/sage")
+        }
     }
 }

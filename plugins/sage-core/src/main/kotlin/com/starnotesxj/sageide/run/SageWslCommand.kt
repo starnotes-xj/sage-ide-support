@@ -46,7 +46,7 @@ internal fun wslRunScript(
  * Windows paths such as the PyCharm helper path to /mnt/<drive>/..., and then
  * forwards every argument to the Sage Python entry point.
  */
-internal fun wslDebugScript(environment: String, executable: String): String = """
+internal fun wslDebugScript(environment: String, executable: String, pythonExecutable: String? = null): String = """
     ${wslCondaPrelude(environment)}
     map_arg() {
         case "$1" in
@@ -72,9 +72,6 @@ internal fun wslDebugScript(environment: String, executable: String): String = "
         args+=("${'$'}arg")
         previous="${'$'}arg"
     done
-    python_executable=${shellQuote(executable)}
-    case "${'$'}python_executable" in
-        */sage) python_executable="${'$'}{python_executable%/sage}/python" ;;
-    esac
+    python_executable=${shellQuote(pythonExecutable ?: error("A verified bundled SageMath Python path is required for debugging"))}
     exec "${'$'}python_executable" "${'$'}{args[@]}"
 """.trimIndent()

@@ -83,6 +83,24 @@ class FileRuntimeManifestVerifier(
             problems += "Manifest executable is not executable: ${manifest.executable}"
         }
 
+        manifest.pythonExecutable?.let { pythonRelative ->
+            val python = normalizedRoot.resolve(pythonRelative).normalize()
+            if (
+                !python.startsWith(normalizedRoot) ||
+                Files.isSymbolicLink(python) ||
+                !Files.isRegularFile(python, LinkOption.NOFOLLOW_LINKS)
+            ) {
+                problems += "Manifest Python executable is missing: $pythonRelative"
+            }
+            else if (
+                manifest.runtimeId.platform.os != OperatingSystem.WINDOWS &&
+                Files.getFileAttributeView(python, PosixFileAttributeView::class.java) != null &&
+                !Files.isExecutable(python)
+            ) {
+                problems += "Manifest Python executable is not executable: $pythonRelative"
+            }
+        }
+
         return if (problems.isEmpty()) {
             RuntimeVerificationReport.valid()
         }

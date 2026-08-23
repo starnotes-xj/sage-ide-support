@@ -2,6 +2,10 @@ package com.starnotesxj.sagemath.runtime
 
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.attribute.PosixFileAttributeView
 import java.text.Normalizer
 import java.security.MessageDigest
 import java.time.Instant
@@ -124,6 +128,15 @@ data class RuntimeArtifact(
         require(sha256.matches(SHA256_PATTERN)) { "SHA-256 must be exactly 64 hexadecimal characters" }
         require(isSafeRelativePath(entrypoint)) { "Runtime entrypoint must be a safe relative path" }
         require(entrypoint.none { it.isISOControl() }) { "Runtime entrypoint contains a control character" }
+        metadata[BUNDLED_PYTHON_METADATA_KEY]?.let { pythonExecutable ->
+            require(pythonExecutable.isNotBlank()) { "Bundled Python executable metadata must not be blank" }
+            require(isSafeRelativePath(pythonExecutable)) {
+                "Bundled Python executable must be a safe path relative to the runtime root"
+            }
+            require(pythonExecutable.none { it.isISOControl() }) {
+                "Bundled Python executable contains a control character"
+            }
+        }
         manifestUri?.let {
             require(it.scheme.equals("https", ignoreCase = true)) {
                 "Runtime manifests must use HTTPS"
@@ -151,6 +164,8 @@ data class RuntimeArtifact(
             if (deviceName in WINDOWS_DEVICE_NAMES) return false
             return true
         }
+
+        const val BUNDLED_PYTHON_METADATA_KEY: String = "runtime.pythonExecutable"
 
         private val WINDOWS_DEVICE_NAMES = buildSet {
             addAll(listOf("CON", "PRN", "AUX", "NUL"))
@@ -216,7 +231,24 @@ data class RuntimeManifest(
     val generatedAt: Instant = Instant.now(),
     val sageVersion: String = runtimeId.version,
     val pythonVersion: String? = null,
+    /** Relative path of the Python interpreter bundled by this SageMath runtime. */
+    val pythonExecutable: String? = null,
 ) {
+    /** Resolves the declared interpreter only when it is still inside this runtime root. */
+    fun resolvePythonExecutable(root: Path): Path? = pythonExecutable?.let { relative ->
+        val normalizedRoot = root.toAbsolutePath().normalize()
+        val candidate = normalizedRoot.resolve(relative).normalize()
+        candidate.takeIf {
+            it.startsWith(normalizedRoot) &&
+                !Files.isSymbolicLink(it) &&
+                Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) &&
+                (runtimeId.platform.os == OperatingSystem.WINDOWS || hasPosixExecuteBit(it))
+        }
+    }
+
+    private fun hasPosixExecuteBit(path: Path): Boolean =
+        Files.getFileAttributeView(path, PosixFileAttributeView::class.java) == null || Files.isExecutable(path)
+
     init {
         require(schemaVersion == 1) { "Unsupported runtime manifest schema: $schemaVersion" }
         require(artifactSha256.matches(Regex("[0-9a-fA-F]{64}"))) {
@@ -224,12 +256,20 @@ data class RuntimeManifest(
         }
         require(RuntimeArtifact.isSafeRelativePath(executable)) { "Manifest executable is unsafe" }
         require(executable.none { it.isISOControl() }) { "Manifest executable contains a control character" }
+        pythonExecutable?.let { path ->
+            require(RuntimeArtifact.isSafeRelativePath(path)) { "Manifest Python executable is unsafe" }
+            require(path.none { it.isISOControl() }) { "Manifest Python executable contains a control character" }
+        }
         require(files.map { it.path }.toSet().size == files.size) { "Manifest contains duplicate file paths" }
         val normalizedPaths = files.map { it.path.lowercase(Locale.ROOT) }
         require(normalizedPaths.toSet().size == files.size) {
             "Manifest contains case-colliding file paths"
         }
         require(sageVersion == runtimeId.version) { "Manifest SageMath version must match the runtime id" }
-        require(executable in files.map { it.path }) { "Manifest executable must be included in files" }
+        val filePaths = files.map { it.path }.toSet()
+        require(executable in filePaths) { "Manifest executable must be included in files" }
+        require(pythonExecutable == null || pythonExecutable in filePaths) {
+            "Manifest Python executable must be included in files"
+        }
     }
 }

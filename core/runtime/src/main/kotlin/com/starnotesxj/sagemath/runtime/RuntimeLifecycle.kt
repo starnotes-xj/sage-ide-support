@@ -13,6 +13,22 @@ import java.util.UUID
 interface RuntimeLifecycle {
     fun listInstalled(): List<InstalledRuntime>
     fun current(): RuntimeOperationResult<InstalledRuntime>
+
+    /** Returns a verified installation or a structured missing/invalid diagnostic. */
+    fun validate(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime> {
+        val installed = find(id)
+        return if (installed != null) {
+            RuntimeOperationResult(installed)
+        }
+        else {
+            RuntimeOperationResult(
+                null,
+                listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.RUNTIME_NOT_INSTALLED, "RUNTIME_VALIDATE", "Requested SageMath runtime is not installed")),
+                false,
+            )
+        }
+    }
+
     fun select(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime>
     fun remove(id: SageRuntimeId): RuntimeOperationResult<Unit>
     fun rollback(): RuntimeOperationResult<InstalledRuntime>
@@ -52,6 +68,24 @@ class FileRuntimeLifecycle(
         }.getOrDefault(emptyList())
     }
 
+    override fun validate(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime> {
+        find(id)?.let { return RuntimeOperationResult(it) }
+        if (hasManifestFor(id)) {
+            return failure(
+                RuntimeDiagnosticCode.RUNTIME_INVALID,
+                "RUNTIME_VALIDATE",
+                "A SageMath runtime installation was found but failed manifest or directory verification",
+                mapOf("runtimeId" to id.toString()),
+            )
+        }
+        return failure(
+            RuntimeDiagnosticCode.RUNTIME_NOT_INSTALLED,
+            "RUNTIME_VALIDATE",
+            "Requested SageMath runtime is not installed",
+            mapOf("runtimeId" to id.toString()),
+        )
+    }
+
     override fun current(): RuntimeOperationResult<InstalledRuntime> {
         if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS) || !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
             return failure(RuntimeDiagnosticCode.CURRENT_POINTER_MISSING, "CURRENT_READ", "Runtime install root does not exist")
@@ -72,8 +106,9 @@ class FileRuntimeLifecycle(
     }
 
     override fun select(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime> {
-        val target = find(id)
-            ?: return failure(RuntimeDiagnosticCode.RUNTIME_NOT_INSTALLED, "RUNTIME_SELECT", "Requested SageMath runtime is not installed", mapOf("runtimeId" to id.toString()))
+        val validated = validate(id)
+        val target = validated.value
+            ?: return RuntimeOperationResult(null, validated.diagnostics, false)
         val existing = current()
         if (existing.succeeded && existing.value!!.id == id) {
             return RuntimeOperationResult(
@@ -129,6 +164,21 @@ class FileRuntimeLifecycle(
         catch (error: Exception) {
             failure(RuntimeDiagnosticCode.RUNTIME_ROLLBACK_UNAVAILABLE, "RUNTIME_ROLLBACK", "Unable to roll back SageMath runtime", cause = error)
         }
+    }
+
+    private fun hasManifestFor(id: SageRuntimeId): Boolean {
+        if (Files.isSymbolicLink(versionsRoot) || !Files.isDirectory(versionsRoot, LinkOption.NOFOLLOW_LINKS)) return false
+        return runCatching {
+            Files.list(versionsRoot).use { stream ->
+                stream.anyMatch { marker ->
+                    val name = marker.fileName.toString()
+                    name.startsWith(".") && name.endsWith(".meta") &&
+                        runCatching {
+                            RuntimeManifestCodec.decode(Files.readAllBytes(marker)).runtimeId == id
+                        }.getOrDefault(false)
+                }
+            }
+        }.getOrDefault(false)
     }
 
     private fun readInstalled(name: String): InstalledRuntime? {
@@ -267,24 +317,84 @@ class RuntimeSdkAdapter(
     private val store: RuntimeSdkStore,
 ) {
     fun selectSettings(id: SageRuntimeId, target: RuntimeTarget): RuntimeOperationResult<RuntimeSdkBinding> {
+        val targetDiagnostic = RuntimeTargetCompatibility.diagnostic(id, target)
+        if (targetDiagnostic != null) return RuntimeOperationResult(null, listOf(targetDiagnostic), false)
         val selected = lifecycle.select(id)
         if (!selected.succeeded) return RuntimeOperationResult(null, selected.diagnostics, false)
-        val binding = RuntimeSdkBinding(id, target)
+        val installed = selected.value
+            ?: return invalidRuntime("SDK_SETTINGS_SELECT", "Runtime lifecycle selected no verified installation")
+        if (installed.id != id) {
+            return invalidRuntime(
+                "SDK_SETTINGS_SELECT",
+                "Runtime lifecycle returned a different runtime than requested",
+                mapOf("requestedRuntimeId" to id.toString(), "actualRuntimeId" to installed.id.toString()),
+            )
+        }
+        val binding = RuntimeSdkBinding(installed.id, target)
         store.setSettings(binding)
         return RuntimeOperationResult(binding, selected.diagnostics)
     }
 
     fun selectProject(projectId: String, id: SageRuntimeId, target: RuntimeTarget): RuntimeOperationResult<RuntimeSdkBinding> {
-        val installed = lifecycle.find(id)
-            ?: return RuntimeOperationResult(
-                null,
-                listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.RUNTIME_NOT_INSTALLED, "SDK_PROJECT_SELECT", "Project SDK runtime is not installed")),
-                false,
-            )
+        require(projectId.isNotBlank()) { "Project id must not be blank" }
+        val targetDiagnostic = RuntimeTargetCompatibility.diagnostic(id, target)
+        if (targetDiagnostic != null) return RuntimeOperationResult(null, listOf(targetDiagnostic), false)
+        val validated = lifecycle.validate(id)
+        if (!validated.succeeded) {
+            return RuntimeOperationResult(null, validated.diagnostics, false)
+        }
+        val installed = validated.value
+            ?: return invalidRuntime("SDK_PROJECT_SELECT", "Runtime lifecycle validated no verified installation")
+        if (installed.id != id) {
+            return invalidRuntime("SDK_PROJECT_SELECT", "Runtime lifecycle returned a different runtime than requested")
+        }
         val binding = RuntimeSdkBinding(installed.id, target)
         store.setProject(projectId, binding)
         return RuntimeOperationResult(binding)
     }
 
-    fun effective(projectId: String): RuntimeSdkBinding? = store.project(projectId) ?: store.settings()
+    /** Revalidates the project override and settings fallback before exposing it to UI or execution. */
+    fun effectiveResult(projectId: String): RuntimeOperationResult<RuntimeSdkBinding> {
+        require(projectId.isNotBlank()) { "Project id must not be blank" }
+        val project = store.project(projectId)
+        if (project != null) {
+            val validation = validateBinding(project, "SDK_PROJECT_EFFECTIVE")
+            if (validation.succeeded) return validation
+            return validation
+        }
+        val settings = store.settings()
+            ?: return RuntimeOperationResult(null, listOf(missingRuntimeDiagnostic("SDK_EFFECTIVE")), false)
+        return validateBinding(settings, "SDK_SETTINGS_EFFECTIVE")
+    }
+
+    fun effective(projectId: String): RuntimeSdkBinding? = effectiveResult(projectId).value
+
+    private fun validateBinding(binding: RuntimeSdkBinding, stage: String): RuntimeOperationResult<RuntimeSdkBinding> {
+        val targetDiagnostic = RuntimeTargetCompatibility.diagnostic(binding.runtimeId, binding.target)
+        if (targetDiagnostic != null) return RuntimeOperationResult(null, listOf(targetDiagnostic.copy(stage = stage)), false)
+        val validated = lifecycle.validate(binding.runtimeId)
+        if (!validated.succeeded) return RuntimeOperationResult(null, validated.diagnostics.map { it.copy(stage = stage) }, false)
+        val installed = validated.value
+            ?: return invalidRuntime(stage, "Stored SDK binding does not resolve to a verified runtime")
+        if (installed.id != binding.runtimeId) {
+            return invalidRuntime(stage, "Stored SDK binding does not resolve to the requested verified runtime")
+        }
+        return RuntimeOperationResult(binding)
+    }
+
+    private fun missingRuntimeDiagnostic(stage: String) = RuntimeDiagnostic(
+        RuntimeDiagnosticCode.RUNTIME_NOT_INSTALLED,
+        stage,
+        "SageMath runtime is not installed or no SDK runtime has been selected",
+    )
+
+    private fun <T> invalidRuntime(
+        stage: String,
+        message: String,
+        details: Map<String, String> = emptyMap(),
+    ): RuntimeOperationResult<T> = RuntimeOperationResult(
+        null,
+        listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.RUNTIME_INVALID, stage, message, details)),
+        false,
+    )
 }

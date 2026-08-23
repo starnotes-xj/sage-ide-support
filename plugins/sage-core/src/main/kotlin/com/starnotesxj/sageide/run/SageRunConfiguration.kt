@@ -12,8 +12,8 @@ import com.jetbrains.python.run.DebugAwareConfiguration
 import com.starnotesxj.sageide.sugar.SageIcons
 
 /**
- * Sage run configurations: a Sage script executed through the `sage` command
- * (native or via WSL), never through a Python interpreter.
+ * Sage run configurations execute the verified manifest launcher; the bundled
+ * Python path is resolved separately for Python-dependent debug consumers.
  * Design follows renpe/intellij-sagemath (Apache 2.0).
  */
 class SageRunConfiguration(
@@ -37,13 +37,25 @@ class SageRunConfiguration(
     override fun canRunUnderDebug(): Boolean = true
 
     override fun checkConfiguration() {
-        // Sage is an external launcher, not a Python SDK.  Calling the Python
-        // base implementation would reject a valid Native/WSL/Docker Sage
-        // setup because no Python interpreter is required by this configuration.
+        // Sage execution is launcher-based, but the launcher must come from a
+        // verified Runtime SDK whose manifest declares bundled Python. This
+        // avoids silently falling back to an unrelated system interpreter.
         if (scriptPath.isBlank()) {
             throw RuntimeConfigurationException("The Sage script path is empty")
         }
+        val target = when (runTargetMode()) {
+            ExecutionMode.NATIVE -> com.starnotesxj.sagemath.runtime.RuntimeTarget.Native
+            ExecutionMode.WSL -> com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl(SageRunSettings.getInstance().getState().wslDistribution)
+            ExecutionMode.DOCKER -> com.starnotesxj.sagemath.runtime.RuntimeTarget.Docker(SageRunSettings.getInstance().getState().dockerImage)
+        }
+        val resolution = com.starnotesxj.sageide.runtime.SageRuntimeSdkService.getInstance().currentExecutables(target)
+        if (!resolution.succeeded) {
+            throw RuntimeConfigurationException(resolution.diagnostics.firstOrNull()?.message ?: "The bundled SageMath Python is unavailable")
+        }
     }
+
+    private fun runTargetMode(): ExecutionMode =
+        runCatching { ExecutionMode.valueOf(SageRunSettings.getInstance().getState().executionMode) }.getOrDefault(ExecutionMode.NATIVE)
 
     override fun writeExternal(element: org.jdom.Element) {
         super<AbstractPythonRunConfiguration>.writeExternal(element)

@@ -112,9 +112,13 @@ class RuntimeModelsTest {
             schemaVersion = 1,
             runtimeId = id,
             executable = "bin/sage",
-            files = listOf(RuntimeFileRecord("bin/sage", 4, "0".repeat(64))),
+            files = listOf(
+                RuntimeFileRecord("bin/sage", 4, "0".repeat(64)),
+                RuntimeFileRecord("local/bin/python3", 4, "0".repeat(64)),
+            ),
             artifactSha256 = "1".repeat(64),
             pythonVersion = "3.13",
+            pythonExecutable = "local/bin/python3",
         )
 
         assertEquals(manifest, RuntimeManifestCodec.decode(RuntimeManifestCodec.encode(manifest)))

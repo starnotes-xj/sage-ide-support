@@ -5,6 +5,8 @@ import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.configurations.ParamsGroup
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.jetbrains.python.run.PythonCommandLineState
+import com.starnotesxj.sageide.runtime.SageRuntimeSdkService
+import com.starnotesxj.sagemath.runtime.RuntimeTarget
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -18,8 +20,8 @@ import java.nio.file.Path
  * generated temporary Python file.
  *
  * Native and WSL launches are supported. WSL uses a bash wrapper that activates
- * the configured Conda environment, runs that environment's Python executable,
- * converts Windows paths to /mnt paths, and maps the IDE debug client to the
+ * the configured environment, then runs the manifest-declared bundled Python
+ * executable, converts Windows paths to /mnt paths, and maps the IDE debug client to the
  * WSL2 host gateway. Docker
  * still needs target-aware helper deployment and port/path mapping.
  */
@@ -32,23 +34,34 @@ class SageDebugCommandLineState(
 
     override fun generateCommandLine(): GeneralCommandLine {
         val settings = SageRunSettings.getInstance().getState()
-        if (settings.sageExecutable.isBlank()) {
-            throw ExecutionException("The Sage executable is not configured")
-        }
-
         val script = Path.of(configuration.scriptPath).toAbsolutePath().normalize()
         val launcher = launcherPath ?: createLauncher(script).also { launcherPath = it }
         val mode = executionMode(settings)
+        val executableResolution = SageRuntimeSdkService.getInstance().currentExecutables(
+            when (mode) {
+                ExecutionMode.NATIVE -> RuntimeTarget.Native
+                ExecutionMode.WSL -> RuntimeTarget.Wsl(settings.wslDistribution)
+                ExecutionMode.DOCKER -> RuntimeTarget.Docker(settings.dockerImage)
+            },
+        )
+        if (!executableResolution.succeeded) {
+            throw ExecutionException(
+                executableResolution.diagnostics.firstOrNull()?.message
+                    ?: "The verified SageMath runtime has no usable bundled Python interpreter",
+            )
+        }
+        val bundledPython = executableResolution.value!!.python
+            ?: throw ExecutionException("The verified SageMath runtime has no usable bundled Python interpreter")
         val commandLine = if (mode == ExecutionMode.WSL) {
             GeneralCommandLine(
                 "wsl.exe", "-d", settings.wslDistribution, "--", "bash", "-lc",
-                wslDebugScript(settings.wslCondaEnvironment, settings.sageExecutable),
+                wslDebugScript(settings.wslCondaEnvironment, executableResolution.value!!.sage, bundledPython),
                 // bash -c uses the next item as $0; the debugger's injected
                 // arguments follow it and are forwarded by wslDebugScript.
                 "sage-debug-entry",
             )
         } else {
-            GeneralCommandLine(settings.sageExecutable)
+            GeneralCommandLine(executableResolution.value!!.sage)
                 .withWorkDirectory(script.parent?.toString())
         }
         PythonCommandLineState.createStandardGroups(commandLine)

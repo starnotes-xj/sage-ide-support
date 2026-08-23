@@ -4,30 +4,96 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 sealed interface RuntimeTarget {
-    data object Native : RuntimeTarget
+    /** The target platform, when the transport can state it explicitly. */
+    val targetPlatform: PlatformTriple?
+
+    data object Native : RuntimeTarget {
+        override val targetPlatform: PlatformTriple? = null
+    }
+
     data class Wsl(
         val distribution: String,
         val pathMapping: RuntimePathMapping? = null,
+        override val targetPlatform: PlatformTriple = PlatformTriple(OperatingSystem.LINUX, CpuArchitecture.UNKNOWN),
     ) : RuntimeTarget {
         init { require(distribution.isNotBlank()) { "WSL distribution must not be blank" } }
     }
+
     data class Docker(
         val image: String,
         val pathMapping: RuntimePathMapping? = null,
+        override val targetPlatform: PlatformTriple = PlatformTriple(OperatingSystem.LINUX, CpuArchitecture.UNKNOWN),
     ) : RuntimeTarget {
         init { require(image.isNotBlank()) { "Docker image must not be blank" } }
     }
+
     data class RemoteSsh(
         val host: String,
         val user: String? = null,
         val port: Int = 22,
         val pathMapping: RuntimePathMapping? = null,
+        override val targetPlatform: PlatformTriple? = null,
     ) : RuntimeTarget {
         init {
             require(host.isNotBlank()) { "Remote host must not be blank" }
             require(port in 1..65535) { "Remote SSH port must be valid" }
         }
     }
+}
+
+/**
+ * Compatibility is intentionally limited to facts known by the target descriptor.
+ * Native and SSH targets may be heterogeneous, so they require a probe rather
+ * than guessing from the local JVM or host name.
+ */
+object RuntimeTargetCompatibility {
+    fun diagnostic(runtimeId: SageRuntimeId, target: RuntimeTarget): RuntimeDiagnostic? {
+        val targetPlatform = target.targetPlatform ?: return null
+        val runtimePlatform = runtimeId.platform
+        if (targetPlatform.os != OperatingSystem.UNKNOWN &&
+            runtimePlatform.os != OperatingSystem.UNKNOWN &&
+            targetPlatform.os != runtimePlatform.os
+        ) {
+            return RuntimeDiagnostic(
+                RuntimeDiagnosticCode.TARGET_MISMATCH,
+                "SDK_TARGET_VALIDATE",
+                "Selected SageMath runtime platform does not match the target operating system",
+                details = mapOf("runtimePlatform" to runtimePlatform.toString(), "targetPlatform" to targetPlatform.toString()),
+            )
+        }
+        if (targetPlatform.architecture != CpuArchitecture.UNKNOWN &&
+            runtimePlatform.architecture != CpuArchitecture.UNKNOWN &&
+            targetPlatform.architecture != runtimePlatform.architecture
+        ) {
+            return RuntimeDiagnostic(
+                RuntimeDiagnosticCode.TARGET_MISMATCH,
+                "SDK_TARGET_VALIDATE",
+                "Selected SageMath runtime architecture does not match the target",
+                details = mapOf("runtimePlatform" to runtimePlatform.toString(), "targetPlatform" to targetPlatform.toString()),
+            )
+        }
+        if (targetPlatform.libc != null &&
+            targetPlatform.libc != Libc.UNKNOWN &&
+            runtimePlatform.libc != null &&
+            runtimePlatform.libc != Libc.UNKNOWN &&
+            targetPlatform.libc != runtimePlatform.libc
+        ) {
+            return RuntimeDiagnostic(
+                RuntimeDiagnosticCode.TARGET_MISMATCH,
+                "SDK_TARGET_VALIDATE",
+                "Selected SageMath runtime libc does not match the target",
+                details = mapOf("runtimePlatform" to runtimePlatform.toString(), "targetPlatform" to targetPlatform.toString()),
+            )
+        }
+        return null
+    }
+}
+
+fun RuntimeTarget.kindName(): String = when (this) {
+    RuntimeTarget.Native -> "native"
+    is RuntimeTarget.Wsl -> "wsl"
+    is RuntimeTarget.Docker -> "docker"
+    is RuntimeTarget.RemoteSsh -> "ssh"
 }
 
 data class RuntimePathMapping(
@@ -95,10 +161,10 @@ class RuntimePathMapper {
         require(!normalized.startsWith("//")) {
             "Target path must not use an ambiguous UNC prefix"
         }
-        val parts = normalized.split('/').filter { it.isNotEmpty() }
-        require(parts.none { it == "." || it == ".." }) { "Target path contains traversal" }
-        require(!parts.any { it.isEmpty() }) { "Target path contains an empty component" }
-        return (if (normalized.startsWith('/')) "/" else "") + parts.joinToString("/")
+        val parts = normalized.split('/')
+        val components = if (normalized.startsWith('/')) parts.drop(1) else parts
+        require(components.none { it.isEmpty() || it == "." || it == ".." }) { "Target path contains empty or traversal components" }
+        return (if (normalized.startsWith('/')) "/" else "") + components.joinToString("/")
     }
 }
 

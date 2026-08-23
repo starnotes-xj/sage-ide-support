@@ -27,6 +27,7 @@ object RuntimeManifestCodec {
     private const val GENERATED_AT = "generatedAt"
     private const val SAGE_VERSION = "sageVersion"
     private const val PYTHON_VERSION = "pythonVersion"
+    private const val PYTHON_EXECUTABLE = "pythonExecutable"
     private const val FILE = "file"
 
     fun encode(manifest: RuntimeManifest): ByteArray = buildString {
@@ -41,6 +42,7 @@ object RuntimeManifestCodec {
         appendLine("$GENERATED_AT=${manifest.generatedAt}")
         appendLine("$SAGE_VERSION=${encodeValue(manifest.sageVersion)}")
         appendLine("$PYTHON_VERSION=${manifest.pythonVersion?.let(::encodeValue).orEmpty()}")
+        appendLine("$PYTHON_EXECUTABLE=${manifest.pythonExecutable?.let(::encodeValue).orEmpty()}")
         manifest.files.forEach { record ->
             appendLine("$FILE=${encodeValue(record.path)}|${record.sizeBytes}|${record.sha256.lowercase()}")
         }
@@ -89,6 +91,7 @@ object RuntimeManifestCodec {
             GENERATED_AT,
             SAGE_VERSION,
             PYTHON_VERSION,
+            PYTHON_EXECUTABLE,
         )
         require(unknownFields.isEmpty()) { "Unknown runtime manifest fields: $unknownFields" }
         val required: (String) -> String = { key -> values[key] ?: error("Missing runtime manifest field: $key") }
@@ -109,6 +112,9 @@ object RuntimeManifestCodec {
                 .getOrElse { error("Invalid runtime manifest timestamp") },
             sageVersion = decodeValue(required(SAGE_VERSION)),
             pythonVersion = required(PYTHON_VERSION).takeIf { it.isNotEmpty() }?.let(::decodeValue),
+            pythonExecutable = values[PYTHON_EXECUTABLE]
+                ?.takeIf { it.isNotEmpty() }
+                ?.let(::decodeValue),
         )
     }
 

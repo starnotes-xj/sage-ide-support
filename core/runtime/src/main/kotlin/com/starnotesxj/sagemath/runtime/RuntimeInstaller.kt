@@ -166,6 +166,10 @@ data class RuntimeInstallRequest(
             "Runtime manifest digest does not match the artifact"
         }
         require(manifest.executable == artifact.entrypoint) { "Runtime manifest executable does not match the artifact" }
+        val artifactPython = artifact.metadata[RuntimeArtifact.BUNDLED_PYTHON_METADATA_KEY]
+        require(artifactPython == null || artifactPython == manifest.pythonExecutable) {
+            "Runtime manifest bundled Python executable does not match the artifact"
+        }
     }
 }
 
@@ -175,7 +179,11 @@ data class InstalledRuntime(
     val executable: Path,
     val verifiedAt: Instant,
     val manifest: RuntimeManifest? = null,
-)
+) {
+    /** The verified Python interpreter shipped by SageMath, if declared by the manifest. */
+    val pythonExecutable: Path?
+        get() = manifest?.resolvePythonExecutable(root)
+}
 
 sealed interface InstallResult {
     data class Installed(val runtime: InstalledRuntime) : InstallResult

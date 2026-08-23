@@ -100,6 +100,12 @@ class RuntimeManagerHardeningTest {
         assertFailsWith<IllegalArgumentException> {
             mapper.toLocal("/mnt/workspace/../escape", RuntimeTarget.Wsl("Ubuntu", mapping))
         }
+        assertFailsWith<IllegalArgumentException> {
+            mapper.toLocal("/mnt//workspace/file", RuntimeTarget.Wsl("Ubuntu", mapping))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            mapper.toTarget(Path.of("/workspace/file"), RuntimeTarget.Wsl("Ubuntu", RuntimePathMapping(Path.of("/workspace"), "/mnt/workspace/")))
+        }
     }
 
     private fun artifact() = RuntimeArtifact(
