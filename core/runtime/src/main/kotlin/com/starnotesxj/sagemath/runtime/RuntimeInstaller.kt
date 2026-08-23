@@ -237,16 +237,17 @@ class ZipRuntimeInstaller(
             Files.createDirectories(versionsRoot)
             ensureDirectoryChainIsNotSymbolic(versionsRoot)
             controlCheckpoint(request.control, "INSTALL")
-            FileChannel.open(
-                lockPath,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-            ).use { lockChannel ->
-                acquireLock(lockChannel, request.control).use {
-                    val existing = existingRuntime(request, installRoot, versionsRoot)
+            withRuntimeOperationLock(installRoot, checkpoint = { controlCheckpoint(request.control, "LOCK") }) {
+                FileChannel.open(
+                    lockPath,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE,
+                ).use { lockChannel ->
+                    acquireLock(lockChannel, request.control).use {
+                        val existing = existingRuntime(request, installRoot, versionsRoot)
                     if (existing != null && !request.replaceExisting) {
                         checkpoint(request, "INSTALL")
-                        return InstallResult.AlreadyInstalled(existing)
+                        return@withRuntimeOperationLock InstallResult.AlreadyInstalled(existing)
                     }
 
                     ensureDirectoryChainIsNotSymbolic(stagingDir)
@@ -305,6 +306,7 @@ class ZipRuntimeInstaller(
                             request.manifest,
                         )
                     )
+                    }
                 }
             }
         }

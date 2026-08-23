@@ -342,6 +342,7 @@ data class RuntimeCatalogVerificationResult(
 class RuntimeCatalogSignatureVerifier(
     private val trustStore: RuntimeCatalogTrustStore = BuiltInRuntimeCatalogKeys,
 ) {
+    /** Verifies one envelope against the current trust policy; no implicit key fallback is allowed. */
     fun verify(envelope: RuntimeCatalogEnvelope): RuntimeCatalogVerificationResult {
         if (envelope.schemaVersion != 1 || envelope.document.schemaVersion != 1) {
             return invalid(RuntimeDiagnosticCode.CATALOG_SCHEMA_UNSUPPORTED, "CATALOG_VERIFY", "Unsupported runtime catalog schema")

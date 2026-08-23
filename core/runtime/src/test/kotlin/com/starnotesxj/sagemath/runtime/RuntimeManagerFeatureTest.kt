@@ -4,7 +4,9 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.KeyFactory
+import java.security.KeyPairGenerator
 import java.security.PrivateKey
+import java.security.PublicKey
 import java.security.spec.EdECPrivateKeySpec
 import java.security.spec.NamedParameterSpec
 import kotlin.test.Test
@@ -12,6 +14,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.concurrent.thread
+import java.util.concurrent.CountDownLatch
 
 class RuntimeManagerFeatureTest {
     private val platform = PlatformTriple(OperatingSystem.LINUX, CpuArchitecture.X64, Libc.GLIBC)
@@ -36,6 +40,33 @@ class RuntimeManagerFeatureTest {
         assertTrue(result.valid)
         assertEquals(document, result.document)
         assertTrue(result.diagnostics.isEmpty())
+    }
+
+    @Test
+    fun `catalog key rotation accepts only explicitly trusted transition keys`() {
+        val document = RuntimeCatalogDocument(
+            catalogId = "official",
+            artifacts = listOf(artifact("10.6", "https://mirror.example.invalid/sage.zip")),
+        )
+        val original = signed(document)
+        val transitionKeyId = "sage-runtime-catalog-2027-rotating-2"
+        val transitionKeys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+        val transition = signedWith(document, transitionKeyId, transitionKeys.private)
+        val transitionVerifier = RuntimeCatalogSignatureVerifier(RuntimeCatalogTrustStore { keyId ->
+            when (keyId) {
+                "test-key" -> testPublicKey()
+                transitionKeyId -> transitionKeys.public
+                else -> null
+            }
+        })
+
+        assertTrue(transitionVerifier.verify(original).valid)
+        assertTrue(transitionVerifier.verify(transition).valid)
+        assertFalse(RuntimeCatalogSignatureVerifier().verify(transition).valid)
+        assertEquals(RuntimeDiagnosticCode.CATALOG_KEY_UNTRUSTED, RuntimeCatalogSignatureVerifier().verify(transition).diagnostics.single().code)
+        val revoked = RuntimeCatalogSignatureVerifier(RuntimeCatalogTrustStore { null }).verify(original)
+        assertFalse(revoked.valid)
+        assertEquals(RuntimeDiagnosticCode.CATALOG_KEY_UNTRUSTED, revoked.diagnostics.single().code)
     }
 
     @Test
@@ -200,6 +231,43 @@ class RuntimeManagerFeatureTest {
     }
 
     @Test
+    fun `concurrent lifecycle mutations keep current pointer verifiable`() {
+        val root = Files.createTempDirectory("sage-runtime-concurrent-lifecycle")
+        try {
+            val first = createInstalled(root, "10.6", "first")
+            val second = createInstalled(root, "10.7", "second")
+            val third = createInstalled(root, "10.8", "project")
+            Files.writeString(root.resolve("current"), first.name)
+            val selectSecond = FileRuntimeLifecycle(root)
+            val selectThird = FileRuntimeLifecycle(root)
+            val rollback = FileRuntimeLifecycle(root)
+            val start = CountDownLatch(1)
+            val failures = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
+            val threads = listOf(
+                thread(start = true, name = "runtime-select-second") {
+                    try { start.await(); repeat(12) { selectSecond.select(second.runtimeId) } } catch (error: Throwable) { failures += error }
+                },
+                thread(start = true, name = "runtime-select-third") {
+                    try { start.await(); repeat(12) { selectThird.select(third.runtimeId) } } catch (error: Throwable) { failures += error }
+                },
+                thread(start = true, name = "runtime-rollback") {
+                    try { start.await(); repeat(12) { rollback.rollback() } } catch (error: Throwable) { failures += error }
+                },
+            )
+            start.countDown()
+            threads.forEach { it.join(10_000) }
+            assertTrue(threads.none { it.isAlive }, "Lifecycle worker did not finish")
+            assertTrue(failures.isEmpty(), failures.joinToString("\n"))
+            val current = FileRuntimeLifecycle(root).current()
+            assertTrue(current.succeeded, current.diagnostics.joinToString())
+            assertTrue(current.value!!.id in setOf(first.runtimeId, second.runtimeId, third.runtimeId))
+        }
+        finally {
+            deleteTree(root)
+        }
+    }
+
+    @Test
     fun `settings and project SDK bindings resolve project override`() {
         val root = Files.createTempDirectory("sage-runtime-sdk")
         try {
@@ -271,29 +339,31 @@ class RuntimeManagerFeatureTest {
         entrypoint = "bin/sage",
     )
 
-    private fun signed(document: RuntimeCatalogDocument): RuntimeCatalogEnvelope {
+    private fun signed(document: RuntimeCatalogDocument): RuntimeCatalogEnvelope =
+        signedWith(document, "test-key", privateKey())
+
+    private fun signedWith(document: RuntimeCatalogDocument, keyId: String, privateKey: PrivateKey): RuntimeCatalogEnvelope {
         val signer = java.security.Signature.getInstance("Ed25519")
-        signer.initSign(privateKey())
+        signer.initSign(privateKey)
         signer.update(RuntimeCatalogCodec.encode(document))
         return RuntimeCatalogEnvelope(
             document = document,
-            keyId = "test-key",
+            keyId = keyId,
             signature = signer.sign(),
         )
     }
 
     private fun testVerifier(): RuntimeCatalogSignatureVerifier = RuntimeCatalogSignatureVerifier(
         RuntimeCatalogTrustStore { keyId ->
-            if (keyId == "test-key") {
-                KeyFactory.getInstance("Ed25519").generatePublic(
-                    java.security.spec.X509EncodedKeySpec(
-                        "302a300506032b65700321004b74be146d1be2b867aaa07fa68a9132a860814834e8c17c20f32bf056311519"
-                            .chunked(2).map { it.toInt(16).toByte() }.toByteArray(),
-                    ),
-                )
-            }
-            else null
+            if (keyId == "test-key") testPublicKey() else null
         },
+    )
+
+    private fun testPublicKey(): PublicKey = KeyFactory.getInstance("Ed25519").generatePublic(
+        java.security.spec.X509EncodedKeySpec(
+            "302a300506032b65700321004b74be146d1be2b867aaa07fa68a9132a860814834e8c17c20f32bf056311519"
+                .chunked(2).map { it.toInt(16).toByte() }.toByteArray(),
+        ),
     )
 
     private fun privateKey(): PrivateKey {

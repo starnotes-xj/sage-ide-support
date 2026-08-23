@@ -8,6 +8,10 @@ import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.concurrent.thread
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
 
 class ZipRuntimeInstallerTest {
     @Test
@@ -150,6 +154,74 @@ class ZipRuntimeInstallerTest {
     }
 
     @Test
+    fun `failed replacement preserves the working current runtime`() {
+        val root = Files.createTempDirectory("sage-runtime-replacement")
+        try {
+            val archive = root.resolve("runtime.zip")
+            val payload = "#!/bin/sh\necho stable\n".toByteArray()
+            ZipOutputStream(Files.newOutputStream(archive)).use { output ->
+                output.putNextEntry(ZipEntry("bin/sage"))
+                output.write(payload)
+                output.closeEntry()
+            }
+            val digest = Sha256ChecksumVerifier().sha256(archive)
+            val id = SageRuntimeId("10.6", PlatformTriple(OperatingSystem.LINUX, CpuArchitecture.X64, Libc.GLIBC))
+            val artifact = RuntimeArtifact(id, URI("https://example.invalid/runtime.zip"), ArchiveFormat.ZIP, sha256 = digest, entrypoint = "bin/sage")
+            val manifest = RuntimeManifest(1, id, "bin/sage", listOf(RuntimeFileRecord("bin/sage", payload.size.toLong(), digestOf(payload))), digest)
+            val working = ZipRuntimeInstaller(copyingDownloader(archive, digest)).install(RuntimeInstallRequest(artifact, root.resolve("installed"), manifest))
+            assertTrue(working is InstallResult.Installed)
+            val currentBefore = Files.readString(root.resolve("installed/current"))
+
+            val failed = ZipRuntimeInstaller(object : RuntimeDownloader {
+                override fun download(artifact: RuntimeArtifact, destination: java.nio.file.Path, progress: DownloadProgressListener, cancellation: InstallationCancellation, control: RuntimeControl): DownloadedArtifact {
+                    Files.writeString(destination, "partial")
+                    throw RuntimeInstallException("DOWNLOAD_INTERRUPTED", "simulated interruption")
+                }
+            }).install(RuntimeInstallRequest(artifact, root.resolve("installed"), manifest, replaceExisting = true))
+
+            assertTrue(failed is InstallResult.Failed)
+            assertEquals("DOWNLOAD_INTERRUPTED", failed.stage)
+            assertEquals(currentBefore, Files.readString(root.resolve("installed/current")))
+            assertTrue(FileRuntimeLifecycle(root.resolve("installed")).current().succeeded)
+        }
+        finally {
+            Files.walk(root).use { stream -> stream.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+        }
+    }
+
+    @Test
+    fun `concurrent duplicate installs publish one verified current runtime`() {
+        val root = Files.createTempDirectory("sage-runtime-concurrent-install")
+        try {
+            val archive = root.resolve("runtime.zip")
+            val payload = "sage".toByteArray()
+            ZipOutputStream(Files.newOutputStream(archive)).use { output ->
+                output.putNextEntry(ZipEntry("sage.exe"))
+                output.write(payload)
+                output.closeEntry()
+            }
+            val digest = Sha256ChecksumVerifier().sha256(archive)
+            val id = SageRuntimeId("10.6", PlatformTriple(OperatingSystem.WINDOWS, CpuArchitecture.X64))
+            val artifact = RuntimeArtifact(id, URI("https://example.invalid/runtime.zip"), ArchiveFormat.ZIP, sha256 = digest, entrypoint = "sage.exe")
+            val manifest = RuntimeManifest(1, id, "sage.exe", listOf(RuntimeFileRecord("sage.exe", payload.size.toLong(), digestOf(payload))), digest)
+            val installer = ZipRuntimeInstaller(copyingDownloader(archive, digest))
+            val start = CountDownLatch(1)
+            val results = Collections.synchronizedList(mutableListOf<InstallResult>())
+            val workers = List(4) { thread(start = true) { start.await(); results += installer.install(RuntimeInstallRequest(artifact, root.resolve("installed"), manifest)) } }
+            start.countDown()
+            workers.forEach { it.join(10_000) }
+            assertFalse(workers.any { it.isAlive })
+            assertEquals(4, results.size)
+            assertEquals(1, results.count { it is InstallResult.Installed })
+            assertEquals(3, results.count { it is InstallResult.AlreadyInstalled })
+            assertTrue(FileRuntimeLifecycle(root.resolve("installed")).current().succeeded)
+        }
+        finally {
+            Files.walk(root).use { stream -> stream.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+        }
+    }
+
+    @Test
     fun `installer rejects unsupported archive format`() {
         val root = Files.createTempDirectory("sage-runtime-format")
         try {
@@ -282,6 +354,19 @@ class ZipRuntimeInstallerTest {
         }
         finally {
             Files.walk(root).use { stream -> stream.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+        }
+    }
+
+    private fun copyingDownloader(archive: java.nio.file.Path, digest: String): RuntimeDownloader = object : RuntimeDownloader {
+        override fun download(
+            artifact: RuntimeArtifact,
+            destination: java.nio.file.Path,
+            progress: DownloadProgressListener,
+            cancellation: InstallationCancellation,
+            control: RuntimeControl,
+        ): DownloadedArtifact {
+            Files.copy(archive, destination)
+            return DownloadedArtifact(destination, Files.size(destination), digest)
         }
     }
 

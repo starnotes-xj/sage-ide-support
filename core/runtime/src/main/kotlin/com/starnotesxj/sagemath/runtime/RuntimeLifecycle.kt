@@ -44,6 +44,7 @@ class FileRuntimeLifecycle(
     private val installRoot: Path,
     private val manifestVerifier: RuntimeManifestVerifier = FileRuntimeManifestVerifier(),
 ) : RuntimeLifecycle {
+    private val lifecycleLock: Any = Any()
     private val root: Path = installRoot.toAbsolutePath().normalize()
     private val versionsRoot: Path = root.resolve("versions")
     private val currentPointer: Path = root.resolve("current")
@@ -105,7 +106,15 @@ class FileRuntimeLifecycle(
         return RuntimeOperationResult(installed)
     }
 
-    override fun select(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime> {
+    override fun select(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime> = synchronized(lifecycleLock) {
+        runCatching {
+            withRuntimeOperationLock(root) { selectLocked(id) }
+        }.getOrElse { error ->
+            failure(RuntimeDiagnosticCode.RUNTIME_SELECT_FAILED, "RUNTIME_SELECT", "Unable to select SageMath runtime", cause = error)
+        }
+    }
+
+    private fun selectLocked(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime> {
         val validated = validate(id)
         val target = validated.value
             ?: return RuntimeOperationResult(null, validated.diagnostics, false)
@@ -126,7 +135,15 @@ class FileRuntimeLifecycle(
         }
     }
 
-    override fun remove(id: SageRuntimeId): RuntimeOperationResult<Unit> {
+    override fun remove(id: SageRuntimeId): RuntimeOperationResult<Unit> = synchronized(lifecycleLock) {
+        runCatching {
+            withRuntimeOperationLock(root) { removeLocked(id) }
+        }.getOrElse { error ->
+            failure(RuntimeDiagnosticCode.RUNTIME_REMOVE_FAILED, "RUNTIME_REMOVE", "Unable to remove SageMath runtime", cause = error)
+        }
+    }
+
+    private fun removeLocked(id: SageRuntimeId): RuntimeOperationResult<Unit> {
         val target = find(id)
             ?: return failure(RuntimeDiagnosticCode.RUNTIME_NOT_INSTALLED, "RUNTIME_REMOVE", "Requested SageMath runtime is not installed")
         val existing = current()
@@ -146,7 +163,15 @@ class FileRuntimeLifecycle(
         }
     }
 
-    override fun rollback(): RuntimeOperationResult<InstalledRuntime> {
+    override fun rollback(): RuntimeOperationResult<InstalledRuntime> = synchronized(lifecycleLock) {
+        runCatching {
+            withRuntimeOperationLock(root) { rollbackLocked() }
+        }.getOrElse { error ->
+            failure(RuntimeDiagnosticCode.RUNTIME_ROLLBACK_UNAVAILABLE, "RUNTIME_ROLLBACK", "Unable to roll back SageMath runtime", cause = error)
+        }
+    }
+
+    private fun rollbackLocked(): RuntimeOperationResult<InstalledRuntime> {
         val currentName = readPointer()
         val candidates = historyNames().asSequence()
             .mapNotNull(::readInstalled)
