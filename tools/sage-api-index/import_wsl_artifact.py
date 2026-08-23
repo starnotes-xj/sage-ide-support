@@ -33,6 +33,7 @@ def source_metadata(root: Path, paths: list[Path]) -> dict[str, Any]:
     return {
         "fileCount": len(files),
         "files": [item["path"] for item in files],
+        "fileDigests": {item["path"]: item["digest"] for item in files},
         "treeDigest": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
     }
 
@@ -170,7 +171,78 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdefABCDEF" for character in value)
+
+
 EXPECTED_KINDS = frozenset({"MODULE", "CLASS", "FUNCTION", "METHOD", "PROPERTY", "CONSTANT", "ALIAS"})
+EXPECTED_SOURCE_KINDS = frozenset({"RUNTIME", "STUB", "SIGNATURE", "DOCUMENTATION", "USER_STUB", "PROBE"})
+INDEX_SCHEMA_VERSION = 1
+INDEX_ENVELOPE_SCHEMA_VERSION = 1
+INVENTORY_SCHEMA_VERSION = 1
+QUALITY_CONTRACT_VERSION = 1
+INVENTORY_KIND_ORDER = {name: index for index, name in enumerate(("MODULE", "CLASS", "FUNCTION", "METHOD", "PROPERTY", "CONSTANT", "ALIAS"))}
+TYPE_STATES = frozenset({"KNOWN", "UNKNOWN", "DYNAMIC"})
+
+
+def source_locator_key(locator: str) -> str:
+    base, separator, line = locator.rpartition(":")
+    return base if separator and line.isdigit() else locator
+
+
+def inventory_identity_digest(identities: list[dict[str, str]]) -> str:
+    return hashlib.sha256(canonical_json(identities).encode("utf-8")).hexdigest()
+
+
+def validate_inventory(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or value.get("schemaVersion") != INVENTORY_SCHEMA_VERSION:
+        raise ValueError("Sage API inventory schemaVersion is invalid")
+    if value.get("basis") != "RAW_AST_DECLARATIONS":
+        raise ValueError("Sage API inventory basis is invalid")
+    for field in ("sageVersion", "pythonVersion", "generatorVersion"):
+        if not isinstance(value.get(field), str) or not value[field].strip():
+            raise ValueError(f"Sage API inventory {field} is invalid")
+    identities = value.get("identities")
+    if not isinstance(identities, list):
+        raise ValueError("Sage API inventory identities must be an array")
+    seen: set[tuple[str, str]] = set()
+    previous: tuple[str, int] | None = None
+    for index, item in enumerate(identities):
+        key = identity_key(item, f"inventory.identities[{index}]")
+        if key in seen:
+            raise ValueError(f"Sage API inventory contains duplicate identity {key[0]} ({key[1]})")
+        order_key = (key[0], INVENTORY_KIND_ORDER[key[1]])
+        if previous is not None and order_key <= previous:
+            raise ValueError("Sage API inventory identities are not strictly sorted")
+        previous = order_key
+        seen.add(key)
+    if value.get("identityCount") != len(identities) or value.get("identityDigest") != inventory_identity_digest(identities):
+        raise ValueError("Sage API inventory identity digest is invalid")
+    for field in ("rawDeclarationCount", "sourceFileCount"):
+        if type(value.get(field)) is not int or value[field] < 0:
+            raise ValueError(f"Sage API inventory {field} is invalid")
+    if value["rawDeclarationCount"] < value["identityCount"]:
+        raise ValueError("Sage API inventory rawDeclarationCount is less than identityCount")
+    source_digests = value.get("sourceDigests")
+    if not isinstance(source_digests, dict) or len(source_digests) != value["sourceFileCount"]:
+        raise ValueError("Sage API inventory sourceDigests are invalid")
+    for locator, digest in source_digests.items():
+        if not isinstance(locator, str) or not locator.strip() or not is_sha256(digest):
+            raise ValueError("Sage API inventory sourceDigests contain an invalid digest")
+    return value
+
+
+def identity_key(value: Any, path: str) -> tuple[str, str]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must be an object")
+    qualified_name = value.get("qualifiedName")
+    kind = value.get("kind")
+    if not isinstance(qualified_name, str) or not qualified_name.strip() or not isinstance(kind, str) or kind not in EXPECTED_KINDS:
+        raise ValueError(f"{path} identity is invalid")
+    return qualified_name, kind
+
+
+SOURCE_PROVENANCE_KIND = "STUBGEN"
 
 
 def probe_digest(envelope: dict[str, Any]) -> str:
@@ -185,7 +257,76 @@ def expected_digest(contract: dict[str, Any]) -> str:
             unsigned["symbols"],
             key=lambda item: (item["qualifiedName"], item["kind"]),
         )
+    if isinstance(unsigned.get("quality"), list):
+        unsigned["quality"] = sorted(
+            unsigned["quality"],
+            key=lambda item: (item["qualifiedName"], item["kind"]),
+        )
     return hashlib.sha256(canonical_json(unsigned).encode("utf-8")).hexdigest()
+
+
+def validate_quality_contract(value: Any, *, require_nonempty: bool = False) -> list[dict[str, Any]]:
+    quality = value.get("quality") if isinstance(value, dict) else None
+    if quality is None:
+        if require_nonempty:
+            raise ValueError("expected contract quality must be a non-empty array")
+        return []
+    if not isinstance(quality, list) or (require_nonempty and not quality):
+        raise ValueError("expected contract quality must be a non-empty array")
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for index, item in enumerate(quality):
+        if not isinstance(item, dict):
+            raise ValueError(f"expected contract quality item {index} must be an object")
+        qualified_name = item.get("qualifiedName")
+        kind = item.get("kind")
+        if not isinstance(qualified_name, str) or not qualified_name.strip():
+            raise ValueError(f"expected contract quality item {index} requires qualifiedName")
+        if not isinstance(kind, str) or kind not in EXPECTED_KINDS:
+            raise ValueError(f"expected contract quality item {index} kind is invalid")
+        key = (qualified_name, kind)
+        if key in seen:
+            raise ValueError(f"expected contract contains duplicate quality item {qualified_name} ({kind})")
+        seen.add(key)
+        source = item.get("source")
+        if not isinstance(source, dict) or source.get("kind") not in EXPECTED_SOURCE_KINDS:
+            raise ValueError(f"expected contract quality item {index} source kind is invalid")
+        if not isinstance(source.get("locatorPrefix"), str) or not source["locatorPrefix"].strip():
+            raise ValueError(f"expected contract quality item {index} source locatorPrefix is invalid")
+        if not is_sha256(source.get("digest")):
+            raise ValueError(f"expected contract quality item {index} source digest is invalid")
+        signatures = item.get("signatures")
+        if not isinstance(signatures, list):
+            raise ValueError(f"expected contract quality item {index} signatures must be an array")
+        for signature_index, signature in enumerate(signatures):
+            if not isinstance(signature, dict) or not isinstance(signature.get("parameters"), list):
+                raise ValueError(f"expected contract quality item {index} signature {signature_index} parameters are invalid")
+            return_type = signature.get("returnType")
+            if not isinstance(return_type, dict) or return_type.get("state") not in TYPE_STATES:
+                raise ValueError(f"expected contract quality item {index} signature {signature_index} returnType is invalid")
+            if "expression" in return_type and return_type["expression"] is not None and not isinstance(return_type["expression"], str):
+                raise ValueError(f"expected contract quality item {index} signature {signature_index} returnType expression is invalid")
+            for parameter_index, parameter in enumerate(signature["parameters"]):
+                if not isinstance(parameter, dict) or not isinstance(parameter.get("name"), str) or not parameter["name"].strip():
+                    raise ValueError(f"expected contract quality item {index} parameter {parameter_index} name is invalid")
+                if parameter.get("typeState") not in TYPE_STATES:
+                    raise ValueError(f"expected contract quality item {index} parameter {parameter_index} typeState is invalid")
+                if "typeExpression" in parameter and parameter["typeExpression"] is not None and not isinstance(parameter["typeExpression"], str):
+                    raise ValueError(f"expected contract quality item {index} parameter {parameter_index} typeExpression is invalid")
+                for field in ("optional", "keywordOnly", "variadic"):
+                    if field in parameter and not isinstance(parameter[field], bool):
+                        raise ValueError(f"expected contract quality item {index} parameter {parameter_index} {field} is invalid")
+                if "defaultValue" in parameter and parameter["defaultValue"] is not None and not isinstance(parameter["defaultValue"], str):
+                    raise ValueError(f"expected contract quality item {index} parameter {parameter_index} defaultValue is invalid")
+        documentation = item.get("documentation")
+        if not isinstance(documentation, dict):
+            raise ValueError(f"expected contract quality item {index} documentation is invalid")
+        for field in ("required", "nonEmpty", "nonEmptyArrays"):
+            values = documentation.get(field, [])
+            if not isinstance(values, list) or any(not isinstance(value, str) or not value.strip() for value in values):
+                raise ValueError(f"expected contract quality item {index} documentation.{field} is invalid")
+        normalized.append(dict(item))
+    return sorted(normalized, key=lambda item: (item["qualifiedName"], item["kind"]))
 
 
 def load_expected_contract(
@@ -211,7 +352,7 @@ def load_expected_contract(
     missing = sorted(required - set(value))
     if missing:
         raise ValueError(f"expected contract is missing {', '.join(missing)}")
-    if value["schemaVersion"] != 1:
+    if type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
         raise ValueError("expected contract schemaVersion must be 1")
     if value["artifactId"] != artifact_id:
         raise ValueError("expected contract artifactId does not match artifact")
@@ -227,11 +368,11 @@ def load_expected_contract(
     source_prefix = f"wsl:{distro}:{conda}:env={conda_env}"
     if not isinstance(provenance, dict):
         raise ValueError("expected contract provenance must be an object")
-    if provenance.get("kind") != "STUBGEN":
+    if provenance.get("kind") != SOURCE_PROVENANCE_KIND:
         raise ValueError("expected contract provenance kind must be STUBGEN")
     if provenance.get("generator") != f"{runtime_stubgen['name']}/{runtime_stubgen['version']}":
         raise ValueError("expected contract provenance generator does not match runtime probe")
-    if not isinstance(provenance.get("source"), str) or not provenance["source"].startswith(source_prefix):
+    if not isinstance(provenance.get("source"), str) or not (provenance["source"] == source_prefix or provenance["source"].startswith(source_prefix + ":")):
         raise ValueError("expected contract provenance source does not match runtime binding")
     expected_probe_digest = make_probe_envelope(distro, conda, conda_env, probe)["probeDigest"]
     if value["probeDigest"] != expected_probe_digest:
@@ -256,9 +397,194 @@ def load_expected_contract(
         normalized_symbols.append(normalized)
     normalized = dict(value)
     normalized["symbols"] = sorted(normalized_symbols, key=lambda item: (item["qualifiedName"], item["kind"]))
+    quality = validate_quality_contract(value)
+    if "qualityContractVersion" in value:
+        if type(value.get("qualityContractVersion")) is not int or value["qualityContractVersion"] != QUALITY_CONTRACT_VERSION:
+            raise ValueError("expected contract qualityContractVersion is invalid")
+        if not isinstance(value.get("quality"), list) or not quality:
+            raise ValueError("expected contract quality must be a non-empty array")
+        normalized["quality"] = quality
     if not isinstance(value["expectedDigest"], str) or value["expectedDigest"] != expected_digest(normalized):
         raise ValueError("expected contract expectedDigest is invalid")
     return normalized
+
+
+def _validate_type_reference(value: Any, path: str) -> None:
+    if not isinstance(value, dict) or value.get("state") not in TYPE_STATES:
+        raise ValueError(f"{path} is an invalid type reference")
+    expression = value.get("expression")
+    if expression is not None and (not isinstance(expression, str) or not expression.strip()):
+        raise ValueError(f"{path}.expression is invalid")
+    if value["state"] == "KNOWN" and not isinstance(expression, str):
+        raise ValueError(f"{path} KNOWN type requires an expression")
+
+
+def _validate_index_signature(value: Any, path: str) -> None:
+    if not isinstance(value, dict) or not isinstance(value.get("parameters"), list) or "returnType" not in value:
+        raise ValueError(f"{path} is invalid")
+    for index, parameter in enumerate(value["parameters"]):
+        parameter_path = f"{path}.parameters[{index}]"
+        if not isinstance(parameter, dict) or not isinstance(parameter.get("name"), str) or not parameter["name"].strip():
+            raise ValueError(f"{parameter_path} is invalid")
+        _validate_type_reference(parameter.get("type"), f"{parameter_path}.type")
+        for field in ("optional", "keywordOnly", "variadic"):
+            if field in parameter and type(parameter[field]) is not bool:
+                raise ValueError(f"{parameter_path}.{field} must be boolean")
+        if "defaultValue" in parameter and parameter["defaultValue"] is not None and not isinstance(parameter["defaultValue"], str):
+            raise ValueError(f"{parameter_path}.defaultValue is invalid")
+    _validate_type_reference(value["returnType"], f"{path}.returnType")
+
+
+def _validate_index_entry(value: Any, path: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must be an object")
+    for field in ("qualifiedName", "kind", "dynamicity", "confidence"):
+        if not isinstance(value.get(field), str) or not value[field].strip():
+            raise ValueError(f"{path}.{field} must be a nonblank string")
+    if value["kind"] not in EXPECTED_KINDS:
+        raise ValueError(f"{path}.kind is invalid")
+    if value["dynamicity"] not in {"STATIC", "DYNAMIC", "UNKNOWN"}:
+        raise ValueError(f"{path}.dynamicity is invalid")
+    if value["confidence"] not in {"HIGH", "MEDIUM", "LOW"}:
+        raise ValueError(f"{path}.confidence is invalid")
+    for field in ("parents", "protocols", "aliases"):
+        if not isinstance(value.get(field), list) or not all(isinstance(item, str) and item.strip() for item in value[field]):
+            raise ValueError(f"{path}.{field} must contain nonblank strings")
+    signatures = value.get("signatures")
+    if not isinstance(signatures, list):
+        raise ValueError(f"{path}.signatures must be an array")
+    for index, signature in enumerate(signatures):
+        _validate_index_signature(signature, f"{path}.signatures[{index}]")
+    sources = value.get("sources")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError(f"{path}.sources must be a nonempty array")
+    for index, source in enumerate(sources):
+        source_path = f"{path}.sources[{index}]"
+        if not isinstance(source, dict) or source.get("kind") not in EXPECTED_SOURCE_KINDS or not isinstance(source.get("locator"), str) or not source["locator"].strip():
+            raise ValueError(f"{source_path} is invalid")
+        digest = source.get("digest")
+        if digest is not None and not is_sha256(digest):
+            raise ValueError(f"{source_path}.digest is invalid")
+    if "valueType" in value:
+        _validate_type_reference(value["valueType"], f"{path}.valueType")
+    if "documentation" in value and not isinstance(value["documentation"], dict):
+        raise ValueError(f"{path}.documentation must be an object")
+
+
+def read_index(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"Sage API index cannot be read: {error}") from error
+    if not isinstance(value, dict):
+        raise ValueError("Sage API index must be a JSON object")
+    required = ("schemaVersion", "sageVersion", "pythonVersion", "generatorVersion", "sourceDigests", "entries")
+    missing = [field for field in required if field not in value]
+    if missing:
+        raise ValueError(f"Sage API index is missing {', '.join(missing)}")
+    if type(value["schemaVersion"]) is not int or value["schemaVersion"] != INDEX_SCHEMA_VERSION:
+        raise ValueError("Sage API index schemaVersion must be 1")
+    for field in ("sageVersion", "pythonVersion", "generatorVersion"):
+        if not isinstance(value[field], str) or not value[field].strip():
+            raise ValueError(f"Sage API index {field} is invalid")
+    source_digests = value["sourceDigests"]
+    if not isinstance(source_digests, dict):
+        raise ValueError("Sage API index sourceDigests must be an object")
+    for locator, digest in source_digests.items():
+        if not isinstance(locator, str) or not locator.strip() or not is_sha256(digest):
+            raise ValueError("Sage API index sourceDigests contains an invalid digest")
+    entries = value["entries"]
+    if not isinstance(entries, list):
+        raise ValueError("Sage API index entries must be an array")
+    seen: set[tuple[str, str]] = set()
+    for index, entry in enumerate(entries):
+        _validate_index_entry(entry, f"entries[{index}]")
+        key = (entry["qualifiedName"], entry["kind"])
+        if key in seen:
+            raise ValueError(f"Sage API index contains duplicate entry {key[0]} ({key[1]})")
+        seen.add(key)
+        for source in entry["sources"]:
+            locator = source_locator_key(source["locator"])
+            if locator not in source_digests:
+                raise ValueError(f"Sage API index source locator is not declared: {locator}")
+            if source.get("digest") != source_digests[locator]:
+                raise ValueError(f"Sage API index source digest mismatch: {locator}")
+    return value
+
+
+def index_entry_map(index: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    result: dict[tuple[str, str], dict[str, Any]] = {}
+    for position, entry in enumerate(index["entries"]):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Sage API index entry {position} must be an object")
+        key = (entry.get("qualifiedName"), entry.get("kind"))
+        if not isinstance(key[0], str) or key[1] not in EXPECTED_KINDS:
+            raise ValueError(f"Sage API index entry {position} identity is invalid")
+        if key in result:
+            raise ValueError(f"Sage API index contains duplicate entry {key[0]} ({key[1]})")
+        result[key] = entry
+    return result
+
+
+def validate_index_quality(index: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
+    entries = index_entry_map(index)
+    quality = validate_quality_contract(contract, require_nonempty=True)
+    checked: list[dict[str, Any]] = []
+    source_digests = index.get("sourceDigests", {})
+    for item in quality:
+        key = (item["qualifiedName"], item["kind"])
+        entry = entries.get(key)
+        if entry is None:
+            raise ValueError(f"Sage API quality contract entry is missing: {key[0]} ({key[1]})")
+        sources = entry.get("sources")
+        source_spec = item["source"]
+        if not isinstance(sources, list) or not any(
+            isinstance(source, dict)
+            and source.get("kind") == source_spec["kind"]
+            and isinstance(source.get("locator"), str)
+            and (source["locator"] == source_spec["locatorPrefix"] or source["locator"].startswith(source_spec["locatorPrefix"]))
+            and source.get("digest") == source_spec["digest"]
+            and source_digests.get(source_locator_key(source["locator"])) == source_spec["digest"]
+            for source in sources
+        ):
+            raise ValueError(f"Sage API quality source mismatch: {key[0]} ({key[1]})")
+        actual_signatures = entry.get("signatures")
+        if not isinstance(actual_signatures, list) or len(actual_signatures) != len(item["signatures"]):
+            raise ValueError(f"Sage API quality signature count mismatch: {key[0]} ({key[1]})")
+        for signature_index, (actual, expected) in enumerate(zip(actual_signatures, item["signatures"])):
+            actual_parameters = actual.get("parameters") if isinstance(actual, dict) else None
+            if not isinstance(actual_parameters, list) or len(actual_parameters) != len(expected["parameters"]):
+                raise ValueError(f"Sage API quality parameter count mismatch: {key[0]} signature {signature_index}")
+            for parameter_index, (actual_parameter, expected_parameter) in enumerate(zip(actual_parameters, expected["parameters"])):
+                for field in ("name", "optional", "keywordOnly", "variadic", "defaultValue"):
+                    if field in expected_parameter and actual_parameter.get(field) != expected_parameter[field]:
+                        raise ValueError(f"Sage API quality parameter mismatch: {key[0]} parameter {parameter_index} {field}")
+                actual_type = actual_parameter.get("type")
+                if not isinstance(actual_type, dict) or actual_type.get("state") != expected_parameter["typeState"] or ("typeExpression" in expected_parameter and actual_type.get("expression") != expected_parameter["typeExpression"]):
+                    raise ValueError(f"Sage API quality parameter type mismatch: {key[0]} parameter {parameter_index}")
+            actual_return = actual.get("returnType")
+            expected_return = expected["returnType"]
+            if not isinstance(actual_return, dict) or actual_return.get("state") != expected_return["state"] or ("expression" in expected_return and actual_return.get("expression") != expected_return["expression"]):
+                raise ValueError(f"Sage API quality return type mismatch: {key[0]} signature {signature_index}")
+        documentation = entry.get("documentation")
+        required_documentation = item["documentation"]["required"]
+        non_empty_documentation = item["documentation"]["nonEmpty"]
+        non_empty_array_documentation = item["documentation"].get("nonEmptyArrays", [])
+        if not isinstance(documentation, dict):
+            raise ValueError(f"Sage API quality documentation is missing: {key[0]} ({key[1]})")
+        for field in required_documentation:
+            if field not in documentation:
+                raise ValueError(f"Sage API quality documentation field is missing: {key[0]} {field}")
+        for field in non_empty_documentation:
+            if not isinstance(documentation.get(field), str) or not documentation[field].strip():
+                raise ValueError(f"Sage API quality documentation field is empty: {key[0]} {field}")
+        for field in non_empty_array_documentation:
+            if not isinstance(documentation.get(field), list) or not documentation[field]:
+                raise ValueError(f"Sage API quality documentation array is empty: {key[0]} {field}")
+            if any(not isinstance(value, str) for value in documentation[field]):
+                raise ValueError(f"Sage API quality documentation array is invalid: {key[0]} {field}")
+        checked.append({"qualifiedName": key[0], "kind": key[1]})
+    return {"contractVersion": QUALITY_CONTRACT_VERSION, "checkedCount": len(checked), "checked": checked}
 
 
 def coverage_summary(value: Any) -> dict[str, Any]:
@@ -447,7 +773,7 @@ def build_artifacts(
     artifact_id = f"wsl-{distro.lower()}-sage-{probe['sageVersion']}-stubgen-{stubgen['version']}"
     locator = f"sage-pycharm-stubgen/{probe['sageVersion']}/python-{python_minor(probe['pythonVersion'])}"
     provenance = {
-        "kind": "STUBGEN",
+        "kind": SOURCE_PROVENANCE_KIND,
         "generator": f"{stubgen['name']}/{stubgen['version']}",
         "source": f"wsl:{distro}:{conda}:env={conda_env}:{source_root}",
     }
@@ -458,7 +784,7 @@ def build_artifacts(
         "provenance": provenance,
         "sources": [{
             "root": str(source_root),
-            "kind": "STUBGEN",
+            "kind": SOURCE_PROVENANCE_KIND,
             "locator": locator,
             **metadata,
         }],
@@ -470,6 +796,7 @@ def build_artifacts(
         "conda": {"executable": conda, "environment": conda_env},
         "sourceRoot": str(source_root),
         "sourceFiles": metadata["files"],
+        "sourceFileDigests": metadata["fileDigests"],
         "stubFileCount": len([path for path in paths if path.suffix == ".pyi"]),
         "sourceFileCount": metadata["fileCount"],
         "treeDigest": metadata["treeDigest"],
@@ -477,6 +804,22 @@ def build_artifacts(
         "provenance": provenance,
     }
     return manifest, receipt
+
+
+def canonical_artifact_path(path: Path, output: Path) -> str:
+    return path.resolve().relative_to(output.resolve()).as_posix()
+
+
+def canonical_output_value(value: str, output: Path) -> str:
+    try:
+        path = Path(value)
+        return canonical_artifact_path(path, output) if path.is_absolute() else value
+    except (OSError, ValueError):
+        return value
+
+
+def canonical_command(command: list[str], output: Path) -> list[str]:
+    return [canonical_output_value(value, output) for value in command]
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -520,6 +863,8 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
     index_path = output / "sage-api-index.json"
     coverage_path = output / "coverage.json"
     raw_path = output / "raw.json"
+    inventory_path = output / "api-inventory.json"
+    envelope_path = output / "sage-api-index-envelope.json"
     write_json(manifest_path, manifest)
     write_json(receipt_path, receipt)
     command = [
@@ -531,7 +876,7 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
         "--output", str(index_path),
         "--coverage-output", str(coverage_path),
         "--raw-output", str(raw_path),
-        "--allow-missing", "--allow-conflicts",
+        "--inventory-output", str(inventory_path),
     ]
     expected = getattr(args, "expected", None)
     expected_contract = None
@@ -548,16 +893,18 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
             "digest": expected_contract["expectedDigest"],
             "artifactId": expected_contract["artifactId"],
             "count": len(expected_contract["symbols"]),
+            "qualityCount": len(expected_contract.get("quality", [])),
+            "qualityContractVersion": expected_contract.get("qualityContractVersion"),
         }
     else:
-        receipt["expected"] = {"count": 0, "scope": "UNSCOPED"}
+        receipt["expected"] = {"count": 0, "scope": "UNSCOPED", "qualityCount": 0}
     generator_timeout = getattr(args, "generator_timeout", 900.0)
     receipt["generator"] = {
-        "command": command,
+        "command": canonical_command(command, output),
         "timeoutSeconds": generator_timeout,
         "status": "running",
         "returncode": None,
-        "outputs": {"index": str(index_path), "coverage": str(coverage_path), "raw": str(raw_path)},
+        "outputs": {"index": "sage-api-index.json", "coverage": "coverage.json", "raw": "raw.json", "inventory": "api-inventory.json"},
     }
     write_json(receipt_path, receipt)
     try:
@@ -582,24 +929,98 @@ def run_import(args: argparse.Namespace) -> dict[str, Any]:
     try:
         summary = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
         summary = validate_generator_summary(summary)
-        if not index_path.is_file() or not coverage_path.is_file() or not raw_path.is_file():
+        if not index_path.is_file() or not coverage_path.is_file() or not raw_path.is_file() or not inventory_path.is_file():
             raise ValueError("Sage API post-generator outputs are missing")
+        index = read_index(index_path)
+        if index["sageVersion"] != manifest["sageVersion"] or index["pythonVersion"] != manifest["pythonVersion"]:
+            raise ValueError("Sage API index version identity does not match manifest")
         coverage_report = json.loads(coverage_path.read_text(encoding="utf-8"))
         coverage = coverage_summary(coverage_report)
+        inventory = validate_inventory(json.loads(inventory_path.read_text(encoding="utf-8")))
+        index_ids = {identity_key(entry, "index.entries") for entry in index["entries"]}
+        inventory_ids = {identity_key(item, "inventory.identities") for item in inventory["identities"]}
+        if index_ids != inventory_ids:
+            raise ValueError("Sage API inventory identities do not match normalized index entries")
+        if inventory["identityCount"] != len(index_ids):
+            raise ValueError("Sage API inventory identityCount does not match normalized index entries")
+        if inventory["sageVersion"] != manifest["sageVersion"] or inventory["pythonVersion"] != manifest["pythonVersion"]:
+            raise ValueError("Sage API inventory version identity does not match manifest")
+        source_spec = manifest["sources"][0]
+        expected_inventory_sources = {
+            source_spec["locator"] + "/" + path: digest
+            for path, digest in source_spec["fileDigests"].items()
+        }
+        if inventory["sourceDigests"] != expected_inventory_sources:
+            raise ValueError("Sage API inventory source digests do not match source manifest")
+        quality = None
+        if expected_contract is not None and expected_contract.get("quality"):
+            quality = validate_index_quality(index, expected_contract)
+        if expected_contract is not None:
+            expected_ids = [identity_key(item, "expected.symbols") for item in expected_contract["symbols"]]
+            if len(set(expected_ids)) != len(expected_ids):
+                raise ValueError("Sage API expected symbols contain duplicates")
+            coverage_ids = {}
+            for field in ("expected", "covered", "missing"):
+                values = coverage_report[field]
+                ids = [identity_key(item, f"coverage.{field}") for item in values]
+                if len(set(ids)) != len(ids):
+                    raise ValueError(f"Sage API coverage {field} contains duplicates")
+                coverage_ids[field] = set(ids)
+            expected_set = set(expected_ids)
+            if coverage_ids["expected"] != expected_set or coverage_ids["covered"] | coverage_ids["missing"] != expected_set or coverage_ids["covered"] & coverage_ids["missing"]:
+                raise ValueError("Sage API coverage identities do not match expected contract")
+            if coverage["expectedCount"] != len(expected_set) or coverage["coveredCount"] != len(coverage_ids["covered"]) or coverage["missingCount"] != len(coverage_ids["missing"]):
+                raise ValueError("Sage API coverage counts do not match expected identities")
+            if coverage["isComplete"] != (not coverage_ids["missing"] and not coverage_report["conflicts"]):
+                raise ValueError("Sage API coverage isComplete is inconsistent")
+        envelope = {
+            "schemaVersion": INDEX_ENVELOPE_SCHEMA_VERSION,
+            "scope": "SCOPED" if expected_contract is not None else "UNSCOPED",
+            "apiCoverage": {
+                "scope": "FULL",
+                "expectedCount": inventory["identityCount"],
+                "coveredCount": len(index["entries"]),
+                "missingCount": 0,
+                "coverageRatio": 1.0,
+                "isComplete": True,
+                "identityDigest": inventory["identityDigest"],
+            },
+            "artifactId": manifest["artifactId"],
+            "sageVersion": manifest["sageVersion"],
+            "pythonVersion": manifest["pythonVersion"],
+            "generatorVersion": index["generatorVersion"],
+            "provenance": manifest["provenance"],
+            "sourceManifest": {"path": "source-manifest.json", "digest": sha256(manifest_path)},
+            "artifactReceipt": {"path": "artifact-receipt.json"},
+            "probe": {"mode": probe_mode, "digest": probe_digest_value, "path": probe_path},
+            "treeDigest": receipt["treeDigest"],
+            "index": {"path": "sage-api-index.json", "sha256": sha256(index_path), "entryCount": len(index["entries"])},
+            "inventory": {"path": "api-inventory.json", "sha256": sha256(inventory_path)},
+            "coverage": coverage,
+            "diagnostics": {"count": len(coverage_report["diagnostics"]), "conflictCount": len(coverage_report["conflicts"]), "conflicts": coverage_report["conflicts"]},
+            "quality": quality,
+        }
     except (OSError, ValueError, json.JSONDecodeError) as error:
         message = f"Sage API post-generator validation failed: {error}"
         persist_generator_failure(receipt_path, receipt, message, result.returncode)
         raise ValueError(message) from error
     receipt["coverage"] = coverage
+    receipt["inventory"] = {"path": "api-inventory.json", "sha256": envelope["inventory"]["sha256"], "identityCount": inventory["identityCount"], "identityDigest": inventory["identityDigest"]}
+    receipt["index"] = {"path": "sage-api-index.json", "sha256": envelope["index"]["sha256"], "entryCount": envelope["index"]["entryCount"]}
+    receipt["quality"] = quality
+    receipt["envelope"] = {"path": "sage-api-index-envelope.json", "schemaVersion": INDEX_ENVELOPE_SCHEMA_VERSION}
     receipt["generator"] = {
-        "command": command,
+        "command": canonical_command(command, output),
         "timeoutSeconds": generator_timeout,
         "status": "completed",
         "returncode": result.returncode,
         "summary": summary,
         "diagnostics": {"count": len(coverage_report["diagnostics"]), "conflictCount": len(coverage_report["conflicts"])},
-        "outputs": {"index": str(index_path), "coverage": str(coverage_path), "raw": str(raw_path)},
+        "outputs": {"index": "sage-api-index.json", "coverage": "coverage.json", "raw": "raw.json", "inventory": "api-inventory.json"},
     }
+    receipt["generator"]["commandDigest"] = hashlib.sha256(canonical_json(canonical_command(command, output)).encode("utf-8")).hexdigest()
+    write_json(envelope_path, envelope)
+    receipt["envelope"]["digest"] = sha256(envelope_path)
     write_json(receipt_path, receipt)
     return receipt
 

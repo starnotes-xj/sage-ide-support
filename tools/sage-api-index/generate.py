@@ -12,6 +12,7 @@ from typing import Any, Iterable
 
 SCHEMA_VERSION = 1
 GENERATOR_VERSION = "sage-api-index-py/0.1"
+INVENTORY_SCHEMA_VERSION = 1
 KIND_ORDER = {name: index for index, name in enumerate(("MODULE", "CLASS", "FUNCTION", "METHOD", "PROPERTY", "CONSTANT", "ALIAS"))}
 CONFIDENCE_RANK = {"UNKNOWN": 1, "LOW": 2, "MEDIUM": 3, "HIGH": 4}
 
@@ -358,6 +359,70 @@ def source_digests(entries: list[dict[str, Any]]) -> dict[str, str]:
             result[source["locator"].split(":")[0]] = source["digest"]
     return dict(sorted(result.items()))
 
+def source_file_locator(locator: str) -> str:
+    base, separator, line = locator.rpartition(":")
+    return base if separator and line.isdigit() else locator
+
+def inventory_digest(identities: list[dict[str, str]]) -> str:
+    payload = json.dumps(identities, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+def build_inventory(raw_symbols: list[RawSymbol], sage_version: str, python_version: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    identity_keys = sorted({item.key() for item in raw_symbols}, key=lambda item: (item[0], KIND_ORDER[item[1]]))
+    identities = [{"qualifiedName": qualified_name, "kind": kind} for qualified_name, kind in identity_keys]
+    source_digest_map: dict[str, str] = {}
+    for item in raw_symbols:
+        source_digest_map[source_file_locator(item.source.locator)] = item.source.digest
+    inventory: dict[str, Any] = {
+        "schemaVersion": INVENTORY_SCHEMA_VERSION,
+        "basis": "RAW_AST_DECLARATIONS",
+        "sageVersion": sage_version,
+        "pythonVersion": python_version,
+        "generatorVersion": GENERATOR_VERSION,
+        "rawDeclarationCount": len(raw_symbols),
+        "identityCount": len(identities),
+        "identities": identities,
+        "identityDigest": inventory_digest(identities),
+        "sourceFileCount": len(source_digest_map),
+        "sourceDigests": dict(sorted(source_digest_map.items())),
+    }
+    if metadata and metadata.get("artifactId"):
+        inventory["artifactId"] = metadata["artifactId"]
+    return inventory
+
+def validate_inventory(inventory: dict[str, Any]) -> None:
+    if not isinstance(inventory, dict) or inventory.get("schemaVersion") != INVENTORY_SCHEMA_VERSION:
+        raise ValueError("generated API inventory has unsupported schemaVersion")
+    if inventory.get("basis") != "RAW_AST_DECLARATIONS":
+        raise ValueError("generated API inventory basis is invalid")
+    for field in ("sageVersion", "pythonVersion", "generatorVersion"):
+        if not isinstance(inventory.get(field), str) or not inventory[field].strip():
+            raise ValueError(f"generated API inventory requires nonblank {field}")
+    identities = inventory.get("identities")
+    if not isinstance(identities, list):
+        raise ValueError("generated API inventory identities must be an array")
+    previous: tuple[str, int] | None = None
+    for position, item in enumerate(identities):
+        if not isinstance(item, dict) or not isinstance(item.get("qualifiedName"), str) or not item["qualifiedName"].strip() or item.get("kind") not in KIND_ORDER:
+            raise ValueError(f"generated API inventory identity {position} is invalid")
+        key = (item["qualifiedName"], KIND_ORDER[item["kind"]])
+        if previous is not None and key <= previous:
+            raise ValueError("generated API inventory identities are not strictly sorted")
+        previous = key
+    if inventory.get("identityCount") != len(identities) or inventory.get("identityDigest") != inventory_digest(identities):
+        raise ValueError("generated API inventory identity digest is invalid")
+    for field in ("rawDeclarationCount", "sourceFileCount"):
+        if type(inventory.get(field)) is not int or inventory[field] < 0:
+            raise ValueError(f"generated API inventory {field} is invalid")
+    if inventory["rawDeclarationCount"] < inventory["identityCount"]:
+        raise ValueError("generated API inventory rawDeclarationCount is less than identityCount")
+    source_digests_value = inventory.get("sourceDigests")
+    if not isinstance(source_digests_value, dict) or inventory["sourceFileCount"] != len(source_digests_value):
+        raise ValueError("generated API inventory sourceDigests are invalid")
+    for locator, digest in source_digests_value.items():
+        if not isinstance(locator, str) or not locator.strip() or not is_sha256(digest):
+            raise ValueError("generated API inventory sourceDigests contain an invalid digest")
+
 def validate_index(index: dict[str, Any]) -> None:
     if not isinstance(index, dict):
         raise ValueError("generated index must be a JSON object")
@@ -611,12 +676,19 @@ def build(args: argparse.Namespace) -> int:
     if not paths:
         raise ValueError("no .pyi/.py sources found in configured source roots")
     raw = [symbol for spec, path in paths for symbol in AstExtractor(spec).extract_path(path)]
-    index, diagnostics = normalize(raw, metadata.get("sageVersion", args.sage_version), metadata.get("pythonVersion", args.python_version), metadata)
+    sage_version = metadata.get("sageVersion", args.sage_version)
+    python_version = metadata.get("pythonVersion", args.python_version)
+    inventory = build_inventory(raw, sage_version, python_version, metadata)
+    index, diagnostics = normalize(raw, sage_version, python_version, metadata)
     if metadata:
         validate_source_contract(index, metadata)
     validate_index(index)
+    validate_inventory(inventory)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if args.inventory_output:
+        args.inventory_output.parent.mkdir(parents=True, exist_ok=True)
+        args.inventory_output.write_text(json.dumps(inventory, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if args.raw_output:
         args.raw_output.parent.mkdir(parents=True, exist_ok=True)
         args.raw_output.write_text(json.dumps([{"qualifiedName": item.qualified_name, "kind": item.kind, "sources": [item.source.json()], "signatures": item.signatures, "parents": item.parents, "aliases": item.aliases, "dynamicity": item.dynamicity, "confidence": item.confidence} for item in raw], indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -628,7 +700,7 @@ def build(args: argparse.Namespace) -> int:
         previous = json.loads(args.previous.read_text(encoding="utf-8"))
         args.diff_output.parent.mkdir(parents=True, exist_ok=True)
         args.diff_output.write_text(json.dumps(diff_indexes(previous, index), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    summary = {"sources": len(paths), "rawSymbols": len(raw), "entries": len(index["entries"]), "diagnostics": len(diagnostics), "coverage": report["coverageRatio"], "missing": len(report["missing"])}
+    summary = {"sources": len(paths), "rawSymbols": len(raw), "entries": len(index["entries"]), "diagnostics": len(diagnostics), "coverage": report["coverageRatio"], "missing": len(report["missing"]), "inventoryEntries": inventory["identityCount"], "inventoryDigest": inventory["identityDigest"]}
     failures = gate_failures(report, args)
     if failures:
         summary["gateFailures"] = failures
@@ -648,6 +720,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--python-version", required=True)
     result.add_argument("--output", type=Path, required=True)
     result.add_argument("--raw-output", type=Path)
+    result.add_argument("--inventory-output", type=Path)
     result.add_argument("--expected", type=Path)
     result.add_argument("--coverage-output", type=Path)
     result.add_argument("--previous", type=Path)

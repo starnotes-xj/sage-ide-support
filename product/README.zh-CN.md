@@ -2,7 +2,7 @@
 
 ## 目的
 
-本目录记录如何把 `plugins/sage-core` 和未来的 `plugins/ctf-tools` 接入 IntelliJ Community 的独立产品构建。
+本目录记录如何把 `plugins/sage-core` 和已完成独立实现会话的 `plugins/ctf-tools`（含图形化 CTF Math Lab）接入 IntelliJ Community 的独立产品构建。
 
 当前阶段只建立**接入约定**，不复制 `G:\Projects\intellij-community-sage-pr` 的完整源码，也不把当前插件 Gradle 打包误称为完整 IDE 构建。
 
@@ -76,7 +76,7 @@ Windows 下 `gradlew.bat` 默认将 `GRADLE_USER_HOME` 放到仓库内的 ASCII 
 
 Community 产品 overlay、Sage product properties、Sage Core bundled plugin、Windows x64/aarch64 installer、sidecar、法律文件 overlay、x64 smoke 和 FinalCheck 已完成验证。
 
-尚未完成：Sage 全量 API/type index、类型传播和完整代码提示；Linux/macOS 产品包、跨平台开发实例矩阵、CTF tools 默认插件、Runtime Manager UI/SDK adapter、正式签名和许可证法律审批。Jupyter/Notebook 仅为后续可选兼容层。详见 [`docs/FEATURE-STATUS.zh-CN.md`](../docs/FEATURE-STATUS.zh-CN.md)。
+Runtime Manager 核心已由 `a2c7fdc` 进入 `main`；最新 CTF tools 位于 `parallel/ctf-mvp`（与 `integration/ctf-mvp` 共享基础 MVP 内容但不是其 Git 后继），仍待受控整合。Runtime Manager 仍需真实 Settings/Project SDK UI、WSL/Docker/SSH 端点和产品级 smoke；CTF 仍需默认插件/分发接入、live CyberChef-server/Math Lab ToolWindow 和完整产品验证。Sage 全量 API/type index、类型传播、完整代码提示、Linux/macOS 产品包、正式签名和许可证法律审批也尚未完成。Jupyter/Notebook 仅为后续可选兼容层。详见 [`docs/FEATURE-STATUS.zh-CN.md`](../docs/FEATURE-STATUS.zh-CN.md)。
 
 ## 首个接入任务
 
@@ -85,7 +85,8 @@ Community 产品 overlay、Sage product properties、Sage Core bundled plugin、
 - [x] 评估并记录 Python Core、Debugger、Git/Terminal 与可选 Jupyter 模块边界；
 - [x] 编写 Sage product properties；
 - [x] 编写产品 product layout；
-- [ ] 把 `ctf-tools` 加入默认插件列表（模块尚未实现）；
+- [x] 完成 `ctf-tools` 独立 MVP 实现会话；
+- [ ] 将 `ctf-tools` 受控加入默认插件列表并完成产品分发验收；
 - [x] 建立 staging build/verify scripts；
 - [x] 建立 Windows x64 installer smoke test；
 - [ ] 扩展并验证 Linux/macOS installers。

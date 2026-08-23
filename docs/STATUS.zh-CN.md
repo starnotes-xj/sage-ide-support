@@ -2,9 +2,9 @@
 
 ## 当前阶段
 
-P1 已完成主要 Community 产品接入与 Windows 双架构 hardened installer 验证；P2 CTF MVP 尚未实现。当前下一条核心产品主线是 SageMath 全量代码智能（API 索引、类型推断、补全和提示），Jupyter 降为后续可选兼容层。
+P1 已完成主要 Community 产品接入与 Windows 双架构 hardened installer 验证；Runtime Manager 核心已由 `a2c7fdc` 进入 main，CTF MVP/图形化 Math Lab 实现会话已完成，当前 CTF 主线整合与 Runtime/CTF 产品级端点/UI 验收按独立边界推进。下一条核心产品主线是 SageMath 全量代码智能（API 索引、类型推断、补全和提示），Jupyter 降为后续可选兼容层。
 
-**本轮状态同步（2026-08-22）**：已提交 `0871c81`、`1696048`，完成第一条可运行的数据驱动 Sage API 链路：版本化模型/normalizer、严格 JSON reader/loader、不可变 query、唯一 KNOWN factory return type、父类/别名成员闭包和矩阵成员补全消费。随后新增 `tools/sage-api-index/generate.py` 与高价值域 fixture，支持 AST 提取、canonical alias 归并、严格 contract validation、可组合 source manifest、coverage/diagnostics/diff；新增 Kotlin `SageApiIndexGenerator` 统一入口，并用 generated artifact 驱动 bundled resource。Python generator 9 项测试、core 20 项测试和 Sage Core Kotlin 编译均通过；当前 artifact 为 8 个 fixture source、45 entries，coverage 15/16（0.9375），不代表真实 Sage 全量覆盖。生成器 gate 默认拒绝 missing/conflict，允许通过显式 `--allow-missing`/`--allow-conflicts` 记录 fixture 或迁移例外，gate 失败仍会写出 index/coverage 审计产物并返回 exit code 3。
+**本轮状态同步（2026-08-23）**：Sage API 已完成 scoped sidecar/envelope 与独立 quality gate；真实 Sage 10.9 fresh LIVE imports 两次均 exit `0`，84159 entries、coverage `6/6`、`conflicts=0`，normalized artifacts 字节一致。Runtime Manager 核心提交 `a2c7fdc` 已进入 main；Runtime 核心交付签名 Catalog、已验证 mirror/cache、生命周期回滚、Settings/Project SDK binding、Native/WSL/Docker/SSH target-aware command/probe 与路径映射；旧完成会话删除前的 worktree fresh `:core:runtime:test -PrunRuntimeTests=true` 为 38 tests、0 failures/errors。CTF 实现会话最新位于 `parallel/ctf-mvp`（tip `62847f0`；与 `integration/ctf-mvp` tip `742aa3d` 共享基础 MVP 内容但不是其 Git 后继），交付独立 `plugins/ctf-tools`、challenge/profile/run history/evidence、flag scanner、Crypto/Encoding helpers、loopback CyberChef adapter、安全脚本执行和图形化 CTF Math Lab；Math Lab 覆盖群/环/域、椭圆曲线、RSA、DH、DES 的专用表单、预检、运算追踪、可视化、教学步骤和本地化。最新 worktree fresh `:core:model:test :plugins:ctf-tools:test :plugins:ctf-tools:buildPlugin -PrunModelTests=true -PrunCtfToolsTests=true` 为 `BUILD SUCCESSFUL`、15 suites/51 tests、0 failures/errors、exit `0`，plugin ZIP required libraries audit 通过。Runtime Manager 已由 `a2c7fdc` 进入 `main`；CTF 会话仍在独立 worktree，未宣称已合入 `main`。
 
 ### 本轮文档结论：未完成项与优先级
 
@@ -12,22 +12,22 @@ P1 已完成主要 Community 产品接入与 Windows 双架构 hardened installe
 
 1. **真实 Sage API 生成链路**：尚未从真实 Sage Runtime、`sage-pycharm-stubgen`、签名和文档生成全量、版本绑定的 index；当前 bundled JSON 只是矩阵回归 slice。
 2. **Sage IDE 智能闭环**：参数/文档提示、完整类型传播、项目/用户 stub 合并、跳转、source-map、重命名、诊断和 product-level completion/type integration tests 尚未完成。
-3. **插件测试工具链**：`plugins:sage-core` 测试被本地 PyCharm module descriptor 的 `module/namespace` 字段解析错误阻塞，尚未获得真实 completion/type integration 证据。
-4. **CTF MVP**：`plugins/ctf-tools`、Challenge Profile UI、flag 扫描、运行历史、evidence 和 Crypto/Encoding 工作区尚未实现。
-5. **Runtime Manager 产品闭环**：Catalog、Settings/Project SDK adapter、切换/移除 UX、签名 Catalog、远程/WSL/Docker target-aware probe 尚未完成。
+3. **插件测试工具链**：`plugins:sage-core` 的现有 completion/type 证据已恢复可运行，但真实 Sage 全量 index 驱动的 product-level completion/type integration 仍未完成。
+4. **Runtime Manager 产品验收**：核心已由 `a2c7fdc` 进入 `main`；仍需完成真实 IntelliJ Settings/Project SDK UI、并发/崩溃 fault-injection 与真实 WSL/Docker/SSH 端点验收。
+5. **CTF MVP/Math Lab 主线整合与产品验收**：实现会话已完成；仍需将独立 worktree 的 `plugins/ctf-tools`、Math Lab UI/model 与 `core:model` 扩展按受控范围整合到 `main`，再完成全产品默认插件/分发接入；live Node/CyberChef-server、Math Lab IDE live ToolWindow 和完整产品 smoke 仍未验证。
 6. **发行门**：Authenticode、SPDX `NOASSERTION`/WIP/`GPL-2.0` 法律审批、Linux/macOS 包、真实 arm64 主机 smoke、自动更新尚未完成。
 
-**当前正在推进的高价值目标：真实 Sage API index 生成流水线 + 可审计覆盖率报告。** 已新增 `tools/sage-api-index/generate.py`（Python 标准库 AST `.pyi`/`.py` extractor、稳定 index、coverage、diagnostics、diff）及高价值域 fixture/负例测试；同时新增 Kotlin `SageApiIndexGenerator` 作为现有 extractor/normalizer 的统一入口。
+**当前正在推进的高价值目标：保持 scoped Sage API index 质量门，完成 Runtime Manager 产品验收，并受控整合 CTF/Math Lab。** Sage API 生成、sidecar/envelope、coverage 和独立 quality gate 已有真实 10.9 evidence；Runtime Manager 核心已由 `a2c7fdc` 进入 `main`，但其 UI/端点/fault-injection 仍需验收；最新 CTF MVP/图形化 Math Lab 仍在隔离 worktree，下一步是逐项审阅差异后整合到 `main`，而不是把分支绿测直接当作主线 product/release 证据。
 
-选择理由：它是当前最高杠杆、最贴合产品核心差异化且能直接解锁后续类型传播/补全/参数/文档功能的基础设施；相比继续添加单个 Kotlin 特例或提前做 CTF UI，它能一次性扩大可用 API 面，并验证“数据驱动而非函数特例”的架构是否成立。
+选择理由：Sage API 质量门仍是核心差异化的最高杠杆；Runtime Manager 与 CTF/Math Lab 会话已各自完成实现，受控整合可以把已验证的运行时/解题/教学工作台能力带入主线，同时避免把独立 worktree 的局部证据夸大为完整产品或发行完成。
 
 下一阶段的可交付边界：
 
-- 固定首个支持矩阵（Sage 版本、Python 版本、stubgen/runtime 来源）；
-- 在 `tools/sage-api-index/` 建立可重复生成命令，输出 schema-validated JSON 和 coverage/diff report；
-- 首先覆盖真实 `sage.all`、matrix、vector、polynomial、finite field、number theory、crypto 等高价值域；
-- 为生成器写 fixture/golden/negative tests，并让 bundled index 由生成产物替换或明确标记为测试 fallback；
-- 以至少一个真实 Runtime 生成 artifact 驱动 `plugins:sage-core` completion/type integration test；
+- 保持首个支持矩阵（Sage 版本、Python 版本、stubgen/runtime 来源）与 sidecar/envelope provenance；
+- 保持 `tools/sage-api-index/` 的 schema-validated JSON、coverage/diff、独立 quality gate 和 no-`--allow-conflicts` 生成门；
+- Runtime Manager 核心已由 `a2c7fdc` 进入 `main`；只需继续补 Runtime 产品 UI/端点/fault-injection 验收；后续受控整合最新 `parallel/ctf-mvp`，`integration/ctf-mvp` 仅作为安全审计参考，不作为第二个合并来源；
+- 完成真实 IntelliJ Settings/Project SDK UI、WSL/Docker/SSH 端点、并发/崩溃 fault-injection、live CyberChef-server 和完整产品 smoke；
+- 首先覆盖真实 `sage.all`、matrix、vector、polynomial、finite field、number theory、crypto 等高价值域并推进全量 Sage 智能验收；
 - 保持 Unknown/Dynamic 安全边界，不在插件侧新增名称特例。
 
 功能实现矩阵与 Community/Pro 边界见 [`FEATURE-STATUS.zh-CN.md`](FEATURE-STATUS.zh-CN.md)。
@@ -57,8 +57,8 @@ P1 已完成主要 Community 产品接入与 Windows 双架构 hardened installe
 
 ## 当前仍需实现或验证
 
-- `plugins/ctf-tools`、CTF Profile UI、flag 扫描、运行历史和 evidence 工作流；
-- Runtime Manager Catalog、Settings/Project SDK adapter、切换/移除 UX 和签名 Catalog；
+- 将最新 `parallel/ctf-mvp` 按受控范围整合到已包含 Runtime Manager 核心的 `main`；对 `integration/ctf-mvp` 只做安全契约对照，不整体合并；
+- 真实 IntelliJ Settings/Project SDK UI、WSL/Docker/SSH 端点、并发/崩溃 fault-injection，以及 live CyberChef-server、Math Lab IDE live ToolWindow 和完整产品 smoke 验收；
 - Sage API 全量 index、类型传播、补全/参数/文档提示、source-map、doctest/test runner；Jupyter kernel 和富输出降为后续可选兼容层；
 - PCAP、二进制、GDB/LLDB 和 Web evidence adapters；
 - Linux/macOS 产品包、真实 arm64 主机 smoke、自动更新；

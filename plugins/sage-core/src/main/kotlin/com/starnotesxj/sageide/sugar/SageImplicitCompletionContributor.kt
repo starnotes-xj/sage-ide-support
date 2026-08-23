@@ -15,7 +15,7 @@ import com.intellij.patterns.PlatformPatterns
 import com.intellij.patterns.StandardPatterns
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
-import com.starnotesxj.sageide.completion.SageApiClassMembersProvider
+import com.starnotesxj.sageide.completion.SageApiIndexService
 import com.jetbrains.python.psi.PyImportStatementBase
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.jetbrains.python.psi.PyTargetExpression
@@ -83,56 +83,101 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                 ) {
                     val file = parameters.originalFile
                     if (!SageFileUtils.isSageFile(file)) return
-                    // An explicit sage.all import means ordinary Python
-                    // completion (star-import variants) already covers the
-                    // namespace; only fill the implicit namespace otherwise.
-                    if (SageFileUtils.hasExplicitSageAllImport(file)) return
-
                     val position = parameters.position
-                    val reference = PsiTreeUtil.getParentOfType(
-                        position,
-                        PyReferenceExpression::class.java,
-                    ) ?: PsiTreeUtil.getParentOfType(
-                        PsiTreeUtil.prevVisibleLeaf(position),
-                        PyReferenceExpression::class.java,
-                    ) ?: return
-                    // Only unqualified names: `RR` yes, `foo.RR` no (that is
-                    // member completion).  Skip assignment targets and import
-                    // statements, where the reference is not a name use.
-                    if (reference is PyTargetExpression) return
+                    // At the end of an identifier PyCharm may expose the file/leaf
+                    // at the caret rather than the reference itself. Probe the
+                    // current and preceding offsets so qualified completion works
+                    // for both B.det<caret> and an in-token caret.
+                    val probeOffset = (parameters.offset - 1)
+                        .coerceIn(0, (file.textLength - 1).coerceAtLeast(0))
+                    val reference = sequenceOf(
+                        PsiTreeUtil.getParentOfType(position, PyReferenceExpression::class.java),
+                        PsiTreeUtil.getParentOfType(
+                            PsiTreeUtil.prevVisibleLeaf(position),
+                            PyReferenceExpression::class.java,
+                        ),
+                        // Completion may place the caret on a file/error leaf at EOF;
+                        // recover a reference from the current insertion boundary.
+                        file.findElementAt(probeOffset)
+                            ?.let { PsiTreeUtil.getParentOfType(it, PyReferenceExpression::class.java) },
+                    ).filterNotNull().firstOrNull()
+                    // Completion may expose a file/error leaf at EOF. If the
+                    // direct PSI walk did not find the member reference, use the
+                    // nearest qualified reference that begins before the completion
+                    // offset; this mirrors the reference selected by Python's own
+                    // qualified completion path.
+                    val completionReference = reference ?: PsiTreeUtil
+                        .collectElementsOfType(file, PyReferenceExpression::class.java)
+                        .asSequence()
+                        .filter { candidate ->
+                            candidate.isQualified &&
+                                candidate.textRange.startOffset <= parameters.offset &&
+                                candidate.textRange.endOffset >= parameters.offset - 1
+                        }
+                        .maxByOrNull { it.textRange.startOffset }
+                    // A caret in a newly typed bare identifier can have no
+                    // reference PSI yet. The external index must still supply
+                    // root candidates; only qualified/member cases require a
+                    // resolved reference and type.
+                    if (completionReference != null && completionReference is PyTargetExpression) return
                     if (PsiTreeUtil.getParentOfType(position, PyImportStatementBase::class.java) != null) return
 
-                    if (reference.isQualified) {
-                        val qualifier = reference.qualifier ?: return
-                        val typeContext = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(
+                    if (completionReference?.isQualified == true) {
+                        val qualifier = completionReference.qualifier ?: return
+                        val typeContext = com.jetbrains.python.psi.types.TypeEvalContext.codeCompletion(
                             position.project,
                             file,
                         )
                         val qualifierType = typeContext.getType(qualifier)
                             as? com.jetbrains.python.psi.types.PyClassType
-                            ?: return
-                        val members = SageApiClassMembersProvider()
-                            .getMembers(qualifierType, file, typeContext)
-                        for (member in members) {
-                            if (!result.prefixMatcher.prefixMatches(member.name)) continue
-                            result.addElement(LookupElementBuilder.create(member.name))
+                        if (qualifierType != null) {
+                            // Delegate qualified member completion to the same
+                            // Python type path used by PyQualifiedReference. It
+                            // carries the real completion context and invokes
+                            // every registered PyClassMembersProvider, including
+                            // Sage indexed members.
+                            val variants = qualifierType.getCompletionVariants(
+                                completionReference.name,
+                                completionReference,
+                                ProcessingContext(),
+                            )
+                            val referenceRange = completionReference.reference.rangeInElement
+                            val offsetInElement =
+                                (parameters.offset - completionReference.textRange.startOffset)
+                                    .coerceIn(referenceRange.startOffset, referenceRange.endOffset)
+                            val memberPrefix = completionReference.text.substring(
+                                referenceRange.startOffset,
+                                offsetInElement,
+                            )
+                            val memberResult = result.withPrefixMatcher(memberPrefix)
+                            for (variant in variants) {
+                                if (variant is LookupElement) memberResult.addElement(variant)
+                            }
                         }
                         return
                     }
 
+                    // Explicit sage.all imports already participate in Python's
+                    // normal root completion. Keep this contributor additive there,
+                    // while qualified members above still use the Sage provider.
+                    if (SageFileUtils.hasExplicitSageAllImport(file)) return
+
                     val prefix = result.prefixMatcher.prefix
                     if (prefix.isEmpty()) {
-                        // Offer the namespace only once there is something to
-                        // match — the list has ~1300 entries.
+                        // With an empty prefix, let the platform decide whether
+                        // to show the large namespace; a subsequent typed prefix
+                        // invocation still applies the same exact matcher.
                         result.restartCompletionOnPrefixChange(StandardPatterns.string().longerThan(0))
-                        return
                     }
                     // Cold cache would need the stub indexes, which are
-                    // unavailable while the IDE is indexing.
-                    if (DumbService.isDumb(position.project)) return
-
-                    for ((name, element) in SageStubIndex.collectSageAllDeclarations(position.project)) {
+                    // unavailable while the IDE is indexing. The authoritative
+                    // external namespace remains usable during that phase; skip
+                    // only the optional PSI-backed candidates.
+                    val emittedNames = linkedSetOf<String>()
+                    if (!DumbService.isDumb(position.project)) {
+                        for ((name, element) in SageStubIndex.collectSageAllDeclarations(position.project)) {
                         if (!result.prefixMatcher.prefixMatches(name)) continue
+                        emittedNames += name
                         val validElement = element?.takeIf { it.isValid }
                         // From-import aliases (factor, ECM, Integer, ...) are
                         // followed to their REAL declaration so the entry
@@ -159,6 +204,22 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         builder = builder.withTypeText("sage.all")
                         val callable = SageStubIndex.isCallableDeclaration(position.project, name, validElement)
                         if (callable) {
+                            builder = builder.withInsertHandler(SageParensInsertHandler)
+                        }
+                        result.addElement(builder)
+                        }
+                    }
+
+                    // The stub PSI index gives rich navigation when stubs are attached,
+                    // but it may expose only a subset of a configured full artifact.
+                    // Add the remaining immutable `sage.all` namespace identities from
+                    // the validated external index without fabricating PSI targets.
+                    for (entry in SageApiIndexService.getInstance().query()?.namespaceEntries("sage.all").orEmpty()) {
+                        val name = entry.qualifiedName.substringAfterLast('.')
+                        if (name in emittedNames || !result.prefixMatcher.prefixMatches(name)) continue
+                        var builder = LookupElementBuilder.create(name).withTypeText("sage.all")
+                        if (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION ||
+                            entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CLASS) {
                             builder = builder.withInsertHandler(SageParensInsertHandler)
                         }
                         result.addElement(builder)

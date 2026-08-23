@@ -10,7 +10,7 @@ This repository is the standalone product line. The existing JetBrains plugin re
 
 ## Current status
 
-The repository is at **P1: Community product integration and SageMath Runtime Manager foundation**. The current source under `plugins/sage-core` is a migration baseline copied from the existing SageMath JetBrains plugin; `core/runtime` provides the local ZIP install/verification foundation. The next primary product track is versioned Sage API indexing, type inference, completion, signatures, documentation, navigation, and source maps. Jupyter remains an optional compatibility layer. It is not yet a finished standalone installer.
+The repository has completed the Community product integration baseline and has Runtime Manager core integration on `main` via `a2c7fdc`. The latest CTF MVP plus graphical Math Lab work remains on `parallel/ctf-mvp`; `integration/ctf-mvp` is an independent earlier MVP/security reference, not its Git ancestor. Runtime Manager still needs product-level UI/endpoint validation; CTF still needs controlled integration into `main` and product-level validation. The next primary product track remains versioned Sage API indexing, type inference, completion, signatures, documentation, navigation, and source maps. Jupyter remains an optional compatibility layer. This is not yet a finished standalone installer.
 
 Read first:
 
@@ -40,7 +40,7 @@ The standalone product build is intentionally introduced in stages:
 
 - `core:model`: platform-independent execution and CTF contracts;
 - `plugins:sage-core`: migrated Sage language/runtime plugin and future Sage intelligence host;
-- `plugins:ctf-tools`: planned CTF workflow plugin;
+- `plugins:ctf-tools`: completed CTF MVP and graphical Math Lab implementation session; controlled `main` integration and product distribution validation remain;
 - `product`: Community IntelliJ product overlay and installer entry points, with further cross-platform work pending.
 
 The first implementation milestone establishes the Gradle module graph and core tests. The full IntelliJ Community product build is driven by the pinned upstream checkout described in [`product/README.zh-CN.md`](product/README.zh-CN.md), not by copying the upstream source into this repository.

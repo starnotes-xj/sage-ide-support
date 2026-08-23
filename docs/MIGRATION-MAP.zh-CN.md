@@ -9,7 +9,7 @@
 
 ## 当前迁移内容
 
-> 当前实际状态：Sage Core 语言/运行基线已迁移并通过构建/测试；`core:model` 与 `core:runtime` 基础已存在。`core:sage-api` 与 `plugins:sage-core` 已形成第一条可运行的数据驱动 API 链路（版本化 index、严格 loader/query、factory return type、父类/别名成员补全），但仍是最小矩阵 slice；真实 Sage Runtime/`sage-pycharm-stubgen` 全量生成、类型传播扩展、完整补全/提示、source-map、CTF Profile UI、CTF 工具、运行历史/evidence 和完整 Runtime Manager 仍待实现。完整矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
+> 当前实际状态：Sage Core 语言/运行基线已迁移并通过构建/测试；`core:sage-api` 与 `plugins:sage-core` 已形成 scoped 数据驱动 API 链路。Runtime Manager 核心已由 `a2c7fdc` 进入 `main`；CTF MVP/图形化 Math Lab 实现会话仍在独立 worktree，主线整合、产品 UI/真实端点和分发验收按独立边界推进。完整矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
 
 | 源能力 | 当前来源 | 目标位置 | 状态 |
 |---|---|---|---|
@@ -19,9 +19,9 @@
 | Native/WSL/Docker 运行 | `src/main/kotlin/.../run` | `plugins/sage-core/...` | 已迁移基线 |
 | Sage 模板、图标、plugin.xml | `src/main/resources` | `plugins/sage-core/src/main/resources` | 已迁移基线 |
 | 平台测试和 testData | `src/test` | `plugins/sage-core/src/test` | 已迁移基线 |
-| 运行目标模型 | `core:model` 已有基础契约；IntelliJ adapter 仍在插件侧 | `core/model` + product adapter | 部分完成 |
-| CTF project profile | `core:model` 已有基础数据类；UI/持久化未完成 | `core/model` + `plugins/ctf-tools` | 部分完成 |
-| CTF 运行记录和 flag 扫描 | 尚无产品实现 | `core/runtime` + `plugins/ctf-tools` | 待实现 |
+| 运行目标模型 | Runtime Manager 核心已由 `a2c7fdc` 进入 main，补齐 Catalog、生命周期、SDK binding、target-aware probe 和路径映射；真实 UI/端点待完成 | `core:model` + `core:runtime` + product adapter | 核心进入 main，产品验收待完成 |
+| CTF project profile + Math Lab | CTF 会话已补齐 project/challenge/profile、notes、payload、solve scripts、UI 模型和图形化 Math Lab（群/环/域、ECC、RSA、DH、DES）；主线整合待完成 | `core/model` + `plugins/ctf-tools` | 实现会话完成，主线整合待完成 |
+| CTF 运行记录和 flag 扫描 | CTF 会话已补齐 bounded execution、flag scanner、run history、evidence、Crypto/Encoding helpers、loopback CyberChef adapter 和脚本安全边界 | `core/runtime` + `plugins/ctf-tools` | 实现会话完成，产品/分发验收待完成 |
 | 独立产品品牌和默认插件 | Community overlay 和 Sage properties 已接入；跨平台/Pro 未完成 | `product` / Community overlay | Community 已完成主要接入 |
 
 ## 迁移纪律
@@ -86,14 +86,14 @@ Sage core 成为 SageMath CTF IDE 的默认插件，用户无需从 Marketplace 
 
 ## 当前完成度与下一步
 
-P0 基础骨架和 M0–M4 的主要代码/构建接入已完成；M5 的 Windows x64/aarch64 构建、x64 smoke 和 FinalCheck 已验证，但签名、法律审批、Linux/macOS 和 arm64 主机验收仍未完成。P2 CTF MVP 尚未完成。
+P0 基础骨架和 M0–M4 的主要代码/构建接入已完成；Runtime Manager 核心已由 `a2c7fdc` 进入 main，CTF MVP/图形化 Math Lab 实现会话已完成并通过定向验证；M5 的 Windows x64/aarch64 构建、x64 smoke 和 FinalCheck 已验证，但签名、法律审批、Linux/macOS 和 arm64 主机验收仍未完成。
 
 下一步：
 
-1. 冻结 Sage/Python 支持版本，实现 API extractor、版本化 index、覆盖率报告和增量更新；
-2. 实现 Sage 类型传播、补全/参数/文档提示、跳转和 source-map 验收；
-3. 完成 Runtime Manager Catalog、Settings/Project SDK adapter 和 Native/WSL/Docker 统一验证；
-4. 创建 `plugins/ctf-tools`，实现 CTF Profile UI、flag 扫描、运行历史、evidence 和 Crypto/Encoding MVP；
+1. 保持 Sage/Python 支持版本与 API index sidecar/quality gate 的可审计生成；
+2. Runtime Manager 核心已由 `a2c7fdc` 进入 `main`；后续只受控整合最新 `parallel/ctf-mvp`；`integration/ctf-mvp` 仅作为安全审计参考，不作为第二个合并来源，逐项保留其测试与安全边界；
+3. 验收真实 IntelliJ Settings/Project SDK UI、WSL/Docker/SSH 端点、并发/崩溃 fault-injection，以及 live CyberChef-server、Math Lab IDE live ToolWindow/完整产品 smoke；
+4. 实现 Sage 类型传播、补全/参数/文档提示、跳转和 source-map 验收；
 5. 补 doctest、PCAP、二进制、GDB/LLDB，最后再处理可选 Jupyter、签名、法律审批、Linux/macOS、自动更新和 Pro 产品线。
 
 详细状态见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。

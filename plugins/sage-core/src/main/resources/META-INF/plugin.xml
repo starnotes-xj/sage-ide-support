@@ -237,23 +237,19 @@
     <!-- Common Sage constructs as live templates (polynomial ring, number field, ...). -->
     <defaultLiveTemplates file="liveTemplates/Sage.xml"/>
 
-    <!-- Implicit sage.all namespace completion for .sage files WITHOUT an
-         explicit `from sage.all import ...` (see SageImplicitCompletionContributor
-         for the full root-cause write-up: PyCharm's own importable-name
-         completion excludes .pyi stubs, so RR/Mod — declared only in the
-         generated stubs — never completed while CC/QQ/ZZ did via their real
-         .py bridge/source files).
-
-         WHY language="Python": every Python PSI element type reports
-         PythonLanguage, so completion contributors are collected per the
-         language at the caret — which is PYTHON even in .sage files.  A
-         contributor registered for the Sage dialect would never be consulted
-         (the v1.6.0 postfix-popup trap).  The provider gates on the
-         containing file being a .sage file, so plain .py files are
-         untouched. -->
+    <!-- Implicit sage.all namespace and qualified member completion for .sage files.
+         Python PSI uses PythonLanguage even inside the Sage file type, so only
+         the Python registration participates in completion dispatch. The
+         provider itself gates on the containing file being .sage. -->
     <completion.contributor language="Python"
                             order="first"
                             implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
+
+    <!-- Index-backed Quick Documentation supplements Python's native provider only
+         for Sage source files and installed Sage SDK stubs. -->
+    <lang.documentationProvider language="Python"
+                                implementationClass="com.starnotesxj.sageide.completion.SageApiDocumentationProvider"
+                                order="first"/>
 
     <!-- "New -> SageMath -> Sage File" in the project view: the fileTemplates/
          resource "Sage File.sage.ft" is loaded as a default template by the

@@ -238,8 +238,15 @@ class ImportWslArtifactTest(unittest.TestCase):
                 )
                 index_path = Path(command[command.index("--output") + 1])
                 raw_path = Path(command[command.index("--raw-output") + 1])
-                index_path.write_text("{}", encoding="utf-8")
+                index_path.write_text(json.dumps({
+                    "schemaVersion": 1, "sageVersion": "10.9", "pythonVersion": "3.13",
+                    "generatorVersion": "test-generator/1", "sourceDigests": {}, "entries": [],
+                }), encoding="utf-8")
                 raw_path.write_text("{}", encoding="utf-8")
+                inventory_path = Path(command[command.index("--inventory-output") + 1])
+                manifest = json.loads(Path(command[command.index("--source-manifest") + 1]).read_text(encoding="utf-8"))
+                source = manifest["sources"][0]
+                inventory_path.write_text(json.dumps({"schemaVersion": 1, "basis": "RAW_AST_DECLARATIONS", "sageVersion": "10.9", "pythonVersion": "3.13", "generatorVersion": "test-generator/1", "rawDeclarationCount": 0, "identityCount": 0, "identities": [], "identityDigest": importer.inventory_identity_digest([]), "sourceFileCount": source["fileCount"], "sourceDigests": {source["locator"] + "/" + path: digest for path, digest in source["fileDigests"].items()}}), encoding="utf-8")
                 return mock.Mock(returncode=0, stdout='{"entries": 0, "diagnostics": 0, "coverage": 1.0, "missing": 0}\n', stderr="")
 
             with (
@@ -435,8 +442,27 @@ class ImportWslArtifactTest(unittest.TestCase):
         if write_outputs:
             coverage_path.parent.mkdir(parents=True, exist_ok=True)
             coverage_path.write_text(json.dumps(coverage), encoding="utf-8")
-            index_path.write_text("{}", encoding="utf-8")
+            index_path.write_text(json.dumps({
+                "schemaVersion": 1,
+                "sageVersion": "10.9",
+                "pythonVersion": "3.13",
+                "generatorVersion": "test-generator/1",
+                "sourceDigests": {},
+                "entries": [],
+            }), encoding="utf-8")
             raw_path.write_text("{}", encoding="utf-8")
+            inventory_path = Path(command[command.index("--inventory-output") + 1])
+            manifest = json.loads(Path(command[command.index("--source-manifest") + 1]).read_text(encoding="utf-8"))
+            source = manifest["sources"][0]
+            inventory_path.write_text(json.dumps({
+                "schemaVersion": 1, "basis": "RAW_AST_DECLARATIONS",
+                "sageVersion": "10.9", "pythonVersion": "3.13",
+                "generatorVersion": "test-generator/1", "rawDeclarationCount": 0,
+                "identityCount": 0, "identities": [],
+                "identityDigest": importer.inventory_identity_digest([]),
+                "sourceFileCount": source["fileCount"],
+                "sourceDigests": {source["locator"] + "/" + path: digest for path, digest in source["fileDigests"].items()},
+            }), encoding="utf-8")
         return mock.Mock(returncode=0, stdout='{"entries": 0, "diagnostics": 0, "coverage": 1.0, "missing": 0}\n', stderr="")
 
     def test_expected_contract_is_fail_closed_before_generator(self):
@@ -556,6 +582,32 @@ class ImportWslArtifactTest(unittest.TestCase):
             self.assertEqual(receipt["coverage"]["missingCount"], 0)
             self.assertEqual(receipt["coverage"]["coverageRatio"], 1.0)
             self.assertTrue(receipt["coverage"]["isComplete"])
+            self.assertEqual(receipt["envelope"]["schemaVersion"], 1)
+            envelope_path = root / "out" / "sage-api-index-envelope.json"
+            self.assertTrue(envelope_path.is_file())
+            envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+            receipt_path = root / "out" / "artifact-receipt.json"
+            self.assertNotIn("digest", envelope["artifactReceipt"])
+            self.assertEqual(receipt["envelope"]["digest"], importer.sha256(envelope_path))
+
+    def test_quality_contract_checks_selected_index_fields_and_sidecar(self):
+        contract_path = Path(__file__).resolve().parent / 'expected-sage-10.9.json'
+        index_path = Path(__file__).resolve().parents[2] / 'build' / 'sage-api-real' / 'integration-recheck-1' / 'index.json'
+        contract = json.loads(contract_path.read_text(encoding='utf-8'))
+        index = importer.read_index(index_path)
+        quality = importer.validate_index_quality(index, contract)
+        self.assertEqual(quality['checkedCount'], 6)
+        self.assertEqual(quality['contractVersion'], 1)
+        self.assertEqual([item['qualifiedName'] for item in quality['checked']], sorted(item['qualifiedName'] for item in contract['quality']))
+
+    def test_quality_contract_rejects_source_digest_drift(self):
+        contract_path = Path(__file__).resolve().parent / 'expected-sage-10.9.json'
+        index_path = Path(__file__).resolve().parents[2] / 'build' / 'sage-api-real' / 'integration-recheck-1' / 'index.json'
+        contract = json.loads(contract_path.read_text(encoding='utf-8'))
+        index = importer.read_index(index_path)
+        contract['quality'][0]['source']['digest'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'quality source mismatch'):
+            importer.validate_index_quality(index, contract)
 
     def test_zero_generator_returncode_with_missing_outputs_persists_failed_receipt(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -597,7 +649,10 @@ class ImportWslArtifactTest(unittest.TestCase):
                     "expectedCount": 0, "coveredCount": 0, "coverageRatio": 1.0,
                     "isComplete": False, "diagnostics": [],
                 }), encoding="utf-8")
-                Path(command[command.index("--output") + 1]).write_text("{}", encoding="utf-8")
+                Path(command[command.index("--output") + 1]).write_text(json.dumps({
+                    "schemaVersion": 1, "sageVersion": "10.9", "pythonVersion": "3.13",
+                    "generatorVersion": "test-generator/1", "sourceDigests": {}, "entries": [],
+                }), encoding="utf-8")
                 Path(command[command.index("--raw-output") + 1]).write_text("{}", encoding="utf-8")
                 return mock.Mock(returncode=0, stdout='{"entries": 0, "diagnostics": 0, "coverage": 1.0, "missing": 0}\n', stderr="")
             base = dict(

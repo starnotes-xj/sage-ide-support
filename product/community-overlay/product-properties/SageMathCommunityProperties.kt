@@ -6,6 +6,8 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.plus
 import kotlinx.collections.immutable.toPersistentList
+import com.intellij.platform.buildScripts.licenses.SoftwareBillOfMaterials
+import com.intellij.platform.buildScripts.licenses.SoftwareBillOfMaterials.Companion.Suppliers
 import org.jetbrains.intellij.build.ApplicationInfoProperties
 import org.jetbrains.intellij.build.BuildContext
 import org.jetbrains.intellij.build.FileAssociation
@@ -70,6 +72,14 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
     mavenArtifacts.forIdeModules = true
     additionalVmOptions = persistentListOf("-Dllm.show.ai.promotion.window.on.start=false")
     qodanaProductProperties = QodanaProductProperties("QDPYC", "Qodana Community for Python")
+    sbomOptions.creator = "Organization: SageMath CTF IDE contributors"
+    sbomOptions.license = SoftwareBillOfMaterials.Options.DistributionLicense(
+      name = "Apache-2.0",
+      text = "Apache License, Version 2.0",
+      url = "https://www.apache.org/licenses/LICENSE-2.0",
+      copyrightText = "Copyright 2026 SageMath CTF IDE contributors",
+    )
+    sbomOptions.documentNamespace = "https://sagemath-ctf-ide.invalid/spdx"
   }
 
   override fun getProductContentDescriptor(): ProductModulesContentSpec = productModules {
@@ -117,6 +127,7 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
     fileAssociations = SUPPORTED_FILE_EXTENSIONS
     fullName { "SageMath CTF IDE Community" }
     installDirNameHandler { "SageMath CTF IDE" }
+    useBigNsisInstaller = true
     copyAdditionalFiles { targetDir, _, context ->
       PyCharmBuildUtils.copySkeletons(context, targetDir, "skeletons-win*.zip")
       // Windows OS-specific distributions do not inherit ProductProperties.copyAdditionalFiles(distAllDir).

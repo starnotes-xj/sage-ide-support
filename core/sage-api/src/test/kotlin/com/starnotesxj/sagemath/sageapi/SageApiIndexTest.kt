@@ -101,6 +101,28 @@ class SageApiIndexTest {
     }
 
     @Test
+    fun namespaceEntryScopesDirectExportsBeforeGlobalShortNameResolution() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "fixtures/sage/all.pyi")
+        val other = SageApiSourceRef(SageApiSourceKind.STUB, "fixtures/sage/other.pyi")
+        val index = SageApiIndex(
+            sageVersion = "10.6",
+            pythonVersion = "3.11",
+            entries = listOf(
+                SageApiEntry("sage.all.AffineSpace", SageApiSymbolKind.FUNCTION, sources = listOf(source)),
+                SageApiEntry("sage.other.AffineSpace", SageApiSymbolKind.FUNCTION, sources = listOf(other)),
+                SageApiEntry("sage.all.Duplicate", SageApiSymbolKind.FUNCTION, sources = listOf(source)),
+                SageApiEntry("sage.all.Duplicate", SageApiSymbolKind.ALIAS, sources = listOf(source)),
+            ),
+        )
+        val query = SageApiIndexQuery(index)
+
+        assertEquals("sage.all.AffineSpace", query.namespaceEntry("sage.all", "AffineSpace")?.qualifiedName)
+        assertEquals("sage.other.AffineSpace", query.namespaceEntry("sage.other", "AffineSpace")?.qualifiedName)
+        assertEquals(null, query.resolve("AffineSpace"))
+        assertEquals(null, query.namespaceEntry("sage.all", "Duplicate"))
+    }
+
+    @Test
     fun generatedArtifactRoundTripsThroughKotlinReaderAndKeepsAliases() {
         val artifact = SageApiIndexJsonReader.read(
             requireNotNull(javaClass.classLoader.getResourceAsStream("sage-api-index.json"))
@@ -113,6 +135,15 @@ class SageApiIndexTest {
         assertEquals("sage.matrix.matrix.Matrix", query.resolveKnownClassName("sage.all.Matrix"))
         assertEquals("sage.matrix.matrix.Matrix", query.uniqueKnownReturnType("sage.all.matrix")?.expression)
         assertTrue(query.members("sage.matrix.matrix.Matrix").any { it.qualifiedName.endsWith("solve_right") })
+        assertEquals("sage.matrix.matrix.Matrix", query.signatures("sage.matrix.matrix.Matrix.solve_right").single().returnType.expression)
+        assertEquals(
+            listOf("Integer", "Matrix", "matrix"),
+            query.moduleEntries("sage.matrix.matrix").map { it.qualifiedName.substringAfterLast('.') },
+        )
+        assertEquals(
+            query.moduleEntries("sage.matrix.matrix"),
+            query.moduleEntries("sage.matrix.matrix"),
+        )
     }
 
     @Test
@@ -456,6 +487,20 @@ class SageApiIndexTest {
         assertEquals("sage.matrix.matrix.Matrix", query.uniqueKnownReturnType("sage.matrix.matrix")?.expression)
         assertEquals(setOf("solve_right", "determinant"), query.members("sage.matrix.matrix.Matrix").map { it.qualifiedName.substringAfterLast('.') }.toSet())
         assertEquals(SageApiSymbolKind.METHOD, query.members("sage.matrix.matrix.Matrix", "solve_right").single().kind)
+    }
+
+    @Test
+    fun moduleEntriesUseIndexedOwnerMapAndKeepExportOrdering() {
+        val module = SageApiEntry("sage.demo", SageApiSymbolKind.MODULE)
+        val function = SageApiEntry("sage.demo.make", SageApiSymbolKind.FUNCTION)
+        val klass = SageApiEntry("sage.demo.Matrix", SageApiSymbolKind.CLASS)
+        val member = SageApiEntry("sage.demo.Matrix.solve", SageApiSymbolKind.METHOD)
+        val query = SageApiIndexQuery(SageApiIndex("10.6", "3.11", listOf(member, klass, function, module)))
+
+        assertEquals(listOf("Matrix", "make"), query.moduleEntries("sage.demo").map { it.qualifiedName.substringAfterLast('.') })
+        assertEquals(listOf("Matrix", "make"), query.entriesOwnedBy("sage.demo").map { it.qualifiedName.substringAfterLast('.') })
+        assertEquals(listOf("solve"), query.members("sage.demo.Matrix").map { it.qualifiedName.substringAfterLast('.') })
+        assertEquals(query.moduleEntries("sage.demo"), query.moduleEntries("sage.demo"))
     }
 
     @Test

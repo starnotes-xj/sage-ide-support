@@ -94,10 +94,6 @@ class SageTypeProvider : PyTypeProviderBase() {
             val sugarResult = RecursionManager.doPreventingRecursion(target, true) {
                 val info = SageSugarAnalyzer.analyze(statement) ?: return@doPreventingRecursion null
                 val factoryType = factoryType(statement, info, context)
-                LOG.warn(
-                    "Sage: sugar target '${target.name}' factoryTarget='${info.factoryTarget.name}' " +
-                        "factoryType=${factoryType?.renderTypeName() ?: "null"} call=${info.call?.text?.take(60)}",
-                )
                 if (factoryType == null) return@doPreventingRecursion null
 
                 val type: PyType? = when {
@@ -125,18 +121,29 @@ class SageTypeProvider : PyTypeProviderBase() {
         val call = target.findAssignedValue() as? PyCallExpression ?: return null
         if (!SageFileUtils.isSageFile(target.containingFile)) return null
         val query = SageApiIndexService.getInstance().query() ?: return null
+
+        val implicitQualifiedNames = call.callee?.name?.let { name ->
+            if (SageStubIndex.findDeclaration(target.project, name) != null &&
+                query.find("sage.all.$name", com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION) != null
+            ) listOf("sage.all.$name") else emptyList()
+        }.orEmpty()
         val resolvedNames = (call.multiResolveCalleeFunction(
             com.jetbrains.python.psi.resolve.PyResolveContext.defaultContext(context),
-        ).mapNotNull(PyCallable::getQualifiedName) + listOfNotNull(call.callee?.name))
+        ).mapNotNull(PyCallable::getQualifiedName) + implicitQualifiedNames + listOfNotNull(call.callee?.name))
             .distinct()
         val qualifiedName = resolvedNames.singleOrNull()
             ?: resolvedNames.firstOrNull { query.uniqueKnownReturnType(it) != null }
             ?: return null
-        val returnName = query.uniqueKnownReturnType(qualifiedName)?.expression ?: return null
-        val className = query.resolveKnownClassName(returnName) ?: return null
+        val returnName = query.uniqueKnownReturnType(qualifiedName)?.expression ?: run {
+            return null
+        }
+        val className = query.resolveKnownClassName(returnName) ?: run {
+            return null
+        }
         val cls = SageStubIndex.findClass(target.project, className.substringAfterLast('.'))
+
         if (cls != null) {
-            if (cls.qualifiedName != null && cls.qualifiedName != className) return null
+            if (SageStubIndex.canonicalQualifiedName(cls) != className) return null
             if (!cls.isValid) return null
             return Ref.create(PyClassTypeImpl(cls, false))
         }
@@ -155,9 +162,6 @@ class SageTypeProvider : PyTypeProviderBase() {
         if (!cls.isValid) return null
         return Ref.create(PyClassTypeImpl(cls, false))
     }
-
-    private fun PyType.renderTypeName(): String =
-        (this as? PyClassType)?.name ?: this.javaClass.simpleName
 
     private fun factoryType(
         statement: PyAssignmentStatement,
@@ -215,6 +219,5 @@ class SageTypeProvider : PyTypeProviderBase() {
     companion object {
         private val FACTORY_TYPE_KEY = Key.create<PyType>("sageide.sugar.factoryType")
 
-        private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(SageTypeProvider::class.java)
     }
 }

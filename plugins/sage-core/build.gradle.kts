@@ -61,4 +61,7 @@ intellijPlatform {
 
 tasks.test {
     enabled = providers.gradleProperty("runSageCoreTests").map(String::toBoolean).orElse(false).get()
+    providers.gradleProperty("sage.external.fullIndex").orNull?.let { path ->
+        systemProperty("sage.external.fullIndex", path)
+    }
 }

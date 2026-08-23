@@ -41,6 +41,11 @@ $env:USERNAME = 'sagebuild'
 $env:SAGEMATH_PLUGIN_PATH = if ($LegacyExternalPlugin -and $PluginPath) { $PluginPath } else { '' }
 $env:SAGEMATH_BAZEL_ASCII_ROOT = $nestedBazelRoot
 $env:SAGEMATH_BAZEL_WORKSPACE_ROOT = $stage
+# Product builds invoke a second Bazel process for bundled plugins. Bazel
+# rejects being launched from an output-tree cwd, so force that child back to
+# the staged workspace rather than inheriting the product builder's execroot.
+$env:BUILD_WORKSPACE_DIRECTORY = $stage
+$env:BUILD_WORKING_DIRECTORY = $stage
 $env:BAZEL_SH = 'C:\WINDOWS\system32\bash.exe'
 
 $bazel = Join-Path $stage 'bazel.cmd'

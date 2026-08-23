@@ -407,6 +407,40 @@ object SageStubIndex {
     }
 
     /**
+     * Returns the canonical Sage owner name for a stub class.
+     *
+     * IntelliJ normally fills [PyClass.qualifiedName], but light PSI fixtures and
+     * some generated `.pyi` trees can leave it null even though the class is a
+     * valid indexed declaration.  The Sage stub path is authoritative in that
+     * case: `site-packages/sage/rings/real_mpfr.pyi` plus `RealField_class`
+     * denotes `sage.rings.real_mpfr.RealField_class`.
+     */
+    fun canonicalQualifiedName(pyClass: PyClass): String? {
+        pyClass.qualifiedName?.takeIf { it.isNotBlank() }?.let { return it }
+        val file = safeContainingFile(pyClass) ?: return null
+        val path = file.virtualFile?.path?.replace('\\', '/') ?: return null
+        val marker = "/site-packages/sage/"
+        val markerStart = path.lastIndexOf(marker)
+        val relative = if (markerStart >= 0) {
+            path.substring(markerStart + marker.length)
+        } else if (path.startsWith("/src/site-packages/sage/")) {
+            path.removePrefix("/src/site-packages/sage/")
+        } else {
+            return null
+        }
+        val modulePath = when {
+            relative.endsWith(".pyi") -> relative.removeSuffix(".pyi")
+            relative.endsWith(".py") -> relative.removeSuffix(".py")
+            else -> return null
+        }
+        val components = modulePath.split('/').filter { it.isNotBlank() }
+        if (components.isEmpty()) return null
+        val moduleComponents = if (components.last() == "__init__") components.dropLast(1) else components
+        val className = pyClass.name?.takeIf { it.isNotBlank() } ?: return null
+        return (listOf("sage") + moduleComponents + className).joinToString(".")
+    }
+
+    /**
      * Finds a class declaration by its simple name in the installed Sage stub tree.
      * Positive results are cached per name (same policy as [findDeclaration]).
      */

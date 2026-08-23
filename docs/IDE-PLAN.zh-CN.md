@@ -2,7 +2,7 @@
 
 > 项目定位：面向 SageMath 的专业科学计算 IDE，并对 CTF（尤其是密码学、数论、逆向与取证工作流）做一等公民优化。
 >
-> 当前状态（2026-08-22）：P1 Community 产品接入与 Windows 双架构构建链已打通；P2 CTF MVP 尚未完成。Sage intelligence 已从设计进入第一条可运行的数据驱动链路，但 bundled index 仍为最小矩阵 slice，尚未达到全量 API 智能验收。详细实现矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
+> 当前状态（2026-08-23）：P1 Community 产品接入与 Windows 双架构构建链已打通；Runtime Manager 核心实现会话与 CTF MVP/图形化 Math Lab 实现会话已完成，当前处于独立 worktree 到 `main` 的受控整合及产品级 UI/端点验收阶段。Sage intelligence 已从设计进入 scoped 数据驱动链路，但 bundled index 仍为最小矩阵 slice，尚未达到全量 API 智能验收。详细实现矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
 >
 > 创建日期：2026-08-19
 
@@ -173,8 +173,9 @@ SageMath CTF IDE
 │   ├── execution limits and result contracts
 │   └── future runtime protocol types
 │
-├── ctf-tools (future product plugins)
+├── ctf-tools (CTF MVP + graphical Math Lab implementation session; main integration pending)
 │   ├── Crypto/Number Theory
+│   ├── Math Lab: Group/Ring/Field/ECC/RSA/DH/DES
 │   ├── Encoding/Hash/XOR
 │   ├── Forensics/PCAP
 │   ├── Binary/Reverse
@@ -200,11 +201,13 @@ SageMath Runtime 不应只被当作用户手工安装的外部命令。完整 ID
 6. 在 Settings/Project SDK 页面选择、切换、验证和移除 Runtime；
 7. 对 Native、WSL、Docker/Podman、SSH/HPC 使用不同目标适配器，不能把远程容器镜像伪装成本地归档。
 
-当前实现边界：
+当前实现边界与会话证据：
 
-- `core:runtime`：JDK/Kotlin-only 的平台模型、Catalog、artifact 校验、下载和安全安装；
-- `plugins:sage-core`：IntelliJ Settings、Run Configuration 和 Runtime 服务适配器；
-- `product`：完整 IDE 默认 Runtime 管理入口、产品目录和发行策略。
+- `core:runtime`：已完成 Catalog 签名/验证 cache 与 mirror、artifact 校验、下载和安全安装、生命周期选择/切换/移除/回滚、Runtime SDK binding、Native/WSL/Docker/SSH target-aware command/probe 和显式路径映射；
+- `plugins:sage-core`：`a2c7fdc` 已将 Runtime Manager/Sage SDK 集成落入主线；真实 Settings/Project SDK UI 仍待完成；
+- `product`：完整 IDE 默认 Runtime 管理入口、产品目录和发行策略仍需验收。
+
+未完成的 Runtime 验收包括真实 WSL/Docker/SSH 端点、并发锁、crash fault-injection、SDK UI click flow、发布方 Catalog 公钥轮换流程。
 
 统一运行时契约需要表达：
 
@@ -340,21 +343,23 @@ SageMath Runtime 不应只被当作用户手工安装的外部命令。完整 ID
 - 不通过 PyCharm 的安装目录启动 Sage 产品开发实例；
 - 打开 `.sage`、运行 Sage、打开 CTF profile 的基本流程成功。
 
-### P2：CTF MVP
+### P2：CTF MVP（实现会话已完成）
 
 **目标**：让 CTF 用户得到比普通 Python IDE 更短的解题路径。
 
-工作项：
+实现会话已交付：
 
-- Challenge Project Profile；
-- flag pattern 和输出扫描；
-- timeout/output limit；
-- stdin、参数、环境变量和工作目录可复现；
-- Crypto/Number Theory 工具窗口或 action；
-- encoding/hash/XOR 快捷工具；
-- solve run history；
-- CTF 专用 Sage postfix/template 扩展；
-- 可复制的 Sage/Python 代码片段输出。
+- `plugins/ctf-tools` 独立插件模块与 JetBrains Tool Window；
+- Challenge Project/Profile、notes、payload、solve script 模型；
+- flag pattern/prefix 扫描、stdout/stderr 结构化命中；
+- bounded execution、timeout/output limit、取消与安全脚本完整性校验；
+- Crypto/Number Theory、encoding/hash/XOR helpers；
+- solve run history 与 REAL_RUNTIME/MOCK/NOT_EXECUTED evidence provenance；
+- 可选 loopback CyberChef-server Bake/Magic/Batch Bake adapter；
+- 图形化 `CTF Math Lab` Tool Window：群/环/域、椭圆曲线、RSA、DH、DES 专用输入、预检、运算追踪、可视化、教学步骤、Sage/Python 脚本预览和中英文案；
+- Math Lab 本地分析保持有界：不完整/无效输入返回显式诊断，因数分解只按固定预算重试，不把本地预检冒充真实 Sage 执行。
+
+当前剩余：将 `parallel/ctf-mvp` 按受控范围整合到 `main`，验证完整产品默认插件/分发接入，并补 live Node/CyberChef-server、Math Lab IDE live ToolWindow 和完整产品 smoke。
 
 验收场景：
 
@@ -384,7 +389,7 @@ SageMath Runtime 不应只被当作用户手工安装的外部命令。完整 ID
 - Web 请求/响应记录；
 - 二进制/网络工具的结果与题目 evidence 关联。
 
-### P5：发行版和可选 Runtime
+### Runtime Manager 与 P5 发行版
 
 - Windows、macOS、Linux 安装包；
 - JDK/JBR、签名、公证和自动更新；
@@ -457,9 +462,9 @@ Sage 和 CTF 项目会执行任意 Python/Cython/本地代码，因此产品必�
 - [x] 接入 Community product properties、product layout 和 staging build scripts；
 - [x] 运行核心模块测试、Sage plugin build、Windows installer 和 x64 smoke；
 - [x] 完成 sidecar、法律文件 overlay、release audit 和 FinalCheck 基础验证；
-- [ ] 实现 `plugins/ctf-tools`、CTF Profile UI、flag/evidence/run history；
-- [ ] 实现 Runtime Manager Catalog、Settings/Project SDK adapter 和签名 Catalog；（当前不是下一优先级，需待 Sage API 生成链路稳定后推进）
-- [~] 已实现 Sage API index 第一条可运行链路：版本化模型/normalizer、严格 loader/query、factory return type、父类/别名成员补全；仍需真实 Runtime/stubgen 全量生成、覆盖率、完整类型引擎、参数/文档/跳转/source-map 验收；
+- [x] 在独立会话实现 `plugins/ctf-tools`、CTF Profile UI、flag/evidence/run history、Crypto/Encoding helpers、loopback CyberChef adapter 和图形化 CTF Math Lab；待整合到 `main` 并完成产品/分发验收；
+- [x] Runtime Manager Catalog、Settings/Project SDK binding、生命周期、签名 Catalog 和 target-aware probe 已由 `a2c7fdc` 进入 `main`；真实 UI/端点验收待完成；
+- [~] 已实现 Sage API index scoped 链路与 sidecar/quality gate：版本化模型/normalizer、严格 loader/query、真实 Sage 10.9 生成消费和独立质量门；仍需全量类型引擎、参数/文档/跳转/source-map/product-level completion 验收；
 - [ ] 补 doctest、PCAP/二进制/GDB/LLDB；
 - [ ] 后续再加入可选 Jupyter/富输出兼容层；
 - [ ] 完成 Linux/macOS、签名、法律审批、arm64 smoke、自动更新和 Pro 线。

@@ -14,6 +14,7 @@
   },
   "probeDigest": "44945e3f7571bcbc1a558b3af389a3e80cb472f39893373b5d913ad16e56bc9c",
   "treeDigest": "69d0524a1e588dc31553a5ba3dff2c86f803d1ec5b8bbd44a0aff9392584e066",
+  "qualityContractVersion": 1,
   "symbols": [
     {
       "qualifiedName": "sage.arith.misc.factor",
@@ -40,5 +41,259 @@
       "kind": "METHOD"
     }
   ],
-  "expectedDigest": "58be913245b0c6acd752332c9f3f1c4ea4e5594b03415d49220b96fcd9b4fcfd"
+  "quality": [
+    {
+      "qualifiedName": "sage.arith.misc.factor",
+      "kind": "FUNCTION",
+      "source": {
+        "kind": "STUB",
+        "locatorPrefix": "sage-pycharm-stubgen/10.9/python-3.13/sage/arith/misc.pyi:",
+        "digest": "988102b6c2e3835dcc536bd5787e1ea74c12042c38d12f79ec6a47b5221563a6"
+      },
+      "signatures": [
+        {
+          "parameters": [
+            {
+              "name": "n",
+              "defaultValue": null,
+              "optional": false,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            },
+            {
+              "name": "proof",
+              "defaultValue": "None",
+              "optional": true,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            },
+            {
+              "name": "int_",
+              "defaultValue": "False",
+              "optional": true,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            },
+            {
+              "name": "algorithm",
+              "defaultValue": "None",
+              "optional": true,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            },
+            {
+              "name": "verbose",
+              "defaultValue": "0",
+              "optional": true,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            },
+            {
+              "name": "kwds",
+              "defaultValue": null,
+              "optional": false,
+              "keywordOnly": true,
+              "variadic": true,
+              "typeState": "UNKNOWN"
+            }
+          ],
+          "returnType": {
+            "state": "KNOWN",
+            "expression": "sage.structure.factorization.Factorization"
+          }
+        }
+      ],
+      "documentation": {
+        "required": [
+          "summary",
+          "body"
+        ],
+        "nonEmpty": [
+          "summary",
+          "body"
+        ]
+      }
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix2.Matrix",
+      "kind": "CLASS",
+      "source": {
+        "kind": "STUB",
+        "locatorPrefix": "sage-pycharm-stubgen/10.9/python-3.13/sage/matrix/matrix2.pyi:",
+        "digest": "38ff92da3d873f20c5735cd23028fd4d13445ebccdff69cb1c4947d8e3d5ace5"
+      },
+      "signatures": [],
+      "documentation": {
+        "required": [
+          "summary",
+          "body"
+        ],
+        "nonEmpty": [
+          "summary",
+          "body"
+        ]
+      }
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix2.Matrix.determinant",
+      "kind": "METHOD",
+      "source": {
+        "kind": "STUB",
+        "locatorPrefix": "sage-pycharm-stubgen/10.9/python-3.13/sage/matrix/matrix2.pyi:",
+        "digest": "38ff92da3d873f20c5735cd23028fd4d13445ebccdff69cb1c4947d8e3d5ace5"
+      },
+      "signatures": [
+        {
+          "parameters": [
+            {
+              "name": "algorithm",
+              "defaultValue": "None",
+              "optional": true,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            }
+          ],
+          "returnType": {
+            "state": "UNKNOWN",
+            "expression": null
+          }
+        }
+      ],
+      "documentation": {
+        "required": [
+          "summary",
+          "body"
+        ],
+        "nonEmpty": [
+          "summary",
+          "body"
+        ]
+      }
+    },
+    {
+      "qualifiedName": "sage.matrix.matrix2.Matrix.solve_right",
+      "kind": "METHOD",
+      "source": {
+        "kind": "STUB",
+        "locatorPrefix": "sage-pycharm-stubgen/10.9/python-3.13/sage/matrix/matrix2.pyi:",
+        "digest": "38ff92da3d873f20c5735cd23028fd4d13445ebccdff69cb1c4947d8e3d5ace5"
+      },
+      "signatures": [
+        {
+          "parameters": [
+            {
+              "name": "B",
+              "defaultValue": null,
+              "optional": false,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            },
+            {
+              "name": "check",
+              "defaultValue": "True",
+              "optional": true,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            },
+            {
+              "name": "extend",
+              "defaultValue": "True",
+              "optional": true,
+              "keywordOnly": true,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            }
+          ],
+          "returnType": {
+            "state": "KNOWN",
+            "expression": "sage.modules.free_module_element.FreeModuleElement | sage.matrix.matrix2.Matrix"
+          }
+        }
+      ],
+      "documentation": {
+        "required": [
+          "summary",
+          "body"
+        ],
+        "nonEmpty": [
+          "summary",
+          "body"
+        ]
+      }
+    },
+    {
+      "qualifiedName": "sage.rings.finite_rings.finite_field_base.FiniteField.gen",
+      "kind": "METHOD",
+      "source": {
+        "kind": "STUB",
+        "locatorPrefix": "sage-pycharm-stubgen/10.9/python-3.13/sage/rings/finite_rings/finite_field_base.pyi:",
+        "digest": "04262d457e9687fbc4f40d69ba477b76043fd70375737dd0f25d64d8fe944340"
+      },
+      "signatures": [
+        {
+          "parameters": [],
+          "returnType": {
+            "state": "KNOWN",
+            "expression": "sage.rings.finite_rings.element_givaro.FiniteField_givaroElement | sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement | sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt"
+          }
+        }
+      ],
+      "documentation": {
+        "required": [
+          "summary",
+          "body"
+        ],
+        "nonEmpty": [
+          "summary",
+          "body"
+        ]
+      }
+    },
+    {
+      "qualifiedName": "sage.rings.polynomial.polynomial_ring.PolynomialRing_generic.gen",
+      "kind": "METHOD",
+      "source": {
+        "kind": "STUB",
+        "locatorPrefix": "sage-pycharm-stubgen/10.9/python-3.13/sage/rings/polynomial/polynomial_ring.pyi:",
+        "digest": "1279b25b37e0611bf37dd9921f2a2a35602b83e61e2ffb002259353a64d43dd6"
+      },
+      "signatures": [
+        {
+          "parameters": [
+            {
+              "name": "n",
+              "defaultValue": "0",
+              "optional": true,
+              "keywordOnly": false,
+              "variadic": false,
+              "typeState": "UNKNOWN"
+            }
+          ],
+          "returnType": {
+            "state": "UNKNOWN",
+            "expression": null
+          }
+        }
+      ],
+      "documentation": {
+        "required": [
+          "summary",
+          "body"
+        ],
+        "nonEmpty": [
+          "summary",
+          "body"
+        ]
+      }
+    }
+  ],
+  "expectedDigest": "596f4f3600f1689d786296494fc892802ed65d2af82cffe8cc1cd08b94f45c93"
 }

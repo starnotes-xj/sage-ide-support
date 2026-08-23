@@ -299,7 +299,6 @@ object SageMathCommunityInstallersBuildTarget {
           BuildOptions.MAC_SIGN_STEP,
           BuildOptions.WIN_SIGN_STEP,
           BuildOptions.CROSS_PLATFORM_DISTRIBUTION_STEP,
-          BuildOptions.WINDOWS_ZIP_STEP,
         )
       }
       val context = createBuildContext(
