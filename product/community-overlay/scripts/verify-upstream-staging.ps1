@@ -32,6 +32,11 @@ if ($LegacyExternalPlugin) {
 if (-not (Test-Path -LiteralPath (Join-Path $stage 'python/build/src/org/jetbrains/intellij/build/pycharm/SageMathCommunityProperties.kt') -PathType Leaf)) { throw 'Sage product properties are not staged' }
 if (-not (Test-Path -LiteralPath (Join-Path $stage 'plugins/sage-core/BUILD.bazel') -PathType Leaf)) { throw 'Sage Core bundled BUILD.bazel is not staged' }
 if (-not (Test-Path -LiteralPath (Join-Path $stage 'plugins/sage-core/intellij.sagemath.ctf.sage-core.iml') -PathType Leaf)) { throw 'Sage Core bundled JPS module is not staged' }
+if (-not (Test-Path -LiteralPath (Join-Path $stage 'core/sage-api/BUILD.bazel') -PathType Leaf)) { throw 'Sage API BUILD.bazel is not staged' }
+if (-not (Test-Path -LiteralPath (Join-Path $stage 'core/sage-api/src/main') -PathType Container)) { throw 'Sage API sources are not staged' }
+$sageApiFiles = @(Get-ChildItem -LiteralPath (Join-Path $stage 'core/sage-api') -Recurse -File)
+$emptySageApiFiles = @($sageApiFiles | Where-Object { $_.Length -eq 0 -and $_.Extension -notin @('.kt', '.java', '.json', '.iml', '.bazel') })
+if ($emptySageApiFiles) { throw "Staged Sage API contains unexpected zero-byte files: $($emptySageApiFiles.FullName -join ', ')" }
 if (-not (Test-Path -LiteralPath (Join-Path $stage 'build/BUILD.bazel') -PathType Leaf)) { throw 'Staged Bazel build file is missing' }
 $androidManifest = Join-Path $stage 'build/sage-overlay/android-label-filter-manifest.json'
 if (-not (Test-Path -LiteralPath $androidManifest -PathType Leaf)) { throw 'Missing staged Android label manifest' }

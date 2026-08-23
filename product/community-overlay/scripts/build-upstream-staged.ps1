@@ -20,8 +20,11 @@ $userHome = Join-Path $buildRoot 'user-home'
 $appData = Join-Path $buildRoot 'appdata'
 $localAppData = Join-Path $buildRoot 'localappdata'
 $outputRoot = Join-Path $buildRoot 'bazel-output'
+# The staged product's nested Bazel invocation uses this independent ASCII root.
+# Keep it outside Bazel's own output tree so Bazel never treats its execroot as a workspace.
+$nestedBazelRoot = Join-Path $buildRoot 'nested-bazel'
 $tempRoot = Join-Path $buildRoot 'tmp'
-foreach ($path in @($userHome, $appData, $localAppData, $outputRoot, $tempRoot)) { New-Item -ItemType Directory -Force -Path $path | Out-Null }
+foreach ($path in @($userHome, $appData, $localAppData, $outputRoot, $nestedBazelRoot, $tempRoot)) { New-Item -ItemType Directory -Force -Path $path | Out-Null }
 
 $env:JAVA_HOME = $jdk
 $env:Path = "$jdk\bin;$env:Path"
@@ -36,7 +39,8 @@ $env:HOMEDRIVE = 'G:'
 $env:HOMEPATH = '\sage-build\bundled-next\user-home'
 $env:USERNAME = 'sagebuild'
 $env:SAGEMATH_PLUGIN_PATH = if ($LegacyExternalPlugin -and $PluginPath) { $PluginPath } else { '' }
-$env:SAGEMATH_BAZEL_ASCII_ROOT = $outputRoot
+$env:SAGEMATH_BAZEL_ASCII_ROOT = $nestedBazelRoot
+$env:SAGEMATH_BAZEL_WORKSPACE_ROOT = $stage
 $env:BAZEL_SH = 'C:\WINDOWS\system32\bash.exe'
 
 $bazel = Join-Path $stage 'bazel.cmd'

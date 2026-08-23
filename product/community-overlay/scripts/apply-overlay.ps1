@@ -29,9 +29,37 @@ New-Item -ItemType Directory -Force -Path (Split-Path -Parent $pluginTarget) | O
 Remove-Item -LiteralPath $pluginTarget -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath $pluginSource -Destination $pluginTarget -Recurse -Force
 
+# Bazel's installer aggregation compiles the plugin test library as part of the
+# community target graph. Mirror the source module dependencies explicitly so
+# Sage API/model/runtime test types and their Kotlin test libraries are visible.
+$pluginBuildPath = Join-Path $pluginTarget 'BUILD.bazel'
+$pluginBuildText = Get-Content -LiteralPath $pluginBuildPath -Raw
+$testDependencyLines = @(
+  '        "@lib//:kotlin-test",'
+  '        "@lib//:kotlin-test-junit5",'
+  '        "//platform/platform-api:ide",'
+  '        "//platform/platform-api:ide_test_lib",'
+  '        "//platform/projectModel-api:projectModel",'
+  '        "//platform/projectModel-api:projectModel_test_lib",'
+  '        "//platform/util/jdom",'
+  '        "//platform/util/jdom:jdom_test_lib",'
+  '        "//python/python-psi-api:psi_test_lib",'
+  '        "//core/model:model",'
+  '        "//core/model:model_test_lib",'
+  '        "//core/runtime:runtime",'
+  '        "//core/runtime:runtime_test_lib",'
+  '        "//core/sage-api:sage-api",'
+  '        "//core/sage-api:sage-api_test_lib",'
+) -join [Environment]::NewLine
+$pluginBuildText = $pluginBuildText.Replace(
+  '        "//python/python-psi-api:psi_test_lib",',
+  $testDependencyLines
+)
+Set-Content -LiteralPath $pluginBuildPath -Value $pluginBuildText -Encoding UTF8
+
 # Stage product-owned core modules as source modules so the Community JPS/Bazel
 # model can generate KtJvmInfo targets for Sage Core's formal dependencies.
-foreach ($relativePath in @('core/model', 'core/runtime')) {
+foreach ($relativePath in @('core/model', 'core/runtime', 'core/sage-api')) {
   $source = Join-Path $projectRoot $relativePath
   $target = Join-Path $community $relativePath
   if (-not (Test-Path -LiteralPath $source -PathType Container)) {
@@ -39,7 +67,23 @@ foreach ($relativePath in @('core/model', 'core/runtime')) {
   }
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
   Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
-  Copy-Item -LiteralPath $source -Destination $target -Recurse -Force
+  New-Item -ItemType Directory -Force -Path $target | Out-Null
+  $moduleName = switch ([IO.Path]::GetFileName($source)) {
+    'model' { 'intellij.sagemath.ctf.model.iml' }
+    'runtime' { 'intellij.sagemath.ctf.runtime.iml' }
+    'sage-api' { 'intellij.sagemath.ctf.sage-api.iml' }
+    default { throw "Unknown product core module: $source" }
+  }
+  foreach ($child in @('BUILD.bazel', $moduleName, 'src')) {
+    $sourceChild = Join-Path $source $child
+    if (-not (Test-Path -LiteralPath $sourceChild)) { throw "Missing product core module input: $sourceChild" }
+    $targetChild = Join-Path $target $child
+    if ((Get-Item -LiteralPath $sourceChild).PSIsContainer) {
+      Copy-Item -LiteralPath $sourceChild -Destination $targetChild -Recurse -Force
+    } else {
+      Copy-Item -LiteralPath $sourceChild -Destination $targetChild -Force
+    }
+  }
 }
 
 # Keep the Bazel process launched by the installer on ASCII-only paths. Windows
@@ -61,6 +105,42 @@ if ($ijPluginRuleText -notmatch 'DefaultInfo\(files = depset\(\[output_dir, cont
 
 $bazelRunnerPath = Join-Path $community 'platform/build-scripts/src/org/jetbrains/intellij/build/impl/bazel/BazelRunner.kt'
 $bazelRunnerText = Get-Content -LiteralPath $bazelRunnerPath -Raw
+if ($bazelRunnerText -notmatch 'SAGEMATH_BAZEL_WORKSPACE_ROOT') {
+  $bazelRunnerText = $bazelRunnerText.Replace(
+    '  val bazelExecutable = projectHome.resolve("bazel.cmd")',
+    '  val workspaceRoot = System.getenv("SAGEMATH_BAZEL_WORKSPACE_ROOT")?.takeIf { it.isNotBlank() }?.let { java.nio.file.Path.of(it) } ?: projectHome' + [Environment]::NewLine + '  val bazelExecutable = workspaceRoot.resolve("bazel.cmd")'
+  ).Replace(
+    '  runProcess(args, projectHome)',
+    '  runProcess(args, workspaceRoot)'
+  )
+  Set-Content -LiteralPath $bazelRunnerPath -Value $bazelRunnerText -Encoding UTF8
+}
+
+# The upstream dev product runner publishes its classpath from an asynchronous
+# child coroutine. Await the publication before constructing the runner so the
+# installer does not fail with a race-dependent `newClassPath!!` NPE.
+$devRunnerPath = Join-Path $community 'platform/build-scripts/src/org/jetbrains/intellij/build/productRunner/DevModeProductRunner.kt'
+$devRunnerText = Get-Content -LiteralPath $devRunnerPath -Raw
+if ($devRunnerText -notmatch 'SAGEMATH_AWAIT_PLATFORM_CLASSPATH') {
+  $devRunnerText = $devRunnerText.Replace(
+    'import kotlinx.coroutines.CoroutineScope',
+    'import kotlinx.coroutines.CompletableDeferred' + [Environment]::NewLine + 'import kotlinx.coroutines.CoroutineScope'
+  )
+  $devRunnerText = $devRunnerText.Replace(
+    '  var newClassPath: Collection<Path>? = null',
+    '  // SAGEMATH_AWAIT_PLATFORM_CLASSPATH: buildProduct publishes this asynchronously.' + [Environment]::NewLine + '  val newClassPath = CompletableDeferred<Collection<Path>>()'
+  ).Replace(
+    '        newClassPath = classPath',
+    '        newClassPath.complete(classPath)'
+  ).Replace(
+    '    DevModeProductRunner(context = context, homePath = runDir, classPath = newClassPath!!.map { it.toString() })',
+    '    DevModeProductRunner(context = context, homePath = runDir, classPath = newClassPath.await().map { it.toString() })'
+  )
+  if ($devRunnerText -notmatch 'SAGEMATH_AWAIT_PLATFORM_CLASSPATH' -or $devRunnerText -notmatch 'newClassPath\.await\(\)') {
+    throw "DevModeProductRunner.kt patch context not found: $devRunnerPath"
+  }
+  Set-Content -LiteralPath $devRunnerPath -Value $devRunnerText -Encoding UTF8
+}
 if ($bazelRunnerText -notmatch 'SAGEMATH_BAZEL_ASCII_ROOT') {
   $bazelRunnerOld = @'
   val args = mutableListOf(
@@ -76,7 +156,7 @@ if ($bazelRunnerText -notmatch 'SAGEMATH_BAZEL_ASCII_ROOT') {
     bazelExecutable.pathString,
   )
   if (asciiBuildRoot != null) {
-    val root = java.nio.file.Path.of(asciiBuildRoot).resolve("nested-bazel")
+    val root = java.nio.file.Path.of(asciiBuildRoot)
     val userHome = root.resolve("user-home")
     val tempRoot = root.resolve("tmp")
     val appData = root.resolve("appdata")
@@ -99,13 +179,10 @@ if ($bazelRunnerText -notmatch 'SAGEMATH_BAZEL_ASCII_ROOT') {
   $bazelRunnerText = $bazelRunnerText.Replace($bazelRunnerOld, $bazelRunnerNew)
   Set-Content -LiteralPath $bazelRunnerPath -Value $bazelRunnerText -Encoding UTF8
 }
-elseif ($bazelRunnerText -notmatch 'resolve\("nested-bazel"\)') {
+elseif ($bazelRunnerText -match 'resolve\("nested-bazel"\)') {
   $bazelRunnerText = $bazelRunnerText.Replace(
-    'val root = java.nio.file.Path.of(asciiBuildRoot)',
-    'val root = java.nio.file.Path.of(asciiBuildRoot).resolve("nested-bazel")'
-  ).Replace(
-    'args.add("--output_user_root=$asciiBuildRoot")',
-    'args.add("--output_user_root=$root")'
+    'java.nio.file.Path.of(asciiBuildRoot).resolve("nested-bazel")',
+    'java.nio.file.Path.of(asciiBuildRoot)'
   )
   Set-Content -LiteralPath $bazelRunnerPath -Value $bazelRunnerText -Encoding UTF8
 }
@@ -145,6 +222,7 @@ $modulesText = Get-Content -LiteralPath $modulesFile -Raw
 foreach ($moduleRelativePath in @(
   'core/model/intellij.sagemath.ctf.model.iml',
   'core/runtime/intellij.sagemath.ctf.runtime.iml',
+  'core/sage-api/intellij.sagemath.ctf.sage-api.iml',
   'plugins/sage-core/intellij.sagemath.ctf.sage-core.iml'
 )) {
   if ($modulesText -notmatch [regex]::Escape($moduleRelativePath)) {
@@ -235,5 +313,10 @@ object SageMathCommunityInstallersBuildTarget {
 }
 '@
 Set-Content -LiteralPath (Join-Path $community 'python/build/src/SageMathCommunityInstallersBuildTarget.kt') -Value $installerSource -Encoding UTF8
+
+$stagedApiTarget = Join-Path $community 'core/sage-api'
+$stagedApiFiles = @(Get-ChildItem -LiteralPath $stagedApiTarget -Recurse -File)
+$emptyStagedApiFiles = @($stagedApiFiles | Where-Object { $_.Length -eq 0 -and $_.Extension -notin @('.kt', '.java', '.json', '.iml', '.bazel') })
+if ($emptyStagedApiFiles) { throw "Sage API overlay contains unexpected zero-byte files: $($emptyStagedApiFiles.FullName -join ', ')" }
 
 Write-Output "Applied SageMath product overlay to $community"
