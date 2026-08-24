@@ -66,7 +66,7 @@ class SageRunSettingsEditor : SettingsEditor<SageRunConfiguration>() {
     private fun rebuildSdkChoices() {
         val selected = sdkCombo.selectedItem as? SdkChoice
         sdkCombo.removeAllItems()
-        sdkCombo.addItem(SdkChoice(null, "Project SDK (inherit)"))
+        sdkCombo.addItem(SdkChoice(null, "Global Sage runtime (ignore project SDK)"))
         ProjectJdkTable.getInstance()
             .getSdksOfType(SageRuntimeSdkType.getInstance())
             .sortedBy { it.name }

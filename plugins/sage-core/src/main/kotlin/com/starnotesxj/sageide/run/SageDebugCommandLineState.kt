@@ -45,9 +45,10 @@ class SageDebugCommandLineState(
         val mode = when (executables.target) {
             com.starnotesxj.sagemath.runtime.RuntimeTarget.Native -> ExecutionMode.NATIVE
             is com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl -> ExecutionMode.WSL
-            is com.starnotesxj.sagemath.runtime.RuntimeTarget.Docker -> ExecutionMode.DOCKER
+            is com.starnotesxj.sagemath.runtime.RuntimeTarget.Docker ->
+                throw ExecutionException("Container Sage debugging is unavailable: helper deployment, source mapping, and debug-port transport are not validated")
             is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh ->
-                throw ExecutionException("SSH SageMath debugging requires a target transport")
+                throw ExecutionException("SSH SageMath debugging is not supported: verified remote debugger, helper deployment, port forwarding, and source mapping are required")
         }
         val bundledPython = executables.python
             ?: throw ExecutionException("The verified SageMath runtime has no usable bundled Python interpreter")

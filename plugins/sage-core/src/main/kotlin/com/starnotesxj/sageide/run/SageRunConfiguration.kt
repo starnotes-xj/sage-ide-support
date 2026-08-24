@@ -71,13 +71,23 @@ class SageRunConfiguration(
                 return SageRuntimeSdkService.getInstance().resolveSdkExecutables(sdk)
             }
             val settings = SageRunSettings.getInstance().getState()
-            if (configured.isEmpty() && settings.executionMode == ExecutionMode.WSL.name) {
-                return SageRuntimeService.getInstance().resolveWslExecutables(
-                    distribution = settings.wslDistribution,
-                    condaEnvironment = settings.wslCondaEnvironment,
-                    condaExecutable = settings.wslCondaExecutable,
-                    sageExecutable = settings.sageExecutable,
-                )
+            if (configured.isEmpty()) {
+                return when (settings.executionMode) {
+                    ExecutionMode.NATIVE.name -> SageRuntimeService.getInstance().resolveNativeExecutables(settings.nativeSageExecutable)
+                    ExecutionMode.WSL.name -> SageRuntimeService.getInstance().resolveWslExecutables(
+                        distribution = settings.wslDistribution,
+                        condaEnvironment = settings.wslCondaEnvironment,
+                        condaExecutable = settings.wslCondaExecutable,
+                        sageExecutable = settings.wslSageExecutable,
+                    )
+                    ExecutionMode.DOCKER.name -> SageRuntimeService.getInstance().resolveContainerExecutables(settings)
+                    ExecutionMode.SSH.name -> SageRuntimeService.getInstance().resolveSshExecutables(settings)
+                    else -> RuntimeOperationResult(
+                        null,
+                        listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.RUNTIME_INVALID, "RUN_SDK_RESOLVE", "Unknown Sage execution mode: ${settings.executionMode}")),
+                        false,
+                    )
+                }
             }
             return RuntimeOperationResult(
                 null,
@@ -92,13 +102,22 @@ class SageRunConfiguration(
             )
         }
         val settings = SageRunSettings.getInstance().getState()
-        if (configured.isEmpty() && settings.executionMode == ExecutionMode.WSL.name) {
-            return SageRuntimeService.getInstance().resolveWslExecutables(
-                distribution = settings.wslDistribution,
-                condaEnvironment = settings.wslCondaEnvironment,
-                condaExecutable = settings.wslCondaExecutable,
-                sageExecutable = settings.sageExecutable,
-            )
+        if (configured.isEmpty()) {
+            return when (settings.executionMode) {
+                ExecutionMode.NATIVE.name -> SageRuntimeService.getInstance().resolveNativeExecutables(settings.nativeSageExecutable)
+                ExecutionMode.WSL.name -> SageRuntimeService.getInstance().resolveWslExecutables(
+                    distribution = settings.wslDistribution,
+                    condaEnvironment = settings.wslCondaEnvironment,
+                    condaExecutable = settings.wslCondaExecutable,
+                    sageExecutable = settings.wslSageExecutable,
+                )
+                ExecutionMode.DOCKER.name -> SageRuntimeService.getInstance().resolveContainerExecutables(settings)
+                else -> RuntimeOperationResult(
+                    null,
+                    listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.RUNTIME_INVALID, "RUN_SDK_RESOLVE", "Unknown Sage execution mode: ${settings.executionMode}")),
+                    false,
+                )
+            }
         }
         return RuntimeOperationResult(null, sdkResult.diagnostics, false)
     }

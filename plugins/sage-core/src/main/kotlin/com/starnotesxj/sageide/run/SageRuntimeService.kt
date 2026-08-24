@@ -3,6 +3,8 @@ package com.starnotesxj.sageide.run
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
+import com.starnotesxj.sagemath.runtime.ContainerRuntimeProbe
+import com.starnotesxj.sagemath.runtime.JdkContainerRuntimeExecutor
 import com.starnotesxj.sagemath.runtime.JdkRuntimeProcessExecutor
 import com.starnotesxj.sagemath.runtime.MutableRuntimeCancellation
 import com.starnotesxj.sagemath.runtime.RuntimeControl
@@ -15,7 +17,12 @@ import com.starnotesxj.sagemath.runtime.ResolvedRuntimeExecutables
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnostic
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnosticCode
 import com.starnotesxj.sagemath.runtime.RuntimeOperationResult
+import com.starnotesxj.sagemath.runtime.RuntimePathMapping
 import com.starnotesxj.sagemath.runtime.RuntimeTarget
+import com.starnotesxj.sagemath.runtime.SshAuthentication
+import com.starnotesxj.sagemath.runtime.SshOpenSshSpec
+import com.starnotesxj.sagemath.runtime.SshSageRunRequest
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
@@ -30,6 +37,7 @@ class SageRuntimeService : Disposable {
     private val executor: ExecutorService = Executors.newCachedThreadPool(SageThreadFactory)
     private val probeExecutor = JdkRuntimeProcessExecutor()
     private val probe = RuntimeProbe(probeExecutor)
+    private val containerProbe = ContainerRuntimeProbe(JdkContainerRuntimeExecutor(probeExecutor))
 
     fun probeAsync(
         executable: Path,
@@ -49,6 +57,173 @@ class SageRuntimeService : Disposable {
     /** Resolves a configured native executable, falling back to PATH discovery. */
     fun resolveNativeExecutable(configuredExecutable: String): String? {
         return configuredExecutable.trim().takeIf { it.isNotEmpty() } ?: SageAutoDetect.detectNativeSage()
+    }
+
+    fun resolveNativeExecutables(configuredExecutable: String): RuntimeOperationResult<ResolvedRuntimeExecutables> {
+        val executable = resolveNativeExecutable(configuredExecutable)
+            ?: return RuntimeOperationResult(
+                null,
+                listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.RUNTIME_NOT_INSTALLED, "NATIVE_RUNTIME_RESOLVE", "Native Sage executable was not found")),
+                false,
+            )
+        return RuntimeOperationResult(
+            ResolvedRuntimeExecutables(executable, null, null, RuntimeTarget.Native),
+        )
+    }
+
+    fun <T> submit(task: (RuntimeControl) -> T): SageRuntimeProbeHandle<T> {
+        val cancellation = MutableRuntimeCancellation()
+        val control = RuntimeControl(RuntimeDeadline.after(DEFAULT_PROBE_DEADLINE), cancellation)
+        return SageRuntimeProbeHandle(
+            CompletableFuture.supplyAsync({ task(control) }, executor),
+            cancellation,
+        )
+    }
+
+    fun probeConfiguredNative(
+        configuredExecutable: String,
+        control: RuntimeControl,
+    ): RuntimeProbeResult? {
+        val executable = resolveNativeExecutable(configuredExecutable) ?: return null
+        return probe.probe(RuntimeProbeRequest(Path.of(executable), control = control, maxOutputBytes = DEFAULT_PROBE_OUTPUT_BYTES))
+    }
+
+    fun validateContainerProfile(settings: SageRunSettings.State): RuntimeOperationResult<Any> {
+        val profile = com.starnotesxj.sagemath.runtime.ContainerProfileValidator.validate(
+            settings.containerExecutable,
+            settings.dockerImage,
+            settings.dockerCommand,
+            settings.dockerContainerDir,
+        )
+        return if (profile.succeeded) RuntimeOperationResult(Unit) else RuntimeOperationResult(null, profile.diagnostics, false)
+    }
+
+    fun validateSshSettings(settings: SageRunSettings.State): RuntimeOperationResult<Any> {
+        val resolved = resolveSshExecutables(settings)
+        return if (resolved.succeeded) RuntimeOperationResult(Unit) else RuntimeOperationResult(null, resolved.diagnostics, false)
+    }
+
+    fun resolveContainerExecutables(
+        settings: SageRunSettings.State,
+        deadline: Duration = DEFAULT_PROBE_DEADLINE,
+        control: RuntimeControl? = null,
+    ): RuntimeOperationResult<ResolvedRuntimeExecutables> {
+        require(!deadline.isNegative && !deadline.isZero) { "Container probe deadline must be positive" }
+        val profile = com.starnotesxj.sagemath.runtime.ContainerProfileValidator.validate(
+            settings.containerExecutable,
+            settings.dockerImage,
+            settings.dockerCommand,
+            settings.dockerContainerDir,
+        )
+        if (!profile.succeeded) return RuntimeOperationResult(null, profile.diagnostics, false)
+        val engine = profile.value!!
+        val probeControl = control ?: RuntimeControl(RuntimeDeadline.after(deadline), MutableRuntimeCancellation())
+        val probeResult = containerProbe.probe(
+            engine = engine,
+            image = settings.dockerImage.trim(),
+            command = settings.dockerCommand.trim(),
+            control = probeControl,
+            maxOutputBytes = DEFAULT_PROBE_OUTPUT_BYTES,
+        )
+        if (probeResult.status != RuntimeExecutionStatus.SUCCESS || probeResult.expressionOutput != "4") {
+            return RuntimeOperationResult(null, probeResult.diagnostics.ifEmpty {
+                listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_PROBE_FAILED, "CONTAINER_RESOLVE", "Container Sage image probe failed"))
+            }, false)
+        }
+        return RuntimeOperationResult(
+            ResolvedRuntimeExecutables(
+                sage = settings.dockerCommand.trim(),
+                python = null,
+                runtimeRoot = null,
+                target = RuntimeTarget.Docker(settings.dockerImage.trim(), engine = engine),
+            ),
+        )
+    }
+
+    fun resolveSshExecutables(settings: SageRunSettings.State): RuntimeOperationResult<ResolvedRuntimeExecutables> {
+        val knownHosts = runCatching { Path.of(settings.sshKnownHostsFile.trim()) }.getOrElse {
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_KNOWN_HOSTS_VALIDATE", "SSH known_hosts path is invalid")), false)
+        }
+        val localRoot = runCatching { Path.of(settings.sshLocalRoot.trim()) }.getOrElse {
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.PATH_MAPPING_REQUIRED, "SSH_PATH_MAPPING_VALIDATE", "SSH local mapping root is invalid")), false)
+        }
+        val mapping = runCatching {
+            RuntimePathMapping(localRoot, settings.sshTargetRoot.trim())
+        }.getOrElse { error ->
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.PATH_MAPPING_REQUIRED, "SSH_PATH_MAPPING_VALIDATE", error.message ?: "SSH path mapping is invalid")), false)
+        }
+        val authentication = when (settings.sshAuthentication.trim().uppercase()) {
+            "AGENT" -> SshAuthentication.Agent
+            "IDENTITY_FILE" -> SshAuthentication.IdentityFile(runCatching { Path.of(settings.sshIdentityFile.trim()) }.getOrElse {
+                return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_AUTH_VALIDATE", "SSH identity file path is invalid")), false)
+            })
+            else -> return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_AUTH_VALIDATE", "SSH authentication must be AGENT or IDENTITY_FILE")), false)
+        }
+        val target = RuntimeTarget.RemoteSsh(
+            host = settings.sshHost.trim(),
+            user = settings.sshUser.trim().takeIf { it.isNotEmpty() },
+            port = settings.sshPort,
+            pathMapping = mapping,
+            runtimeRoot = settings.sshRuntimeRoot.trim(),
+        )
+        val spec = runCatching {
+            SshOpenSshSpec(
+                host = target.host,
+                user = target.user,
+                port = target.port,
+                knownHostsFile = knownHosts,
+                authentication = authentication,
+                runtimeRoot = target.runtimeRoot!!,
+                pathMapping = mapping,
+                connectTimeout = Duration.ofSeconds(settings.sshConnectTimeoutSeconds.toLong()),
+            )
+        }.getOrElse { error ->
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_CONFIG_VALIDATE", error.message ?: "SSH settings are invalid")), false)
+        }
+        if (!Files.isRegularFile(knownHosts, java.nio.file.LinkOption.NOFOLLOW_LINKS) || !knownHosts.isAbsolute) {
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_KNOWN_HOSTS_VALIDATE", "SSH known_hosts must be an absolute regular file")), false)
+        }
+        val remoteSage = settings.sshSageExecutable.trim()
+        if (remoteSage.isBlank()) {
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.PATH_MAPPING_REQUIRED, "SSH_RUNTIME_ROOT_VALIDATE", "SSH Sage executable path is required")), false)
+        }
+        val requestValidation = runCatching {
+            SshSageRunRequest(spec, remoteSage, "${mapping.targetRoot}/.sage-run-validation.sage")
+        }.exceptionOrNull()
+        if (requestValidation != null) {
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.PATH_MAPPING_REQUIRED, "SSH_RUNTIME_ROOT_VALIDATE", requestValidation.message ?: "SSH Sage executable is outside runtime root")), false)
+        }
+        return RuntimeOperationResult(
+            ResolvedRuntimeExecutables(
+                sage = remoteSage,
+                python = null,
+                runtimeRoot = spec.runtimeRoot,
+                target = target,
+            ),
+        )
+    }
+
+    fun resolveSshTransportSpec(settings: SageRunSettings.State, target: RuntimeTarget.RemoteSsh): RuntimeOperationResult<SshOpenSshSpec> {
+        val knownHosts = runCatching { Path.of(settings.sshKnownHostsFile.trim()) }.getOrElse {
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_KNOWN_HOSTS_VALIDATE", "SSH known_hosts path is invalid")), false)
+        }
+        val localRoot = runCatching { Path.of(settings.sshLocalRoot.trim()) }.getOrElse {
+            return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.PATH_MAPPING_REQUIRED, "SSH_PATH_MAPPING_VALIDATE", "SSH local mapping root is invalid")), false)
+        }
+        val mapping = target.pathMapping ?: return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.PATH_MAPPING_REQUIRED, "SSH_PATH_MAPPING_VALIDATE", "SSH path mapping is required")), false)
+        val authentication = when (settings.sshAuthentication.trim().uppercase()) {
+            "AGENT" -> SshAuthentication.Agent
+            "IDENTITY_FILE" -> SshAuthentication.IdentityFile(runCatching { Path.of(settings.sshIdentityFile.trim()) }.getOrElse {
+                return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_AUTH_VALIDATE", "SSH identity file path is invalid")), false)
+            })
+            else -> return RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_AUTH_VALIDATE", "SSH authentication must be AGENT or IDENTITY_FILE")), false)
+        }
+        return runCatching {
+            SshOpenSshSpec(target.host, target.user, target.port, knownHosts, authentication, target.runtimeRoot!!, RuntimePathMapping(localRoot, mapping.targetRoot), Duration.ofSeconds(settings.sshConnectTimeoutSeconds.toLong()))
+        }.fold(
+            onSuccess = { RuntimeOperationResult(it) },
+            onFailure = { RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "SSH_CONFIG_VALIDATE", it.message ?: "SSH transport settings are invalid")), false) },
+        )
     }
 
     /** Resolves an externally managed Sage installation inside WSL Conda. */
@@ -110,73 +285,6 @@ class SageRuntimeService : Disposable {
         return probeAsync(Path.of(executable), deadline)
     }
 
-    /** Detects and validates native Sage; WSL now probes the configured Conda environment. */
-    fun detectAndProbeAsync(
-        mode: ExecutionMode,
-        wslDistribution: String,
-        deadline: Duration = DEFAULT_PROBE_DEADLINE,
-    ): SageRuntimeProbeHandle<SageRuntimeDetectionResult> {
-        require(!deadline.isNegative && !deadline.isZero) { "Runtime probe deadline must be positive" }
-        val cancellation = MutableRuntimeCancellation()
-        val control = RuntimeControl(RuntimeDeadline.after(deadline), cancellation)
-        val future = CompletableFuture.supplyAsync({
-            when (mode) {
-                ExecutionMode.NATIVE -> {
-                    val executable = SageAutoDetect.detectNativeSage()
-                    if (executable.isNullOrBlank()) {
-                        SageRuntimeDetectionResult(mode, null, null, "Native Sage executable was not found")
-                    } else {
-                        val result = probe.probe(RuntimeProbeRequest(Path.of(executable), control = control))
-                        SageRuntimeDetectionResult(
-                            mode,
-                            executable,
-                            result,
-                            if (result.status == RuntimeExecutionStatus.SUCCESS) {
-                                "Validated " + executable
-                            } else {
-                                "Sage probe failed with " + result.status
-                            },
-                        )
-                    }
-                }
-                ExecutionMode.WSL -> {
-                    val state = SageRunSettings.getInstance().getState()
-                    val runtime = SageAutoDetect.detectWslRuntime(
-                        distribution = wslDistribution,
-                        condaEnvironment = state.wslCondaEnvironment,
-                        condaExecutable = state.wslCondaExecutable,
-                        sageExecutable = state.sageExecutable,
-                        timeoutMillis = deadline.toMillis().coerceAtLeast(1),
-                    )
-                    SageRuntimeDetectionResult(
-                        mode,
-                        runtime?.sageExecutable,
-                        null,
-                        if (runtime == null) {
-                            "WSL Sage/Conda environment was not found or could not be activated"
-                        } else {
-                            "Validated WSL Sage ${runtime.version ?: "runtime"} in conda environment '${runtime.condaEnvironment}'"
-                        },
-                    )
-                }
-                ExecutionMode.DOCKER -> {
-                    val image = SageAutoDetect.detectDockerImage()
-                    SageRuntimeDetectionResult(
-                        mode,
-                        image,
-                        null,
-                        if (image == null) {
-                            "Sage Docker image was not found"
-                        } else {
-                            "Docker Sage image discovered; target-aware probe is not available yet"
-                        },
-                    )
-                }
-            }
-        }, executor)
-        return SageRuntimeProbeHandle(future, cancellation)
-    }
-
     override fun dispose() {
         executor.shutdownNow()
     }
@@ -195,24 +303,12 @@ class SageRuntimeService : Disposable {
     }
 }
 
-data class SageRuntimeDetectionResult(
-    val mode: ExecutionMode,
-    val discoveredValue: String?,
-    val probe: RuntimeProbeResult?,
-    val diagnostic: String?,
-) {
-    val isReady: Boolean
-        get() = when (mode) {
-            ExecutionMode.NATIVE -> probe?.status == RuntimeExecutionStatus.SUCCESS
-            ExecutionMode.WSL, ExecutionMode.DOCKER -> !discoveredValue.isNullOrBlank()
-        }
-}
-
 class SageRuntimeProbeHandle<T> internal constructor(
     val future: CompletableFuture<T>,
     private val cancellation: MutableRuntimeCancellation,
 ) {
     fun cancel() {
         cancellation.cancel()
+        future.cancel(true)
     }
 }

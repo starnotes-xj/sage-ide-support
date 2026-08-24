@@ -292,6 +292,7 @@
     <typeProvider implementation="com.starnotesxj.sageide.type.SageTypeProvider" order="first"/>
     <!-- Indexed Sage class members supplement native PSI/.pyi members. -->
     <pyClassMembersProvider implementation="com.starnotesxj.sageide.completion.SageApiClassMembersProvider"/>
+    <pyModuleMembersProvider implementation="com.starnotesxj.sageide.completion.SageApiModuleMembersProvider"/>
     <!-- The implicit sage.all namespace plus generator references inside
          sugar statements, consulted when ordinary Python resolution fails. -->
     <pyReferenceResolveProvider implementation="com.starnotesxj.sageide.sugar.SageReferenceResolveProvider"/>

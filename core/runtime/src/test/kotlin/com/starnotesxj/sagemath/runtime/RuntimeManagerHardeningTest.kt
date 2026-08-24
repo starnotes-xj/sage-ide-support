@@ -68,6 +68,15 @@ class RuntimeManagerHardeningTest {
     }
 
     @Test
+    fun `generic SSH command construction is fail closed`() {
+        assertFailsWith<IllegalArgumentException> {
+            RuntimeTargetCommandBuilder.build(
+                TargetProcessRequest(RuntimeTarget.RemoteSsh("host"), "/sage", listOf("--version")),
+            )
+        }
+    }
+
+    @Test
     fun `target executor runs WSL and Docker locally while SSH remains remote`() {
         val localCommands = mutableListOf<List<String>>()
         val remoteRequests = mutableListOf<TargetProcessRequest>()

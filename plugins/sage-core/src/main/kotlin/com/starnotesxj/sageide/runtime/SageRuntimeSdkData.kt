@@ -41,6 +41,7 @@ class SageRuntimeSdkAdditionalData(
             }
             is RuntimeTarget.Docker -> {
                 element.setAttribute("targetImage", selectedTarget.image)
+                element.setAttribute("containerEngine", selectedTarget.engine.executable)
                 savePlatform(element, selectedTarget.targetPlatform)
                 saveMapping(element, selectedTarget.pathMapping)
             }
@@ -84,6 +85,11 @@ class SageRuntimeSdkAdditionalData(
             "docker" -> RuntimeTarget.Docker(
                 image = element.required("targetImage"),
                 pathMapping = loadMapping(element),
+                engine = runCatching {
+                    com.starnotesxj.sagemath.runtime.ContainerEngine.entries.first {
+                        it.executable == element.getAttributeValue("containerEngine")
+                    }
+                }.getOrDefault(com.starnotesxj.sagemath.runtime.ContainerEngine.DOCKER),
                 targetPlatform = loadPlatform(element) ?: PlatformTriple(OperatingSystem.LINUX, CpuArchitecture.UNKNOWN),
             )
             "ssh" -> RuntimeTarget.RemoteSsh(
@@ -144,7 +150,7 @@ object SageRuntimeSdkDisplay {
     fun targetLabel(target: RuntimeTarget): String = when (target) {
         RuntimeTarget.Native -> "Native"
         is RuntimeTarget.Wsl -> "WSL: ${target.distribution}"
-        is RuntimeTarget.Docker -> "Docker: ${target.image}"
+        is RuntimeTarget.Docker -> "${target.engine.executable}: ${target.image}"
         is RuntimeTarget.RemoteSsh -> "SSH: ${target.user?.let { "$it@" } ?: ""}${target.host}:${target.port}${target.runtimeRoot?.let { " ($it)" } ?: ""}"
     }
 

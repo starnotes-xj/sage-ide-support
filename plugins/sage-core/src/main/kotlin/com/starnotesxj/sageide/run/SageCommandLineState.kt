@@ -5,7 +5,16 @@ import com.intellij.execution.configurations.CommandLineState
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.OSProcessHandler
 import com.intellij.execution.process.ProcessHandler
+import java.nio.file.Files
 import com.intellij.execution.runners.ExecutionEnvironment
+import com.starnotesxj.sagemath.runtime.ContainerCommandBuilder
+import com.starnotesxj.sagemath.runtime.ContainerEngine
+import com.starnotesxj.sagemath.runtime.ContainerRunSpec
+import com.starnotesxj.sagemath.runtime.RuntimePathMapper
+import com.starnotesxj.sagemath.runtime.RuntimeTarget
+import com.starnotesxj.sagemath.runtime.SshOpenSshCommandBuilder
+import com.starnotesxj.sagemath.runtime.SshSageRunRequest
+import java.nio.file.Path
 import java.nio.file.Paths
 
 /**
@@ -34,9 +43,8 @@ class SageCommandLineState(
         val mode = when (executables.target) {
             com.starnotesxj.sagemath.runtime.RuntimeTarget.Native -> ExecutionMode.NATIVE
             is com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl -> ExecutionMode.WSL
-            is com.starnotesxj.sagemath.runtime.RuntimeTarget.Docker -> ExecutionMode.DOCKER
-            is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh ->
-                throw ExecutionException("SSH SageMath execution requires a target transport")
+            is RuntimeTarget.Docker -> ExecutionMode.DOCKER
+            is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh -> ExecutionMode.SSH
         }
         val commandLine = when (mode) {
             ExecutionMode.NATIVE -> GeneralCommandLine(executables.sage)
@@ -55,7 +63,40 @@ class SageCommandLineState(
                 GeneralCommandLine("wsl.exe", "-d", target.distribution, "--exec", "/bin/bash", "-lc", command)
             }
 
-            ExecutionMode.DOCKER -> dockerCommandLine(s, scriptArguments, executables.sage)
+            ExecutionMode.DOCKER -> {
+                val target = executables.target as RuntimeTarget.Docker
+                dockerCommandLine(s, target.engine, scriptArguments)
+            }
+
+            ExecutionMode.SSH -> {
+                val target = executables.target as RuntimeTarget.RemoteSsh
+                val transport = SageRuntimeService.getInstance().resolveSshTransportSpec(s, target)
+                if (!transport.succeeded) {
+                    throw ExecutionException(transport.diagnostics.firstOrNull()?.message ?: "SSH transport settings are invalid")
+                }
+                val mapping = target.pathMapping ?: throw ExecutionException("SSH path mapping is required")
+                val script = runCatching { Path.of(configuration.scriptPath).toAbsolutePath().normalize() }.getOrElse {
+                    throw ExecutionException("SSH script path is invalid: ${configuration.scriptPath}", it)
+                }
+                if (!Files.isRegularFile(script) || script == mapping.localRoot.toAbsolutePath().normalize()) {
+                    throw ExecutionException("SSH Sage script must be an existing regular file inside the configured local mapping")
+                }
+                val remoteScript = runCatching { RuntimePathMapper().toTarget(script, target) }.getOrElse {
+                    throw ExecutionException("SSH script path is outside the configured mapping: ${it.message}", it)
+                }
+                val request = runCatching {
+                    SshSageRunRequest(
+                        transport = transport.value!!,
+                        remoteSageExecutable = executables.sage,
+                        remoteScriptPath = remoteScript,
+                        sageArguments = sageArguments,
+                        scriptArguments = scriptArguments,
+                    )
+                }.getOrElse {
+                    throw ExecutionException("SSH Sage run request is invalid: ${it.message}", it)
+                }
+                GeneralCommandLine(SshOpenSshCommandBuilder.build(request))
+            }
         }
         return try {
             OSProcessHandler(commandLine)
@@ -67,22 +108,23 @@ class SageCommandLineState(
 
     private fun dockerCommandLine(
         s: SageRunSettings.State,
+        engine: ContainerEngine,
         scriptArguments: List<String>,
-        sageExecutable: String,
     ): GeneralCommandLine {
         val script = Paths.get(configuration.scriptPath)
         val scriptDir = script.parent ?: throw ExecutionException("Cannot determine the script directory")
         val scriptName = script.fileName.toString()
-        return GeneralCommandLine(
-            "docker", "run", "--rm",
-            "-v", "$scriptDir:${s.dockerContainerDir}",
-            "-w", s.dockerContainerDir,
-            s.dockerImage,
-            sageExecutable,
+        val spec = ContainerRunSpec(
+            engine = engine,
+            image = s.dockerImage,
+            containerCommand = s.dockerCommand,
+            hostScriptDirectory = scriptDir,
+            containerWorkingDirectory = s.dockerContainerDir,
+            scriptFileName = scriptName,
+            sageArguments = tokenizeArguments(s.sageParameters),
+            scriptArguments = scriptArguments,
         )
-            .withParameters(tokenizeArguments(s.sageParameters))
-            .withParameters(scriptName)
-            .withParameters(scriptArguments)
+        return GeneralCommandLine(ContainerCommandBuilder.build(spec))
     }
 
 }

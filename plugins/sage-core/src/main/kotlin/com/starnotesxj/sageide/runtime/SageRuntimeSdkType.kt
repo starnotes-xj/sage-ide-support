@@ -127,6 +127,7 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
     private var workingData: SageRuntimeSdkAdditionalData? = null
     private var initial: SageRuntimeSdkAdditionalData? = null
     private val targetKind = ComboBox(TargetKind.entries.toTypedArray())
+    private val containerEngine = ComboBox(com.starnotesxj.sagemath.runtime.ContainerEngine.entries.toTypedArray())
     private val detailsField = JBTextField()
     private val userField = JBTextField()
     private val portField = JBTextField("22")
@@ -162,13 +163,15 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
             return labelComponent
         }
         row(0, "Target:", targetKind)
-        row(1, "Distribution / image / host:", detailsField)
-        row(2, "SSH user:", userField)
-        row(3, "SSH port:", portField)
-        val runtimeRootLabel = row(4, "SSH runtime root:", runtimeRootField)
-        val mappingLocalLabel = row(5, "Local mapping root:", mappingLocalRootField)
-        val mappingTargetLabel = row(6, "Target mapping root:", mappingTargetRootField)
-        row(7, "Validation:", statusLabel)
+        val containerEngineLabel = row(1, "Container engine:", containerEngine)
+        containerEngine.putClientProperty("sage.label", containerEngineLabel)
+        row(2, "Distribution / image / host:", detailsField)
+        row(3, "SSH user:", userField)
+        row(4, "SSH port:", portField)
+        val runtimeRootLabel = row(5, "SSH runtime root:", runtimeRootField)
+        val mappingLocalLabel = row(6, "Local mapping root:", mappingLocalRootField)
+        val mappingTargetLabel = row(7, "Target mapping root:", mappingTargetRootField)
+        row(8, "Validation:", statusLabel)
         runtimeRootField.putClientProperty("sage.label", runtimeRootLabel)
         mappingLocalRootField.putClientProperty("sage.label", mappingLocalLabel)
         mappingTargetRootField.putClientProperty("sage.label", mappingTargetLabel)
@@ -213,6 +216,7 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
         when (target) {
             RuntimeTarget.Native -> {
                 targetKind.selectedItem = TargetKind.NATIVE
+                containerEngine.selectedItem = com.starnotesxj.sagemath.runtime.ContainerEngine.DOCKER
                 detailsField.text = ""
                 userField.text = ""
                 portField.text = "22"
@@ -222,6 +226,7 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
             }
             is RuntimeTarget.Wsl -> {
                 targetKind.selectedItem = TargetKind.WSL
+                containerEngine.selectedItem = com.starnotesxj.sagemath.runtime.ContainerEngine.DOCKER
                 detailsField.text = target.distribution
                 userField.text = ""
                 portField.text = "22"
@@ -231,6 +236,7 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
             }
             is RuntimeTarget.Docker -> {
                 targetKind.selectedItem = TargetKind.DOCKER
+                containerEngine.selectedItem = target.engine
                 detailsField.text = target.image
                 userField.text = ""
                 portField.text = "22"
@@ -240,6 +246,7 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
             }
             is RuntimeTarget.RemoteSsh -> {
                 targetKind.selectedItem = TargetKind.SSH
+                containerEngine.selectedItem = com.starnotesxj.sagemath.runtime.ContainerEngine.DOCKER
                 detailsField.text = target.host
                 userField.text = target.user.orEmpty()
                 portField.text = target.port.toString()
@@ -255,7 +262,11 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
     private fun targetFromFields(): RuntimeTarget = when (targetKind.selectedItem as TargetKind) {
         TargetKind.NATIVE -> RuntimeTarget.Native
         TargetKind.WSL -> RuntimeTarget.Wsl(detailsField.text.trim(), pathMapping = mappingFromFields())
-        TargetKind.DOCKER -> RuntimeTarget.Docker(detailsField.text.trim(), pathMapping = mappingFromFields())
+        TargetKind.DOCKER -> RuntimeTarget.Docker(
+            detailsField.text.trim(),
+            pathMapping = mappingFromFields(),
+            engine = containerEngine.selectedItem as com.starnotesxj.sagemath.runtime.ContainerEngine,
+        )
         TargetKind.SSH -> RuntimeTarget.RemoteSsh(
             host = detailsField.text.trim(),
             user = userField.text.trim().takeIf { it.isNotEmpty() },
@@ -278,9 +289,12 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
     private fun updateFieldVisibility() {
         val ssh = targetKind.selectedItem == TargetKind.SSH
         val mapped = targetKind.selectedItem == TargetKind.WSL || targetKind.selectedItem == TargetKind.DOCKER || ssh
+        containerEngine.isVisible = targetKind.selectedItem == TargetKind.DOCKER
+        containerEngine.isEnabled = targetKind.selectedItem == TargetKind.DOCKER
         runtimeRootField.isVisible = ssh
         mappingLocalRootField.isVisible = mapped
         mappingTargetRootField.isVisible = mapped
+        (containerEngine.getClientProperty("sage.label") as? JComponent)?.isVisible = targetKind.selectedItem == TargetKind.DOCKER
         (runtimeRootField.getClientProperty("sage.label") as? JComponent)?.isVisible = ssh
         (mappingLocalRootField.getClientProperty("sage.label") as? JComponent)?.isVisible = mapped
         (mappingTargetRootField.getClientProperty("sage.label") as? JComponent)?.isVisible = mapped

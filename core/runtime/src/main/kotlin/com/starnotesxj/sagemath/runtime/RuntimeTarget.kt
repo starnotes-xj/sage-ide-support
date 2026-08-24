@@ -22,6 +22,7 @@ sealed interface RuntimeTarget {
     data class Docker(
         val image: String,
         val pathMapping: RuntimePathMapping? = null,
+        val engine: ContainerEngine = ContainerEngine.DOCKER,
         override val targetPlatform: PlatformTriple = PlatformTriple(OperatingSystem.LINUX, CpuArchitecture.UNKNOWN),
     ) : RuntimeTarget {
         init { require(image.isNotBlank()) { "Docker image must not be blank" } }
@@ -200,23 +201,20 @@ class JdkRuntimeTargetExecutor(
     private val local: RuntimeProcessExecutor = JdkRuntimeProcessExecutor(),
     private val remote: (TargetProcessRequest) -> RuntimeProcessResult,
 ) : RuntimeTargetExecutor {
-    override fun execute(request: TargetProcessRequest): RuntimeProcessResult {
-        val command = RuntimeTargetCommandBuilder.build(request)
-        return when (request.target) {
-            RuntimeTarget.Native,
-            is RuntimeTarget.Wsl,
-            is RuntimeTarget.Docker,
-            -> local.execute(
-                RuntimeProcessRequest(
-                    command = command,
-                    workingDirectory = request.workingDirectory?.let(Path::of),
-                    environment = request.environment,
-                    control = request.control,
-                    maxOutputBytes = request.maxOutputBytes,
-                ),
-            )
-            is RuntimeTarget.RemoteSsh -> remote(request)
-        }
+    override fun execute(request: TargetProcessRequest): RuntimeProcessResult = when (request.target) {
+        RuntimeTarget.Native,
+        is RuntimeTarget.Wsl,
+        is RuntimeTarget.Docker,
+        -> local.execute(
+            RuntimeProcessRequest(
+                command = RuntimeTargetCommandBuilder.build(request),
+                workingDirectory = request.workingDirectory?.let(Path::of),
+                environment = request.environment,
+                control = request.control,
+                maxOutputBytes = request.maxOutputBytes,
+            ),
+        )
+        is RuntimeTarget.RemoteSsh -> remote(request)
     }
 }
 
@@ -224,8 +222,10 @@ object RuntimeTargetCommandBuilder {
     fun build(request: TargetProcessRequest): List<String> = when (val target = request.target) {
         RuntimeTarget.Native -> listOf(request.executable) + request.args
         is RuntimeTarget.Wsl -> listOf("wsl.exe", "-d", target.distribution, "--", request.executable) + request.args
-        is RuntimeTarget.Docker -> listOf("docker", "run", "--rm", target.image, request.executable) + request.args
-        is RuntimeTarget.RemoteSsh -> listOf("ssh", "-p", target.port.toString(), target.user?.let { "$it@${target.host}" } ?: target.host, request.executable) + request.args
+        is RuntimeTarget.Docker -> listOf(target.engine.executable, "run", "--rm", target.image, request.executable) + request.args
+        is RuntimeTarget.RemoteSsh -> throw IllegalArgumentException(
+            "Generic RemoteSsh command construction is disabled; use SshOpenSshCommandBuilder with validated transport settings",
+        )
     }
 }
 

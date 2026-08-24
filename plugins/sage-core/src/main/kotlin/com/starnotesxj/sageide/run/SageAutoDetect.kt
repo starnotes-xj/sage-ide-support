@@ -33,6 +33,10 @@ object SageAutoDetect {
         sageExecutable: String,
         timeoutMillis: Long = 60_000,
     ): WslSageRuntime? {
+        require(distribution.isNotBlank()) { "WSL distribution must not be blank" }
+        require(condaEnvironment.isNotBlank()) { "WSL Conda environment must not be blank" }
+        validateWslPath(condaExecutable, "Conda executable")
+        validateWslPath(sageExecutable, "Sage executable")
         val output = exec(
             GeneralCommandLine(
                 "wsl.exe", "-d", distribution, "--exec", "/bin/bash", "-lc",
@@ -115,6 +119,25 @@ object SageAutoDetect {
         return output.stdout.trim().lines()
             .firstOrNull { it.contains("sage", ignoreCase = true) }
             ?.takeIf { it.isNotBlank() }
+    }
+
+    fun validateConfiguredWslSettings(
+        distribution: String,
+        condaEnvironment: String,
+        condaExecutable: String,
+        sageExecutable: String,
+    ) {
+        require(distribution.isNotBlank()) { "WSL distribution must not be blank" }
+        require(condaEnvironment.isNotBlank()) { "WSL Conda environment must not be blank" }
+        validateWslPath(condaExecutable, "Conda executable")
+        validateWslPath(sageExecutable, "Sage executable")
+    }
+
+    private fun validateWslPath(value: String, label: String) {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return
+        require(trimmed.startsWith("/") && !trimmed.startsWith("//")) { "$label must be an absolute POSIX path" }
+        require(trimmed.none(Char::isISOControl) && '\\' !in trimmed) { "$label must use printable POSIX path characters" }
     }
 
     private fun exec(commandLine: GeneralCommandLine, timeoutMillis: Long = 10_000): ProcessOutput? {

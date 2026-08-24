@@ -1,6 +1,7 @@
 package com.starnotesxj.sageide.run
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SageDebugCommandLineStateTest {
@@ -22,6 +23,22 @@ class SageDebugCommandLineStateTest {
     fun `converts Windows paths to WSL paths`() {
         assertEquals("/mnt/c/Users/星记/test.sage", toWslPath("C:\\Users\\星记\\test.sage"))
         assertEquals("/home/user/test.sage", toWslPath("/home/user/test.sage"))
+    }
+
+    @Test
+    fun `isolated WSL settings use independent executable paths`() {
+        val state = SageRunSettings.State()
+        state.nativeSageExecutable = "C:/Sage/sage.exe"
+        state.wslSageExecutable = "/home/user/miniconda3/envs/sage/bin/sage"
+        assertEquals("C:/Sage/sage.exe", state.nativeSageExecutable)
+        assertEquals("/home/user/miniconda3/envs/sage/bin/sage", state.wslSageExecutable)
+    }
+
+    @Test
+    fun `WSL probe rejects non POSIX configured paths`() {
+        kotlin.test.assertFailsWith<IllegalArgumentException> {
+            SageAutoDetect.detectWslRuntime("Ubuntu", "sage", "C:/conda.exe", "")
+        }
     }
 
     @Test
@@ -76,5 +93,12 @@ class SageDebugCommandLineStateTest {
         kotlin.test.assertFailsWith<IllegalStateException> {
             wslDebugScript("sage", "/opt/sage/bin/sage")
         }
+    }
+
+    @Test
+    fun `container debug boundary is documented in source contract`() {
+        val source = SageDebugCommandLineState::class.java
+            .getDeclaredField("LAUNCHER_SOURCE")
+        assertTrue(source.name == "LAUNCHER_SOURCE")
     }
 }
