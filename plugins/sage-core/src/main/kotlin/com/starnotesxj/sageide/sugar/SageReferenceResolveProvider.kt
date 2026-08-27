@@ -71,7 +71,10 @@ class SageReferenceResolveProvider : PyReferenceResolveProvider {
         // The index element's AST may already be dropped (PyCharm 2026.2
         // impatient-reader highlighting); never hand an invalid element back.
         if (!declaration.isValid) return emptyList()
-        LOG.warn("Sage: resolved implicit name '$name'")
+        // Resolution is the normal hot path for every unqualified Sage name;
+        // keep it out of the warning log so editor inspections do not perform
+        // needless I/O or hide real PSI failures in a flood of success lines.
+        LOG.debug("Sage: resolved implicit name '$name'")
         return ResolveResultList.to(declaration)
     }
 
