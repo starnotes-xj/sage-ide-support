@@ -14,7 +14,7 @@
 
 | 能力 | .sage | 普通 .py | 当前结论 | 主要实现/证据 |
 | --- | --- | --- | --- | --- |
-| Sage 10.9 全量 API 索引读取 | 外部索引 | 外部索引 | **已验证**：84,159 normalized entries、84,187 raw declarations、2,839 source digests、conflicts=0；FULL envelope/complete | core/sage-api query；SageIntelligenceHarnessTest.testConfiguredFullIndexCoverageMatrix |
+| Sage 10.9 全量 API 索引读取 | 外部索引 | 外部索引 | **已验证（开发索引/query）**：84,188 normalized identities、84,221 raw AST declarations、2,843 source files、conflicts=0；当前 staging 目录未提供 envelope/receipt，因此 product-sidecar 验证仍未完成 | core/sage-api query；SageIntelligenceHarnessTest.testConfiguredFullIndexCoverageMatrix |
 | sage.all 隐式根补全 | 隐式可用 | 不注入 | **已验证**：根命名空间、external-only symbol、alias、constant | SageImplicitCompletionContributor；testConfiguredFullIndexExposesEveryRootCompletionIdentity |
 | 显式 Sage 模块导入/模块成员 | 支持显式导入 | 支持显式导入 | **已验证**；只向 sage.* 模块提供索引成员，native PSI 优先 | SageApiModuleMembersProvider；testExplicitPythonModuleUsesIndexedDirectExports |
 | 普通非 Sage Python 隔离 | 不适用 | 不注入 Sage 索引 | **已验证** | SageApiDocumentationProviderTest.testPlainPythonFileDoesNotConsumeSageIndex；provider context gate |

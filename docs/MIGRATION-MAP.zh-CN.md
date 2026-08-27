@@ -11,6 +11,8 @@
 
 > 当前实际状态：Sage Core 语言/运行基线已迁移并通过构建/测试；`core:sage-api` 与 `plugins:sage-core` 已形成 scoped 数据驱动 API 链路。Runtime Manager 核心已由 `a2c7fdc` 进入 `main`；CTF MVP/图形化 Math Lab 实现会话仍在独立 worktree，主线整合、产品 UI/真实端点和分发验收按独立边界推进。完整矩阵见 [功能实现状态与版本边界](FEATURE-STATUS.zh-CN.md)。
 
+> **SageMath 智能优先（2026-08-27）**：当前先收口 Sage 原生编辑器体验，不推进 CTF/Notebook/发行扩展。真实 10.9 开发索引已用于外部 query/harness；下一阶段按“fresh PyCharm 安装 → 编辑器补全/文档/停止分析 smoke → 参数与跳转/source-map”顺序验收。索引中的具体合同来自存根/生成器数据，插件只做通用类型 lowering 和 PSI 集成，不增加按类名或方法名的白名单。
+
 | 源能力 | 当前来源 | 目标位置 | 状态 |
 |---|---|---|---|
 | Sage 文件类型、语言和图标 | `src/main/kotlin/.../sugar` | `plugins/sage-core/src/main/kotlin/.../sugar` | 已迁移基线 |

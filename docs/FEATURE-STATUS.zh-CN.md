@@ -4,6 +4,8 @@
 >
 > 产品首要目标已明确为 SageMath 全量代码智能：API 索引、类型推断、补全、参数/文档提示、跳转和 source-map；Jupyter 仅保留为后续可选兼容层。
 
+> **2026-08-27 SageMath 智能增量**：Sage 10.9/Python 3.13 开发索引已达到 84,188 identities、84,221 raw AST declarations、2,843 source files。`plugins:sage-core` 已以数据驱动合同统一具体返回类型、参数绑定、成员补全和 Quick Documentation；具体 canonical active stub 才能进入最终 PSI 类型，基类仅用于成员继承查找，UNKNOWN/DYNAMIC/歧义保持 fail-closed。外部索引 query/harness 已通过，但 fresh PyCharm 编辑器 smoke、product-sidecar envelope/receipt 与最终 installer 验收仍未完成。
+
 ## 一、结论
 
 设计文档描述的是完整产品路线，不是当前已完成清单。按当前设计范围划分：

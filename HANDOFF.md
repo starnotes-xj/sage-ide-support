@@ -188,3 +188,12 @@
 - 根因是 `SageApiModuleMembersProvider` 将外部索引生成的 synthetic members 也注入 Sage SDK 自己的 `.pyi` 文件；Python 的 `from ... import ...` 解析随即拿到无父节点 synthetic PSI。现已通用地跳过所有 active Sage stub 文件，保留 native `.pyi` 作为权威来源；外部索引只补充用户代码显式导入的 Sage 模块。该边界不含任何类名或方法名分支。
 - `SageStubIndex` 的正常命中、未命中和 canonical lookup 日志已从 `warn` 降为 `debug`，避免每次类型查询写入成千上万条 warning 并进一步拖慢分析。
 - 通过：`SageTypeProviderTest` 与 `SageApiIndexServiceTest` 的定向 Gradle 回归；full-index `buildPlugin`。最新 ZIP 已覆盖为 `G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-contract-all-20260827.zip`，16,118,482 bytes，SHA-256 `6E5614EACE50E43C8D76E657B83302C56DB2DAC7991D03640AA6CB6BA2B20117`；内嵌完整 `sage-api-index.json`（139,245,255 bytes）。尚未取得安装此新 ZIP 后的真实 PyCharm 编辑器停止分析 smoke 证据。
+
+## 十九、本轮增量（2026-08-27，保存与文档收口）
+
+- 已提交上一轮 Sage 智能实现，提交号为 `acb30ec`（“让 SageMath 智能链路以严格具体合同驱动”）。本轮未修改官方 upstream、旧插件仓库或 staging 之外的 Sage 源存根。
+- 已阅读 `docs/FEATURE-STATUS.zh-CN.md`、`docs/IDE-PLAN.zh-CN.md`、`docs/MIGRATION-MAP.zh-CN.md`、`docs/SAGE-INTELLIGENCE-SPEC.zh-CN.md`、`docs/SAGE-SEMANTIC-COVERAGE-MATRIX.zh-CN.md`、`docs/STATUS.zh-CN.md` 和 `tools/sage-api-index/README.zh-CN.md`。当前执行边界收窄为 Sage 原生编辑器智能：索引、具体类型、补全、参数信息、Quick Documentation、跳转/source-map；CTF/Notebook/发行扩展暂不作为本轮完成条件。
+- 当前 staged Sage 10.9/Python 3.13 contract index 的真实计数为 `84,188` normalized identities、`84,221` raw AST declarations、`2,843` source files；`sage-api-curated-type-contracts.coverage.json` 的 expected set 为空，不能把 `coverageRatio=1.0` 当成全量语义覆盖证明。当前 staging 目录也没有 `sage-api-index-envelope.json`/`artifact-receipt.json`，所以 product-sidecar provenance 尚未验收。
+- 已将 `SageApiIndexServiceTest`/`SageIntelligenceHarnessTest` 中的历史固定计数和旧单一 `solve_right` 返回断言改为当前合同的不变量：根命名空间唯一且规模合理，`solve_right` 保留 Vector/Matrix 两个已知返回族，`nth_root` 使用当前已验证的 Integer 返回；sidecar 测试在开发目录缺少 envelope/receipt 时明确跳过，而不是制造假失败。
+- 已同步更新 `docs/STATUS.zh-CN.md`、`docs/FEATURE-STATUS.zh-CN.md`、`docs/MIGRATION-MAP.zh-CN.md` 与 `docs/SAGE-SEMANTIC-COVERAGE-MATRIX.zh-CN.md` 的计数和验证边界，避免继续使用过期的 `84,159/84,187/2,839/FULL envelope` 结论。
+- 本轮新增测试/文档改动已提交为第二个 Lore commit（当前短 SHA 以 `git log` 为准）；真实 PyCharm 安装、编辑器补全、停止分析 smoke 仍必须单独记录，不能用 Gradle 或 ZIP 证据替代。
