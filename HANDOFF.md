@@ -207,3 +207,10 @@
 - 已用同一份全量合同重新打包：`G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-contract-all-20260828.zip`，16,118,487 bytes，SHA-256 `EF29EDF7D37166D6F2F62E56225F23288A487FB5048B44635651B6A8B69B9689`；ZIP 顶层为 `sage-core/`，内嵌 index 为 Sage 10.9/Python 3.13、84,188 entries、139,245,255 bytes，`Matrix.solve_right` 保留 `FreeModuleElement | matrix2.Matrix` 两个返回族。
 - 直接运行用户样例的 Sage 10.9 WSL 结果正常：`EllipticCurve_finite_field_with_category`、`EllipticCurvePoint_finite_field`、`EllipticCurvePoint_finite_field`，`P.log(G)=12`，`P.curve()` 返回有限域椭圆曲线，`E.a_invariants()` 为 `(0, 0, 0, 1, 1)`。这只证明运行时契约，不等于 PyCharm 编辑器验收。
 - 最新日志仍属于修复前/同一启动会话的已有记录；尚未重启并重新安装 `20260828` ZIP，因此“停止分析”和 `parent is null` 是否在 fresh 会话消失仍未验证。下一步必须从磁盘安装该 ZIP、重启 PyCharm，再用 `test2.sage` 做真实 completion/Quick Documentation/analysis-spinner smoke。
+
+## 二十一、本轮增量（2026-08-28，00:05 安装结果与 DirectoryLock）
+
+- 用户提供的启动错误是 PyCharm `DirectoryLock` 失败，不是 Sage 类型合同异常：`C:\Users\星记\AppData\Local\JetBrains\PyCharm2026.2\.port` 是 0 字节 `ReparsePoint`，创建于 `00:05:57`，Windows 当前无法访问或删除；同一堆栈还报告 Unix socket `bind/connect` 的 `Invalid argument`，并未找到有效 `.lock`。只读检查时没有运行中的 `pycharm64.exe`，所以该文件目前表现为上次启动/重启留下的 stale lock；尚未删除或声称已修复。
+- `idea.log` 的 `00:05:58` 启动记录随后在 `00:06:10`、`00:06:18`、`00:06:22` 继续出现 `PyCustomMemberProviderImpl$MyInstanceElement parent is null`；同一会话的 `SageReferenceResolveProvider` 成功命中仍以 `WARN` 记录。最新源码已将成功命中降为 `DEBUG`，因此这组日志证明 00:05 会话实际加载的不是最新 `3cc8443` 代码行为。
+- 当前有效插件目录 `C:\Users\星记\AppData\Roaming\JetBrains\PyCharm2026.2\plugins\sage-core` 的核心 JAR 创建/修改时间仍为 `2026-08-27 23:29:15`，SHA-256 为 `6ED06694C64048B62E04A99657912913E3E7AAFC03921B16B5A332E08EF8F908`，与 `sage-core-0.1.0-dev-contract-all-20260827.zip` 内嵌 JAR 完全一致；它不等于 00:05 生成的 `20260828` ZIP 内嵌 JAR SHA `274579EE3C00545C878B1B08D5804B105415505393FF4F13328C3624C51277CD`。因此“00:05 执行了安装”不能证明 20260828 包已经成为有效运行时包，可能被 Settings Sync 保留/回滚为旧包。
+- 00:22:22 的 `SettingsSyncPluginManager` 又记录了一次 `Installed plugin com.starnotesxj.sagemath.ctf.sage-core`，并在 `00:22:24` 生成 `.updated_plugins_list`；当前仍未取得新包重新安装后的 fresh completion/Quick Documentation/analysis-spinner 证据。下一步应先在 PyCharm 完全退出后处理这个单一 `.port` 锁，再确认插件 JAR SHA 等于 20260828 包，最后重启做真实 `test2.sage` smoke。
