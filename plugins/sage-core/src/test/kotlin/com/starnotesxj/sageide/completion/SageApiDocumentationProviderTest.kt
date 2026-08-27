@@ -3,8 +3,14 @@ package com.starnotesxj.sageide.completion
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.starnotesxj.sageide.SagePluginTestBase
+import com.starnotesxj.sagemath.sageapi.SageApiDocumentation
+import com.starnotesxj.sagemath.sageapi.SageApiEntry
 import com.starnotesxj.sagemath.sageapi.SageApiIndexJsonReader
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
+import com.starnotesxj.sagemath.sageapi.SageApiParameter
+import com.starnotesxj.sagemath.sageapi.SageApiSignature
+import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
+import com.starnotesxj.sagemath.sageapi.SageTypeRef
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -49,5 +55,44 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
         } finally {
             SageApiIndexService.getInstance().install(null)
         }
+    }
+
+    fun testIndexedDocumentationPreservesSectionsAndRendersFencedCode() {
+        val entry = SageApiEntry(
+            qualifiedName = "sage.demo.log",
+            kind = SageApiSymbolKind.METHOD,
+            signatures = listOf(
+                SageApiSignature(
+                    parameters = listOf(SageApiParameter("base", SageTypeRef.known("Integer"))),
+                    returnType = SageTypeRef.known("Integer"),
+                ),
+            ),
+            documentation = SageApiDocumentation(
+                summary = "Compute a discrete logarithm.",
+                body = """
+                    Parameters:
+                    - ``base`` -- the logarithm base.
+
+                    Returns:
+                    ``Integer`` -- the discrete logarithm.
+
+                    Examples:
+                    ```sage
+                    P.log(G)
+                    G.log(P)
+                    ```
+                """.trimIndent(),
+            ),
+        )
+        val renderDocumentation = SageApiDocumentationProvider::class.java
+            .getDeclaredMethod("renderDocumentation", SageApiEntry::class.java)
+            .apply { isAccessible = true }
+        val html = renderDocumentation.invoke(SageApiDocumentationProvider(), entry) as String
+
+        assertTrue("<table class='sections'>" in html, html)
+        assertTrue("class='section'" in html, html)
+        assertTrue("<code>base</code>" in html, html)
+        assertTrue("<pre><code>P.log(G)\nG.log(P)</code></pre>" in html, html)
+        assertTrue("```" !in html, html)
     }
 }
