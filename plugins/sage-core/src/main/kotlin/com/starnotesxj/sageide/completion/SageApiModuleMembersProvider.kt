@@ -25,17 +25,18 @@ import com.starnotesxj.sageide.type.SageTypeLowering
  */
 class SageApiModuleMembersProvider : PyModuleMembersProvider() {
     override fun getMembers(module: PyFile, point: PointInImport, context: TypeEvalContext): Collection<PyCustomMember> {
-        // Generated Sage stubs are native PSI and must remain authoritative.
-        // Feeding indexed synthetic declarations into their own from-import
-        // resolution creates parentless custom PSI elements, which PythonCore
-        // can revisit indefinitely during inspections.
-        if (SageFileUtils.isSageFile(module) || SageStubIndex.isSageStubFile(module)) return emptyList()
+        // Active Sage SDK source/stubs are native PSI and must remain
+        // authoritative. Feeding indexed synthetic declarations into their own
+        // module resolution (including runtime .py packages, not just .pyi)
+        // creates parentless custom PSI elements, which PythonCore can revisit
+        // indefinitely during inspections.
+        if (SageFileUtils.isSageFile(module) || SageStubIndex.isSageSdkFile(module)) return emptyList()
         val qualifiedName = moduleQName(module) ?: return emptyList()
         return indexedMembers(module, qualifiedName)
     }
 
     override fun resolveMember(module: PyFile, name: String, resolveContext: PyResolveContext): PsiElement? {
-        if (SageFileUtils.isSageFile(module) || SageStubIndex.isSageStubFile(module)) return null
+        if (SageFileUtils.isSageFile(module) || SageStubIndex.isSageSdkFile(module)) return null
         val qualifiedName = moduleQName(module) ?: return null
         return indexedMembers(module, qualifiedName)
             .firstOrNull { it.name == name }
@@ -43,7 +44,7 @@ class SageApiModuleMembersProvider : PyModuleMembersProvider() {
     }
 
     override fun getMembersByQName(module: PyFile, qName: String, context: TypeEvalContext): Collection<PyCustomMember> =
-        if (!SageFileUtils.isSageFile(module) && !SageStubIndex.isSageStubFile(module) && qName.startsWith("sage.")) {
+        if (!SageFileUtils.isSageFile(module) && !SageStubIndex.isSageSdkFile(module) && qName.startsWith("sage.")) {
             indexedMembers(module, qName)
         } else {
             emptyList()

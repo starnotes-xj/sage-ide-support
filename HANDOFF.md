@@ -197,3 +197,12 @@
 - 已将 `SageApiIndexServiceTest`/`SageIntelligenceHarnessTest` 中的历史固定计数和旧单一 `solve_right` 返回断言改为当前合同的不变量：根命名空间唯一且规模合理，`solve_right` 保留 Vector/Matrix 两个已知返回族，`nth_root` 使用当前已验证的 Integer 返回；sidecar 测试在开发目录缺少 envelope/receipt 时明确跳过，而不是制造假失败。
 - 已同步更新 `docs/STATUS.zh-CN.md`、`docs/FEATURE-STATUS.zh-CN.md`、`docs/MIGRATION-MAP.zh-CN.md` 与 `docs/SAGE-SEMANTIC-COVERAGE-MATRIX.zh-CN.md` 的计数和验证边界，避免继续使用过期的 `84,159/84,187/2,839/FULL envelope` 结论。
 - 本轮新增测试/文档改动已提交为第二个 Lore commit（当前短 SHA 以 `git log` 为准）；真实 PyCharm 安装、编辑器补全、停止分析 smoke 仍必须单独记录，不能用 Gradle 或 ZIP 证据替代。
+
+## 二十、本轮增量（2026-08-28，SDK 模块 PSI 边界修复）
+
+- 读取 `C:\\Users\\星记\\AppData\\Local\\JetBrains\\PyCharm2026.2\\log\\idea.log` 的最新堆栈：`PyDeprecationInspection` → `PyiUtil.findSimilarElement` → `PyModuleType.resolveMemberInPackageOrModule`，仍在解析 `PyCustomMemberProviderImpl$MyInstanceElement` 时触发 `parent is null`。这证明只排除 `.pyi` 仍不够，WSL Sage SDK 的运行时 `.py` 包模块也会进入同一解析路径。
+- `SageApiModuleMembersProvider` 现统一跳过所有 `SageStubIndex.isSageSdkFile(module)`（包括 `site-packages/sage/*.py`、`.pyi` 和包模块），同时保留用户代码显式 `sage.*` 模块的索引补全。该修复仍是文件来源边界，不含任何 Sage 类名/方法名白名单。
+- 生产回归通过：`SageApiDocumentationProviderTest`/`SageIntelligenceHarnessTest` 定向回归、插件全量 `:plugins:sage-core:test`（配置 Python 3.13 SDK）和外部 Sage 10.9 `SageApiIndexServiceTest` + `SageIntelligenceHarnessTest` 均 `BUILD SUCCESSFUL`。
+- 已用同一份全量合同重新打包：`G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-contract-all-20260828.zip`，16,118,485 bytes，SHA-256 `D1B9D3B220DCDE421CCF66C9A4807344D5057F955AC8FB1ED78A59ABCBD860F3`；ZIP 顶层为 `sage-core/`，内嵌 index 为 Sage 10.9/Python 3.13、84,188 entries、139,245,255 bytes，`Matrix.solve_right` 保留 `FreeModuleElement | matrix2.Matrix` 两个返回族。
+- 直接运行用户样例的 Sage 10.9 WSL 结果正常：`EllipticCurve_finite_field_with_category`、`EllipticCurvePoint_finite_field`、`EllipticCurvePoint_finite_field`，`P.log(G)=12`，`P.curve()` 返回有限域椭圆曲线，`E.a_invariants()` 为 `(0, 0, 0, 1, 1)`。这只证明运行时契约，不等于 PyCharm 编辑器验收。
+- 最新日志仍属于修复前/同一启动会话的已有记录；尚未重启并重新安装 `20260828` ZIP，因此“停止分析”和 `parent is null` 是否在 fresh 会话消失仍未验证。下一步必须从磁盘安装该 ZIP、重启 PyCharm，再用 `test2.sage` 做真实 completion/Quick Documentation/analysis-spinner smoke。
