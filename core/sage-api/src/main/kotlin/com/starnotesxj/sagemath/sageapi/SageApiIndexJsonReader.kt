@@ -51,6 +51,15 @@ object SageApiIndexJsonReader {
         )
     }
 
+    private fun parseReturnEvidence(value: Any?, path: String): SageApiReturnEvidence {
+        val objectValue = value.asObject(path)
+        return SageApiReturnEvidence(
+            kind = objectValue.requiredEnum("kind", path),
+            returnType = parseType(objectValue.requiredValue("returnType", path), path + ".returnType"),
+            source = parseSource(objectValue.requiredValue("source", path), path + ".source"),
+        )
+    }
+
     private fun parseSignature(value: Any?, path: String): SageApiSignature {
         val objectValue = value.asObject(path)
         return SageApiSignature(
@@ -58,6 +67,24 @@ object SageApiIndexJsonReader {
                 parseParameter(item, path + ".parameters[" + index + "]")
             } ?: emptyList(),
             returnType = parseType(objectValue.requiredValue("returnType", path), path + ".returnType"),
+            typeParameters = objectValue.optionalArray("typeParameters")?.mapIndexed { index, item ->
+                parseTypeParameter(item, path + ".typeParameters[" + index + "]")
+            } ?: emptyList(),
+            trustedReturnEvidence = objectValue.optionalArray("trustedReturnEvidence")?.mapIndexed { index, item ->
+                parseReturnEvidence(item, path + ".trustedReturnEvidence[" + index + "]")
+            } ?: emptyList(),
+        )
+    }
+
+    private fun parseTypeParameter(value: Any?, path: String): SageApiTypeParameter {
+        val objectValue = value.asObject(path)
+        return SageApiTypeParameter(
+            name = objectValue.requiredString("name", path),
+            kind = objectValue.optionalEnum<SageApiTypeParameterKind>("kind", path) ?: SageApiTypeParameterKind.TYPE_VARIABLE,
+            bound = objectValue.optionalValue("bound")?.let { parseType(it, path + ".bound") },
+            constraints = objectValue.optionalArray("constraints")?.mapIndexed { index, item ->
+                parseType(item, path + ".constraints[" + index + "]")
+            } ?: emptyList(),
         )
     }
 
@@ -70,6 +97,7 @@ object SageApiIndexJsonReader {
             optional = objectValue.optionalBoolean("optional") ?: (objectValue.optionalString("defaultValue") != null),
             keywordOnly = objectValue.optionalBoolean("keywordOnly") ?: false,
             variadic = objectValue.optionalBoolean("variadic") ?: false,
+            positionalOnly = objectValue.optionalBoolean("positionalOnly") ?: false,
         )
     }
 

@@ -7,6 +7,7 @@ import com.starnotesxj.sagemath.sageapi.SageApiEntry
 import com.starnotesxj.sagemath.sageapi.SageApiIndex
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
 import com.starnotesxj.sagemath.sageapi.SageApiSignature
+import com.starnotesxj.sagemath.sageapi.SageApiParameter
 import com.starnotesxj.sagemath.sageapi.SageApiSourceRef
 import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
 import com.starnotesxj.sagemath.sageapi.SageTypeRef
@@ -62,6 +63,13 @@ class SageApiIntelligenceFacade(private val service: SageApiIndexService) {
     fun moduleEntries(moduleQualifiedName: String): List<SageApiEntry> =
         query()?.moduleEntries(moduleQualifiedName).orEmpty()
 
+    /** Resolve a direct module export without falling back to global short-name collisions. */
+    fun moduleEntry(moduleQualifiedName: String, shortName: String): SageApiEntry? =
+        query()?.moduleEntries(moduleQualifiedName)
+            ?.filter { it.qualifiedName.substringAfterLast('.') == shortName }
+            ?.distinctBy { it.qualifiedName to it.kind }
+            ?.singleOrNull()
+
     /** Root namespace exports; defaults to the runtime-injected sage.all module. */
     fun rootEntries(rootQualifiedName: String = "sage.all"): List<SageApiEntry> =
         query()?.namespaceEntries(rootQualifiedName).orEmpty()
@@ -86,6 +94,9 @@ class SageApiIntelligenceFacade(private val service: SageApiIndexService) {
 
     fun uniqueKnownReturnType(functionQualifiedName: String): SageTypeRef? =
         query()?.uniqueKnownReturnType(functionQualifiedName)
+
+    fun uniqueKnownReturnExpression(functionQualifiedName: String): SageTypeRef? =
+        query()?.uniqueKnownReturnExpression(functionQualifiedName)
 
     fun resolveKnownClassName(typeExpression: String): String? =
         query()?.resolveKnownClassName(typeExpression)

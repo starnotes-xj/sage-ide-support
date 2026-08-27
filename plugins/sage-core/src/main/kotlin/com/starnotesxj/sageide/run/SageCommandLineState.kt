@@ -21,7 +21,7 @@ import java.nio.file.Paths
  * Builds the command line for one of the three execution modes:
  *
  * - NATIVE: the manifest-declared Sage launcher;
- * - WSL: `wsl.exe -d <distribution> -- bash -lc <activate environment; exec sage ...>`
+ * - WSL: `wsl.exe -d <distribution> -- <sageExecutable> <script> <args>`
  * - DOCKER: `docker run --rm -v <scriptDir>:<containerDir> -w <containerDir>
  *   <image> <dockerCommand> <scriptName> <args>` — the script directory is
  *   mounted into the container, so host/container path mapping is automatic.
@@ -35,41 +35,55 @@ class SageCommandLineState(
         val s = SageRunSettings.getInstance().getState()
         val scriptArguments = tokenizeArguments(configuration.scriptParameters)
         val sageArguments = tokenizeArguments(s.sageParameters)
-        val resolved = configuration.resolveSageExecutables()
-        if (!resolved.succeeded) {
+        val usesConfiguredWsl = configuration.usesConfiguredWslRuntime(s)
+        val resolved = if (usesConfiguredWsl) null else configuration.resolveSageExecutables()
+        if (resolved != null && !resolved.succeeded) {
             throw ExecutionException(resolved.diagnostics.firstOrNull()?.message ?: "The selected SageMath runtime is unavailable")
         }
-        val executables = resolved.value!!
-        val mode = when (executables.target) {
-            com.starnotesxj.sagemath.runtime.RuntimeTarget.Native -> ExecutionMode.NATIVE
-            is com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl -> ExecutionMode.WSL
-            is RuntimeTarget.Docker -> ExecutionMode.DOCKER
-            is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh -> ExecutionMode.SSH
+        val executables = resolved?.value
+        val mode = if (usesConfiguredWsl) {
+            ExecutionMode.WSL
+        } else {
+            when (executables!!.target) {
+                com.starnotesxj.sagemath.runtime.RuntimeTarget.Native -> ExecutionMode.NATIVE
+                is com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl -> ExecutionMode.WSL
+                is RuntimeTarget.Docker -> ExecutionMode.DOCKER
+                is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh -> ExecutionMode.SSH
+            }
         }
         val commandLine = when (mode) {
-            ExecutionMode.NATIVE -> GeneralCommandLine(executables.sage)
+            ExecutionMode.NATIVE -> GeneralCommandLine(executables!!.sage)
                 .withParameters(sageArguments)
                 .withParameters(configuration.scriptPath)
                 .withParameters(scriptArguments)
 
             ExecutionMode.WSL -> {
-                val target = executables.target as com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl
-                val command = wslRunScript(
-                    s.wslCondaEnvironment,
-                    executables.sage,
-                    sageArguments + toWslPath(configuration.scriptPath) + scriptArguments,
-                    s.wslCondaExecutable,
-                )
-                GeneralCommandLine("wsl.exe", "-d", target.distribution, "--exec", "/bin/bash", "-lc", command)
+                val distribution = if (usesConfiguredWsl) {
+                    s.wslDistribution
+                } else {
+                    (executables!!.target as com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl).distribution
+                }
+                val arguments = sageArguments + toWslPath(configuration.scriptPath) + scriptArguments
+                val sageExecutable = if (usesConfiguredWsl) {
+                    configuredWslSageExecutable(s)
+                        ?: throw ExecutionException("The Sage executable is not configured for WSL")
+                } else {
+                    executables!!.sage
+                }
+                // Use WSL's direct executable form rather than `bash -lc`. This
+                // keeps IntelliJ's console command readable and leaves only Sage
+                // stdout/stderr visible after the command line.
+                GeneralCommandLine("wsl.exe")
+                    .withParameters(wslDirectRunArguments(distribution, sageExecutable, arguments))
             }
 
             ExecutionMode.DOCKER -> {
-                val target = executables.target as RuntimeTarget.Docker
+                val target = executables!!.target as RuntimeTarget.Docker
                 dockerCommandLine(s, target.engine, scriptArguments)
             }
 
             ExecutionMode.SSH -> {
-                val target = executables.target as RuntimeTarget.RemoteSsh
+                val target = executables!!.target as RuntimeTarget.RemoteSsh
                 val transport = SageRuntimeService.getInstance().resolveSshTransportSpec(s, target)
                 if (!transport.succeeded) {
                     throw ExecutionException(transport.diagnostics.firstOrNull()?.message ?: "SSH transport settings are invalid")

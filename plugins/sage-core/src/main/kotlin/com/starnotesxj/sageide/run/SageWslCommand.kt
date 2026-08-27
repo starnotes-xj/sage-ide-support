@@ -56,6 +56,38 @@ internal fun wslRunScript(
     arguments.forEach { append(' ').append(shellQuote(it)) }
 }
 
+/** Returns the direct WSL command arguments shown by IntelliJ's run console. */
+internal fun wslDirectRunArguments(
+    distribution: String,
+    executable: String,
+    arguments: List<String>,
+): List<String> = listOf("-d", distribution, "--", executable) + arguments
+
+/** Uses the new WSL field first and keeps the legacy saved setting compatible. */
+internal fun configuredWslSageExecutable(settings: SageRunSettings.State): String? =
+    settings.wslSageExecutable.trim().takeIf { it.isNotEmpty() }
+        ?: settings.sageExecutable.trim().takeIf { it.startsWith("/") }
+
+/**
+ * Run wrapper for an externally managed WSL Conda installation. The host must not
+ * discover the Sage executable before starting this command: IntelliJ may call
+ * the command-state factory on the EDT. The activated shell resolves `sage` in
+ * the target environment instead.
+ */
+internal fun wslConfiguredRunScript(
+    environment: String,
+    configuredExecutable: String,
+    arguments: List<String>,
+    condaExecutable: String? = null,
+): String = buildString {
+    appendLine(wslCondaPrelude(environment, condaExecutable))
+    appendLine("sage_executable=${shellQuote(configuredExecutable.trim())}")
+    appendLine("if [ -z \"${'$'}sage_executable\" ]; then sage_executable=\"${'$'}(command -v sage || true)\"; fi")
+    appendLine("[ -n \"${'$'}sage_executable\" ] || { echo \"Sage IDE Support: sage was not found in WSL\" >&2; exit 127; }")
+    append("exec \"${'$'}sage_executable\"")
+    arguments.forEach { append(' ').append(shellQuote(it)) }
+}
+
 /**
  * Shell wrapper used by the native PyCharm debugger patcher in WSL mode.
  * PyDebugRunner appends its pydevd arguments to the command line.  `bash -lc`
@@ -63,6 +95,42 @@ internal fun wslRunScript(
  * Windows paths such as the PyCharm helper path to /mnt/<drive>/..., and then
  * forwards every argument to the Sage Python entry point.
  */
+/** Debug wrapper for settings-backed WSL Sage. The child resolves `sage` and
+ * uses its interpreter after Conda activation; no host-side runtime probe is needed. */
+internal fun wslConfiguredDebugScript(
+    environment: String,
+    condaExecutable: String? = null,
+): String = """
+    ${wslCondaPrelude(environment, condaExecutable)}
+    map_arg() {
+        case "${'$'}1" in
+            [A-Za-z]:[\\/]* )
+                local drive="${'$'}{1:0:1}"
+                local rest="${'$'}{1:2}"
+                rest="${'$'}{rest//\\\\//}"
+                printf '/mnt/%s/%s' "${'$'}{drive,,}" "${'$'}rest"
+                ;;
+            * ) printf '%s' "${'$'}1" ;;
+        esac
+    }
+    host_ip="${'$'}(awk '/^nameserver / { print ${'$'}2; exit }' /etc/resolv.conf)"
+    args=()
+    previous=""
+    for raw_arg in "${'$'}@"; do
+        arg="${'$'}(map_arg "${'$'}raw_arg")"
+        if [ "${'$'}previous" = "--client" ] && [ "${'$'}arg" = "127.0.0.1" ] && [ -n "${'$'}host_ip" ]; then
+            arg="${'$'}host_ip"
+        fi
+        args+=("${'$'}arg")
+        previous="${'$'}arg"
+    done
+    sage_executable="${'$'}(command -v sage || true)"
+    [ -n "${'$'}sage_executable" ] || { echo "Sage IDE Support: sage was not found in WSL" >&2; exit 127; }
+    python_executable="${'$'}(command -v python || true)"
+    [ -n "${'$'}python_executable" ] || { echo "Sage IDE Support: python was not found in the activated WSL environment" >&2; exit 127; }
+    exec "${'$'}python_executable" "${'$'}{args[@]}"
+""".trimIndent()
+
 internal fun wslDebugScript(
     environment: String,
     executable: String,

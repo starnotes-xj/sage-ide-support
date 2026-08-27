@@ -4,8 +4,13 @@ import com.intellij.lang.documentation.DocumentationMarkup
 import com.intellij.lang.documentation.DocumentationProvider
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.jetbrains.python.codeInsight.PyCustomMember
+import com.jetbrains.python.psi.PyClass
+import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyQualifiedNameOwner
 import com.jetbrains.python.psi.PyReferenceExpression
+import com.jetbrains.python.psi.PyTargetExpression
 import com.starnotesxj.sagemath.sageapi.SageApiEntry
 import com.starnotesxj.sagemath.sageapi.SageApiParameter
 import com.starnotesxj.sagemath.sageapi.SageTypeState
@@ -27,9 +32,27 @@ class SageApiDocumentationProvider : DocumentationProvider {
         findEntry(element, originalElement)?.let(::renderDocumentation)
 
     private fun findEntry(element: PsiElement, originalElement: PsiElement?): SageApiEntry? {
-        val file = runCatching { element.containingFile }.getOrNull()
-            ?: runCatching { originalElement?.containingFile }.getOrNull()
-        if (!SageFileUtils.isSageFile(file) && !SageStubIndex.isSageStubFile(file)) return null
+        // Ctrl+Q supplies the documentation target separately from the caret
+        // element. Resolve the caret/original side first: if Python already has
+        // a physical .py/.pyi declaration, its documentation provider must own
+        // the result just as it owns Go to Definition.
+        val contextElement = originalElement ?: element
+        val contextFile = runCatching { contextElement.containingFile }.getOrNull()
+            ?: runCatching { element.containingFile }.getOrNull()
+        if (!SageFileUtils.isSageFile(contextFile) && !SageStubIndex.isSageStubFile(contextFile)) return null
+
+        val sourceTargets = sequenceOf(originalElement, element)
+            .filterNotNull()
+            .toList()
+        val resolvedTargets = sourceTargets
+            .flatMap { candidate ->
+                listOfNotNull(candidate, runCatching { candidate.reference?.resolve() }.getOrNull())
+            }
+            .distinct()
+        val resolvedDeclarations = sourceTargets
+            .mapNotNull { candidate -> runCatching { candidate.reference?.resolve() }.getOrNull() }
+            .distinct()
+        if (resolvedTargets.any(::isNativeDocumentationTarget)) return null
 
         val query = SageApiIndexService.getInstance().query() ?: return null
         val candidates = sequenceOf(element, originalElement)
@@ -38,6 +61,7 @@ class SageApiDocumentationProvider : DocumentationProvider {
                 sequenceOf(candidate, runCatching { candidate.reference?.resolve() }.getOrNull())
                     .filterNotNull()
             }
+            .distinct()
             .toList()
 
         candidates.asSequence()
@@ -51,6 +75,11 @@ class SageApiDocumentationProvider : DocumentationProvider {
                 query.find(qualifiedName)?.let { return it }
             }
 
+        // An indexed synthetic target may be the only available declaration for
+        // an external Sage member. Keep its exact qualified-name documentation,
+        // but never guess from a tail name when a real declaration was resolved.
+        if (resolvedDeclarations.isNotEmpty()) return null
+
         val shortNames = linkedSetOf<String>()
         candidates.filterIsInstance<PyReferenceExpression>()
             .mapNotNullTo(shortNames) { it.referencedName }
@@ -58,16 +87,24 @@ class SageApiDocumentationProvider : DocumentationProvider {
             runCatching { it.text.substringAfterLast('.') }.getOrNull()
                 ?.takeIf { IDENTIFIER.matches(it) }
         }
-        if (SageFileUtils.isSageFile(file)) {
+        if (SageFileUtils.isSageFile(contextFile)) {
             shortNames.asSequence()
                 .mapNotNull { query.namespaceEntry("sage.all", it) }
                 .firstOrNull()
                 ?.let { return it }
         }
-        return shortNames.asSequence()
-            .map { name -> query.index.entries.filter { it.qualifiedName.substringAfterLast('.') == name } }
-            .mapNotNull { matches -> matches.singleOrNull() }
-            .firstOrNull()
+        return null
+    }
+
+    private fun isNativeDocumentationTarget(target: PsiElement): Boolean {
+        if (!target.isValid || target is PyCustomMember) return false
+        val file = runCatching { target.containingFile }.getOrNull() ?: return false
+        val virtualFile = file.virtualFile ?: return false
+        if (!virtualFile.isInLocalFileSystem || !virtualFile.extension.orEmpty().equals("py", ignoreCase = true) &&
+            !virtualFile.extension.orEmpty().equals("pyi", ignoreCase = true)
+        ) return false
+        return target is PyFunction || target is PyClass || target is PyTargetExpression ||
+            target is PyQualifiedNameOwner
     }
 
     private fun renderDocumentation(entry: SageApiEntry): String = buildString {

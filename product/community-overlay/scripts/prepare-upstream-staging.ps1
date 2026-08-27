@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory = $true)] [string] $OfficialCheckout,
   [Parameter(Mandatory = $true)] [string] $StagingRoot,
   [string] $PluginZip,
+  [string] $SageApiArtifactDirectory,
   [Parameter(Mandatory = $true)] [string] $OverlayRoot,
   [string] $ExpectedCommit = 'b0001cd6c53979b384def7a1e3febe061e2ef687',
   [switch] $Force,
@@ -26,7 +27,7 @@ if (-not [IO.Path]::IsPathFullyQualified($stage)) { throw "StagingRoot must be a
 # database; permit only those documented untracked paths. Any tracked change or
 # other untracked path still blocks staging.
 $status = @(& git -C $official status --porcelain) | Where-Object {
-  $_ -and $_ -notmatch '^\?\? (\.codegraph[/\\]|hashcat_sessions\.db$)'
+  $_ -and $_ -notmatch '^\?\? (\.codegraph[/\\]|hashcat_sessions\.db$|jupyter[/\\]\.gitignore$|notebooks[/\\]\.gitignore$)'
 }
 if ($status) { throw "Official checkout is not clean; refusing to stage it.`n$status" }
 $actualCommit = (& git -C $official rev-parse HEAD).Trim()
@@ -47,6 +48,11 @@ try {
   & "$overlay/scripts/repair-modules-xml.ps1" -CommunityRoot $stage *> $null
   & "$overlay/scripts/prune-missing-android-labels.ps1" -CommunityRoot $stage *> $null
   & "$overlay/scripts/apply-overlay.ps1" -CommunityRoot $stage -OverlayRoot $overlay *> $null
+  if ($LASTEXITCODE -ne 0) { throw "Overlay application failed" }
+  if (-not [string]::IsNullOrWhiteSpace($SageApiArtifactDirectory)) {
+    & "$overlay/scripts/validate-sage-api-sidecar.ps1" -ArtifactDirectory $SageApiArtifactDirectory -DestinationDirectory (Join-Path $stage 'sage-api/10.9') *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Sage API sidecar validation failed" }
+  }
   if ($LegacyExternalPlugin) {
     if ([string]::IsNullOrWhiteSpace($PluginZip)) { throw "-PluginZip is required with -LegacyExternalPlugin" }
     & "$overlay/scripts/stage-sage-plugin.ps1" -PluginZip $PluginZip -CommunityRoot $stage *> $null
@@ -56,6 +62,8 @@ try {
     stagingTree = $stage
     commit = $ExpectedCommit
     pluginZip = if ($LegacyExternalPlugin) { (Resolve-Path -LiteralPath $PluginZip).Path } else { $null }
+    sageApiArtifactDirectory = if ([string]::IsNullOrWhiteSpace($SageApiArtifactDirectory)) { $null } else { (Resolve-Path -LiteralPath $SageApiArtifactDirectory).Path }
+    sageApiSidecar = if (Test-Path -LiteralPath (Join-Path $stage 'sage-api/10.9/sage-api-index.json') -PathType Leaf) { 'sage-api/10.9' } else { $null }
     bundledPlugin = 'plugins/sage-core'
     createdUtc = [DateTime]::UtcNow.ToString('O')
   }

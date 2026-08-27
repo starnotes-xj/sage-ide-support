@@ -8,7 +8,19 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate import validate_index, validate_source_contract
+from generate import (
+    RawSymbol,
+    SourceRef,
+    attach_trusted_return_evidence,
+    normalize,
+    parse_return_evidence_manifest,
+    signature_shape_digest,
+    source_digests_digest,
+    validate_index,
+    validate_return_evidence_manifest,
+    validate_source_contract,
+)
+import hashlib
 
 ROOT = Path(__file__).resolve().parent
 GENERATOR = ROOT / "generate.py"
@@ -807,6 +819,173 @@ def literal(value: Literal[1]) -> str: ...
             result = subprocess.run([sys.executable, str(GENERATOR), "--source-root", str(root), "--sage-version", "10.6", "--python-version", "3.11", "--output", str(root / "index.json")], capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
             self.assertIn("no .pyi/.py sources", result.stderr)
+
+class ReturnEvidenceManifestTest(unittest.TestCase):
+    def _fixture(self, root: Path, dynamic: bool = False):
+        digest = hashlib.sha256(b"stub-content").hexdigest()
+        source = SourceRef("STUB", "stubs/sage/demo.pyi", digest)
+        raw = [
+            RawSymbol("sage.demo.Owner", "CLASS", source, confidence="HIGH"),
+            RawSymbol(
+                "sage.demo.Owner.curve",
+                "METHOD",
+                SourceRef("STUB", "stubs/sage/demo.pyi:2", digest),
+                signatures=[{"parameters": [], "returnType": {"state": "UNKNOWN", "expression": None}}],
+                dynamicity="DYNAMIC" if dynamic else "STATIC",
+                confidence="HIGH",
+            ),
+        ]
+        index, _diagnostics = normalize(raw, "10.6", "3.11", {"artifactId": "fixture-return-evidence"})
+        entry = next(item for item in index["entries"] if item["qualifiedName"] == "sage.demo.Owner.curve")
+        manifest = {
+            "schemaVersion": 1,
+            "artifactId": "fixture-return-evidence",
+            "sageVersion": "10.6",
+            "pythonVersion": "3.11",
+            "sourceDigestsDigest": source_digests_digest(index["sourceDigests"]),
+            "entries": [{
+                "qualifiedName": "sage.demo.Owner.curve",
+                "kind": "METHOD",
+                "signatureDigest": signature_shape_digest(entry["signatures"][0]),
+                "returnType": {"state": "KNOWN", "expression": "sage.demo.Result"},
+                "source": {"locator": "trusted/return-evidence.json", "digest": "ab" * 32},
+            }],
+        }
+        manifest_path = root / "return-evidence.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return index, manifest, manifest_path
+
+    def test_return_evidence_manifest_attaches_without_overwriting_ordinary_return(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root)
+            parsed = parse_return_evidence_manifest(manifest_path)
+            validate_return_evidence_manifest(parsed, index)
+            attach_trusted_return_evidence(index, parsed, manifest_path)
+            validate_index(index)
+            signature = next(
+                signature
+                for entry in index["entries"]
+                if entry["qualifiedName"] == "sage.demo.Owner.curve"
+                for signature in entry["signatures"]
+            )
+            self.assertEqual(signature["returnType"]["state"], "UNKNOWN")
+            self.assertEqual(len(signature["trustedReturnEvidence"]), 1)
+            evidence = signature["trustedReturnEvidence"][0]
+            self.assertEqual(evidence["kind"], "TRUSTED_MANIFEST")
+            self.assertEqual(evidence["returnType"], {"state": "KNOWN", "expression": "sage.demo.Result"})
+            self.assertEqual(evidence["source"]["kind"], "SIGNATURE")
+            self.assertTrue(evidence["source"]["digest"])
+
+    def test_return_evidence_manifest_rejects_identity_or_source_drift(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root)
+            for field, replacement in (
+                ("sageVersion", "9.9"),
+                ("pythonVersion", "3.12"),
+                ("artifactId", "foreign-artifact"),
+                ("sourceDigestsDigest", "0" * 64),
+            ):
+                with self.subTest(field=field):
+                    drifted = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    drifted[field] = replacement
+                    drifted_path = root / "drifted.json"
+                    drifted_path.write_text(json.dumps(drifted), encoding="utf-8")
+                    parsed = parse_return_evidence_manifest(drifted_path)
+                    with self.assertRaises(ValueError):
+                        validate_return_evidence_manifest(parsed, index)
+
+    def test_return_evidence_manifest_rejects_unknown_or_wrong_kind_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root)
+            parsed = parse_return_evidence_manifest(manifest_path)
+            for mutation in (
+                lambda item: item.update({"qualifiedName": "sage.demo.Missing"}),
+                lambda item: item.update({"kind": "CLASS"}),
+            ):
+                with self.subTest(mutation=mutation):
+                    altered = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    mutation(altered["entries"][0])
+                    altered_path = root / "altered.json"
+                    altered_path.write_text(json.dumps(altered), encoding="utf-8")
+                    parsed = parse_return_evidence_manifest(altered_path)
+                    with self.assertRaises(ValueError):
+                        validate_return_evidence_manifest(parsed, index)
+
+    def test_return_evidence_manifest_rejects_stale_signature_digest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root)
+            altered = json.loads(manifest_path.read_text(encoding="utf-8"))
+            altered["entries"][0]["signatureDigest"] = "1" * 64
+            altered_path = root / "stale.json"
+            altered_path.write_text(json.dumps(altered), encoding="utf-8")
+            parsed = parse_return_evidence_manifest(altered_path)
+            with self.assertRaisesRegex(ValueError, "signatureDigest"):
+                validate_return_evidence_manifest(parsed, index)
+
+    def test_return_evidence_manifest_rejects_duplicate_entries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root)
+            altered = json.loads(manifest_path.read_text(encoding="utf-8"))
+            altered["entries"].append(dict(altered["entries"][0]))
+            altered_path = root / "duplicate.json"
+            altered_path.write_text(json.dumps(altered), encoding="utf-8")
+            parsed = parse_return_evidence_manifest(altered_path)
+            with self.assertRaisesRegex(ValueError, "duplicated"):
+                validate_return_evidence_manifest(parsed, index)
+
+    def test_return_evidence_manifest_rejects_unknown_or_dynamic_evidence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root)
+            for state in ("UNKNOWN", "DYNAMIC"):
+                with self.subTest(state=state):
+                    altered = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    altered["entries"][0]["returnType"] = {"state": state, "expression": None}
+                    altered_path = root / f"{state.lower()}.json"
+                    altered_path.write_text(json.dumps(altered), encoding="utf-8")
+                    parsed = parse_return_evidence_manifest(altered_path)
+                    with self.assertRaises(ValueError):
+                        validate_return_evidence_manifest(parsed, index)
+
+    def test_return_evidence_manifest_rejects_contradicting_known_return(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root)
+            entry = next(item for item in index["entries"] if item["qualifiedName"] == "sage.demo.Owner.curve")
+            entry["signatures"][0]["returnType"] = {"state": "KNOWN", "expression": "sage.demo.Other"}
+            parsed = parse_return_evidence_manifest(manifest_path)
+            with self.assertRaisesRegex(ValueError, "contradicts"):
+                validate_return_evidence_manifest(parsed, index)
+
+    def test_return_evidence_manifest_rejects_dynamic_entry_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root, dynamic=True)
+            parsed = parse_return_evidence_manifest(manifest_path)
+            with self.assertRaisesRegex(ValueError, "dynamic"):
+                validate_return_evidence_manifest(parsed, index)
+
+    def test_return_evidence_manifest_rejects_invalid_digests(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            index, manifest, manifest_path = self._fixture(root)
+            for field in ("signatureDigest", "source"):
+                with self.subTest(field=field):
+                    altered = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    if field == "signatureDigest":
+                        altered["entries"][0]["signatureDigest"] = "not-hex"
+                    else:
+                        altered["entries"][0]["source"]["digest"] = "short"
+                    altered_path = root / f"invalid-{field}.json"
+                    altered_path.write_text(json.dumps(altered), encoding="utf-8")
+                    parsed = parse_return_evidence_manifest(altered_path)
+                    with self.assertRaises(ValueError):
+                        validate_return_evidence_manifest(parsed, index)
 
 if __name__ == "__main__":
     unittest.main()

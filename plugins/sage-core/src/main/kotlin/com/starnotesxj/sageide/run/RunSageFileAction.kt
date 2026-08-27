@@ -7,16 +7,21 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.project.DumbAwareAction
+import com.intellij.openapi.vfs.VirtualFile
 
 /**
  * Runs the current Sage file through the Sage run configuration; used as the
  * gutter (line marker) action and the editor context-menu action.
  */
+internal fun selectedSageFile(e: AnActionEvent): VirtualFile? =
+    e.getData(CommonDataKeys.VIRTUAL_FILE)
+        ?: e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY)?.singleOrNull()
+
 class RunSageFileAction : DumbAwareAction("Run Sage Script") {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
+        val file = selectedSageFile(e) ?: return
         if (file.extension != "sage") return
 
         val type = SageRunConfigurationType.getInstance()
@@ -31,6 +36,12 @@ class RunSageFileAction : DumbAwareAction("Run Sage Script") {
         }
         runManager.selectedConfiguration = settings
         ProgramRunnerUtil.executeConfiguration(settings, DefaultRunExecutor.getRunExecutorInstance())
+    }
+
+    override fun update(e: AnActionEvent) {
+        val file = selectedSageFile(e)
+        val available = file?.extension == "sage"
+        e.presentation.isEnabledAndVisible = available
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT

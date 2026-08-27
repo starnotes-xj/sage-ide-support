@@ -13,7 +13,7 @@ class DebugSageFileAction : DumbAwareAction("Debug Sage Script") {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
+        val file = selectedSageFile(e) ?: return
         if (file.extension != "sage") return
 
         val type = SageRunConfigurationType.getInstance()
@@ -34,6 +34,12 @@ class DebugSageFileAction : DumbAwareAction("Debug Sage Script") {
             settings,
             DefaultDebugExecutor.getDebugExecutorInstance(),
         )
+    }
+
+    override fun update(e: AnActionEvent) {
+        val file = selectedSageFile(e)
+        val available = file?.extension == "sage"
+        e.presentation.isEnabledAndVisible = available
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT

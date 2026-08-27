@@ -1,0 +1,3 @@
+from sage.schemes.elliptic_curves.ell_generic import EllipticCurve_generic
+
+class EllipticCurve_finite_field(EllipticCurve_generic):

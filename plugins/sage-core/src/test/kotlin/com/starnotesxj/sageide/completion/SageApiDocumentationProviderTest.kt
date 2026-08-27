@@ -1,15 +1,15 @@
 package com.starnotesxj.sageide.completion
 
-import com.intellij.lang.documentation.DocumentationMarkup
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.starnotesxj.sageide.SagePluginTestBase
 import com.starnotesxj.sagemath.sageapi.SageApiIndexJsonReader
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SageApiDocumentationProviderTest : SagePluginTestBase() {
-    fun testIndexedDocumentationIncludesSignatureAndBody() {
+    fun testNativeDocumentationWinsOverIndexedDocumentation() {
         val indexResource = javaClass.classLoader.getResourceAsStream("sage-api-index.json")!!
         SageApiIndexService.getInstance().install(
             SageApiIndexQuery(indexResource.bufferedReader().use { SageApiIndexJsonReader.read(it.readText()) }),
@@ -23,13 +23,11 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
             val reference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
                 .firstOrNull { it.referencedName == "Matrix" }
             requireNotNull(reference)
+            val resolved = requireNotNull(reference.reference?.resolve())
+            assertTrue(resolved.containingFile.virtualFile?.name?.endsWith(".pyi") == true, resolved.toString())
             val provider = SageApiDocumentationProvider()
-            val quick = provider.getQuickNavigateInfo(reference, reference).orEmpty()
-            val doc = provider.generateDoc(reference, reference).orEmpty()
-            assertTrue(quick.contains("Matrix"), quick)
-            assertTrue(doc.contains("Matrix"), doc)
-            assertTrue(doc.contains("Matrix objects."), doc)
-            assertTrue(doc.contains(DocumentationMarkup.DEFINITION_START), doc)
+            assertNull(provider.getQuickNavigateInfo(resolved, reference))
+            assertNull(provider.generateDoc(resolved, reference))
         } finally {
             SageApiIndexService.getInstance().install(null)
         }

@@ -4,7 +4,8 @@ param(
   [Parameter(Mandatory = $true)] [string] $StagingTree,
   [string] $ExpectedCommit = 'b0001cd6c53979b384def7a1e3febe061e2ef687',
   [switch] $FinalCheck,
-  [switch] $LegacyExternalPlugin
+  [switch] $LegacyExternalPlugin,
+  [string] $SageApiArtifactDirectory
 )
 
 Set-StrictMode -Version Latest
@@ -38,6 +39,22 @@ $sageApiFiles = @(Get-ChildItem -LiteralPath (Join-Path $stage 'core/sage-api') 
 $emptySageApiFiles = @($sageApiFiles | Where-Object { $_.Length -eq 0 -and $_.Extension -notin @('.kt', '.java', '.json', '.iml', '.bazel') })
 if ($emptySageApiFiles) { throw "Staged Sage API contains unexpected zero-byte files: $($emptySageApiFiles.FullName -join ', ')" }
 if (-not (Test-Path -LiteralPath (Join-Path $stage 'build/BUILD.bazel') -PathType Leaf)) { throw 'Staged Bazel build file is missing' }
+$stagedSidecar = Join-Path $stage 'sage-api/10.9'
+if ($SageApiArtifactDirectory) {
+  & "$PSScriptRoot/validate-sage-api-sidecar.ps1" -ArtifactDirectory $SageApiArtifactDirectory -DestinationDirectory $stagedSidecar *> $null
+  if ($LASTEXITCODE -ne 0) { throw "Sage API artifact validation failed" }
+}
+if (Test-Path -LiteralPath (Join-Path $stagedSidecar 'sage-api-index.json') -PathType Leaf) {
+  & "$PSScriptRoot/validate-sage-api-sidecar.ps1" -ArtifactDirectory $stagedSidecar *> $null
+  if ($LASTEXITCODE -ne 0) { throw "Staged Sage API sidecar validation failed" }
+  $stagedIndexPath = Join-Path $stagedSidecar 'sage-api-index.json'
+  $stagedIndexText = Get-Content -LiteralPath $stagedIndexPath -Raw
+  if ($stagedIndexText -match 'G:\\Projects|C:\\Users|wsl\.localhost|/home/') {
+    Write-Warning "Staged Sage API sidecar contains developer-local source paths; release audit must approve or sanitize provenance paths."
+  }
+} elseif ($FinalCheck) {
+  throw "Final staging check requires Sage API sidecar at $stagedSidecar"
+}
 $androidManifest = Join-Path $stage 'build/sage-overlay/android-label-filter-manifest.json'
 if (-not (Test-Path -LiteralPath $androidManifest -PathType Leaf)) { throw 'Missing staged Android label manifest' }
 

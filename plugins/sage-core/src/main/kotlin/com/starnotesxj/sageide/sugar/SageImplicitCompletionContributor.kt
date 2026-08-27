@@ -15,6 +15,7 @@ import com.intellij.patterns.PlatformPatterns
 import com.intellij.patterns.StandardPatterns
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
+import com.starnotesxj.sageide.completion.SageApiClassMembersProvider
 import com.starnotesxj.sageide.completion.SageApiIndexService
 import com.jetbrains.python.psi.PyImportStatementBase
 import com.jetbrains.python.psi.PyReferenceExpression
@@ -128,7 +129,18 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                             position.project,
                             file,
                         )
-                        val qualifierType = typeContext.getType(qualifier)
+                        val qualifierType = (typeContext.getType(qualifier)
+                            // Completion's lightweight context can omit a
+                            // project-local type-provider answer for a target
+                            // assigned from an unannotated parameter.  Retry in
+                            // the normal analysis context before giving up; the
+                            // returned class is still the same active .pyi PSI
+                            // object checked by the type provider, not an
+                            // index-only or structural approximation.
+                            ?: com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(
+                                position.project,
+                                file,
+                            ).getType(qualifier))
                             as? com.jetbrains.python.psi.types.PyClassType
                         if (qualifierType != null) {
                             // Delegate qualified member completion to the same
@@ -137,7 +149,12 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                             // every registered PyClassMembersProvider, including
                             // Sage indexed members.
                             val variants = qualifierType.getCompletionVariants(
-                                completionReference.name,
+                                // An unfinished `receiver.` reference has no
+                                // PSI name yet.  PyClassType expects an empty
+                                // prefix for that normal completion state;
+                                // passing null suppresses every native and
+                                // index-backed member variant.
+                                completionReference.referencedName.orEmpty(),
                                 completionReference,
                                 ProcessingContext(),
                             )
@@ -150,8 +167,40 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                                 offsetInElement,
                             )
                             val memberResult = result.withPrefixMatcher(memberPrefix)
+                            val emittedNames = linkedSetOf<String>()
                             for (variant in variants) {
-                                if (variant is LookupElement) memberResult.addElement(variant)
+                                if (variant is LookupElement) {
+                                    emittedNames += variant.lookupString
+                                    memberResult.addElement(variant)
+                                }
+                            }
+                            // PyClassType's variant builder can be empty for an
+                            // incomplete `receiver.` PSI node, even though the
+                            // receiver has already been proven to be a concrete
+                            // active Sage stub class.  Rehydrate the missing
+                            // native methods and indexed members directly from
+                            // that same class identity.  This preserves exact
+                            // class ownership (including inheritance) and never
+                            // falls back to a common base or a name whitelist.
+                            val memberContext = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(
+                                position.project,
+                                file,
+                            )
+                            for (method in qualifierType.pyClass.getMethodsInherited(memberContext)) {
+                                val methodName = method.name ?: continue
+                                if (!emittedNames.add(methodName)) continue
+                                var builder = LookupElementBuilder.createWithSmartPointer(methodName, method)
+                                method.getIcon(0)?.let { builder = builder.withIcon(it) }
+                                memberResult.addElement(builder)
+                            }
+                            val owner = SageStubIndex.canonicalQualifiedName(qualifierType.pyClass).orEmpty()
+                            for (member in SageApiClassMembersProvider()
+                                .getMembers(qualifierType, completionReference, memberContext)) {
+                                if (!emittedNames.add(member.name)) continue
+                                var builder = LookupElementBuilder.create(member.name)
+                                member.icon?.let { builder = builder.withIcon(it) }
+                                if (owner.isNotBlank()) builder = builder.withTypeText(owner)
+                                memberResult.addElement(builder)
                             }
                         }
                         return
@@ -218,8 +267,15 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         val name = entry.qualifiedName.substringAfterLast('.')
                         if (name in emittedNames || !result.prefixMatcher.prefixMatches(name)) continue
                         var builder = LookupElementBuilder.create(name).withTypeText("sage.all")
-                        if (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION ||
-                            entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CLASS) {
+                        val callable = entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION ||
+                            entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CLASS ||
+                            (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.ALIAS &&
+                                SageApiIndexService.getInstance().query()?.resolve(entry.aliases.firstOrNull().orEmpty())?.kind in
+                                    setOf(
+                                        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION,
+                                        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CLASS,
+                                    ))
+                        if (callable) {
                             builder = builder.withInsertHandler(SageParensInsertHandler)
                         }
                         result.addElement(builder)

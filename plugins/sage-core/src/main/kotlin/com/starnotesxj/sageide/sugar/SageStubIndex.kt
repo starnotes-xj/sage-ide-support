@@ -72,11 +72,11 @@ object SageStubIndex {
             ?: candidates.firstOrNull { isSageStubDeclaration(it) }
         if (result != null) {
             positiveCache[name] = result
-            LOG.warn("Sage stub index hit: '$name' -> ${safeContainingFilePath(result)}")
+            LOG.debug("Sage stub index hit: '$name' -> ${safeContainingFilePath(result)}")
         } else if (candidates.isNotEmpty()) {
             // Candidates exist but the path filter rejected them all — worth a
             // warn.  Zero candidates is the normal case for user identifiers.
-            LOG.warn(
+            LOG.debug(
                 "Sage stub index miss for '$name' (candidates: ${candidates.size}, " +
                     "first: ${safeContainingFilePath(candidates.first())})",
             )
@@ -104,12 +104,12 @@ object SageStubIndex {
     private fun findSageAllDeclaration(project: Project, name: String): PsiElement? {
         val allFile = sageAllFile(project)
         if (allFile == null) {
-            LOG.warn("Sage stub sage.all anchor '$SAGE_ALL_ANCHOR_NAME' not found — cannot resolve '$name'")
+            LOG.debug("Sage stub sage.all anchor '$SAGE_ALL_ANCHOR_NAME' not found — cannot resolve '$name'")
             return null
         }
         allFile.findTopLevelAttribute(name)?.let { attribute ->
             if (attribute.isValid) {
-                LOG.warn("Sage stub sage.all attribute hit: '$name' in ${safeContainingFilePath(attribute)}")
+                LOG.debug("Sage stub sage.all attribute hit: '$name' in ${safeContainingFilePath(attribute)}")
                 return attribute
             }
         }
@@ -130,10 +130,10 @@ object SageStubIndex {
                     val moduleQName = fromImport.importSource?.asQualifiedName()?.toString()
                     val target = followImportAlias(project, moduleQName, importedName)
                     if (target != null && target.isValid) {
-                        LOG.warn("Sage stub sage.all import-alias hit: '$name' -> ${safeContainingFilePath(target)}")
+                        LOG.debug("Sage stub sage.all import-alias hit: '$name' -> ${safeContainingFilePath(target)}")
                         return target
                     }
-                    LOG.warn("Sage stub sage.all import-alias hit: '$name' in ${safeContainingFilePath(importElement)}")
+                    LOG.debug("Sage stub sage.all import-alias hit: '$name' in ${safeContainingFilePath(importElement)}")
                     return importElement
                 }
             }
@@ -331,8 +331,8 @@ object SageStubIndex {
      */
     @JvmStatic
     fun isSageSdkFile(file: PsiFile?): Boolean {
-        val path = file?.virtualFile?.path ?: return false
-        return path.contains("/site-packages/sage/") || path.contains("\\site-packages\\sage\\")
+        val path = file?.virtualFile?.path?.replace('\\', '/') ?: return false
+        return path.contains("/site-packages/sage/") || path.contains("/sage/")
     }
 
     /**
@@ -365,7 +365,7 @@ object SageStubIndex {
     private fun computeSageAllDeclarations(project: Project): Map<String, PsiElement?> {
         val allFile = sageAllFile(project)
             ?: run {
-                LOG.warn("Sage stub sage.all anchor '$SAGE_ALL_ANCHOR_NAME' not found — cannot enumerate sage.all names")
+                LOG.debug("Sage stub sage.all anchor '$SAGE_ALL_ANCHOR_NAME' not found — cannot enumerate sage.all names")
                 return emptyMap()
             }
         val byName = LinkedHashMap<String, PsiElement?>()
@@ -419,15 +419,13 @@ object SageStubIndex {
         pyClass.qualifiedName?.takeIf { it.isNotBlank() }?.let { return it }
         val file = safeContainingFile(pyClass) ?: return null
         val path = file.virtualFile?.path?.replace('\\', '/') ?: return null
-        val marker = "/site-packages/sage/"
-        val markerStart = path.lastIndexOf(marker)
-        val relative = if (markerStart >= 0) {
-            path.substring(markerStart + marker.length)
-        } else if (path.startsWith("/src/site-packages/sage/")) {
-            path.removePrefix("/src/site-packages/sage/")
-        } else {
-            return null
-        }
+        val markerCandidates = listOf("/site-packages/sage/", "/src/sage/", "/sage/")
+        val marker = markerCandidates
+            .asSequence()
+            .mapNotNull { candidate -> path.lastIndexOf(candidate).takeIf { it >= 0 }?.let { candidate to it } }
+            .maxByOrNull { it.second }
+            ?: return null
+        val relative = path.substring(marker.second + marker.first.length)
         val modulePath = when {
             relative.endsWith(".pyi") -> relative.removeSuffix(".pyi")
             relative.endsWith(".py") -> relative.removeSuffix(".py")
@@ -450,12 +448,13 @@ object SageStubIndex {
             classCache.remove(name)
         }
         val candidates = PyClassNameIndex.find(name, project, GlobalSearchScope.allScope(project))
-        val result = candidates.firstOrNull { isSageStubFile(safeContainingFile(it)) }
+        val sageCandidates = candidates.filter { isSageStubFile(safeContainingFile(it)) }
+        val result = sageCandidates.singleOrNull()
         if (result != null) {
             classCache[name] = result
-            LOG.warn("Sage stub class index hit: '$name' -> ${safeContainingFilePath(result)}")
+            LOG.debug("Sage stub class index hit: '$name' -> ${safeContainingFilePath(result)}")
         } else {
-            LOG.warn("Sage stub class index miss for '$name' (candidates: ${candidates.size})")
+            LOG.debug("Sage stub class lookup for '$name' is ambiguous or missing (Sage candidates: ${sageCandidates.size}, all candidates: ${candidates.size})")
         }
         return result
     }
@@ -471,6 +470,27 @@ object SageStubIndex {
 
     private fun safeContainingFilePath(element: PsiElement): String =
         safeContainingFile(element)?.virtualFile?.path ?: "<invalid>"
+
+    /** Finds an active Sage stub class whose canonical owner exactly matches [qualifiedName]. */
+    fun findClassByCanonicalName(project: Project, qualifiedName: String): PyClass? {
+        if (!qualifiedName.startsWith("sage.") || qualifiedName.count { it == '.' } < 2) return null
+        val simpleName = qualifiedName.substringAfterLast('.').takeIf { it.isNotBlank() } ?: return null
+        val matches = PyClassNameIndex.find(simpleName, project, GlobalSearchScope.allScope(project))
+            .asSequence()
+            .filter { it.isValid && isSageStubFile(safeContainingFile(it)) }
+            .filter { candidate ->
+                canonicalQualifiedName(candidate) == qualifiedName ||
+                    candidate.qualifiedName == qualifiedName
+            }
+            .toList()
+        val result = matches.singleOrNull()
+        if (result != null) {
+            LOG.debug("Sage stub canonical class hit: '$qualifiedName' -> ${safeContainingFilePath(result)}")
+        } else {
+            LOG.debug("Sage stub canonical class lookup for '$qualifiedName' is ambiguous or missing (matches: ${matches.size})")
+        }
+        return result
+    }
 
     private val classCache = java.util.concurrent.ConcurrentHashMap<String, PyClass>()
 

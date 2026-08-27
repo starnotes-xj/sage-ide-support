@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory = $true)] [string] $StagingTree,
   [Parameter(Mandatory = $true)] [string] $Jdk25Home,
   [string] $PluginPath,
+  [string] $SageApiArtifactDirectory,
   [switch] $LegacyExternalPlugin,
   [switch] $BuildDev,
   [switch] $BuildInstaller,
@@ -25,6 +26,14 @@ $outputRoot = Join-Path $buildRoot 'bazel-output'
 $nestedBazelRoot = Join-Path $buildRoot 'nested-bazel'
 $tempRoot = Join-Path $buildRoot 'tmp'
 foreach ($path in @($userHome, $appData, $localAppData, $outputRoot, $nestedBazelRoot, $tempRoot)) { New-Item -ItemType Directory -Force -Path $path | Out-Null }
+# The nested Bazel runner points its temporary JVM directory below the nested
+# root; create the full tree before any child process starts.
+foreach ($path in @(
+  (Join-Path $nestedBazelRoot 'user-home'),
+  (Join-Path $nestedBazelRoot 'appdata'),
+  (Join-Path $nestedBazelRoot 'localappdata'),
+  (Join-Path $nestedBazelRoot 'tmp')
+)) { New-Item -ItemType Directory -Force -Path $path | Out-Null }
 
 $env:JAVA_HOME = $jdk
 $env:Path = "$jdk\bin;$env:Path"
@@ -46,10 +55,28 @@ $env:SAGEMATH_BAZEL_WORKSPACE_ROOT = $stage
 # the staged workspace rather than inheriting the product builder's execroot.
 $env:BUILD_WORKSPACE_DIRECTORY = $stage
 $env:BUILD_WORKING_DIRECTORY = $stage
+# The outer dev builder uses --batch. Forward the same mode to its nested
+# plugin build so Bazel does not attempt to attach to a server created with
+# different startup options (which exits 37 after otherwise successful builds).
+$env:SAGEMATH_BAZEL_BATCH = '1'
 $env:BAZEL_SH = 'C:\WINDOWS\system32\bash.exe'
 
 $bazel = Join-Path $stage 'bazel.cmd'
 if (-not (Test-Path -LiteralPath $bazel -PathType Leaf)) { throw "Missing staged Bazel wrapper: $bazel" }
+$sageSidecar = Join-Path $stage 'sage-api/10.9'
+if ($BuildInstaller -and [string]::IsNullOrWhiteSpace($SageApiArtifactDirectory) -and -not (Test-Path -LiteralPath (Join-Path $sageSidecar 'sage-api-index.json') -PathType Leaf)) {
+  throw "Installer builds require an explicit validated Sage API sidecar (-SageApiArtifactDirectory)"
+}
+if (-not [string]::IsNullOrWhiteSpace($SageApiArtifactDirectory)) {
+  & (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'validate-sage-api-sidecar.ps1') -ArtifactDirectory $SageApiArtifactDirectory -DestinationDirectory $sageSidecar *> $null
+  if ($? -eq $false) { throw "Sage API sidecar validation failed" }
+}
+$sageProperty = if (Test-Path -LiteralPath (Join-Path $sageSidecar 'sage-api-index.json') -PathType Leaf) {
+  "--jvm_flag=-Dsagemath.api.artifact=$sageSidecar"
+} else {
+  $null
+}
+
 if ($LegacyExternalPlugin) {
   $plugin = if ($PluginPath) { $PluginPath } else { Join-Path $stage 'build/sage-core-plugin/sage-core' }
   if (-not (Test-Path -LiteralPath (Join-Path $plugin 'lib') -PathType Container)) { throw "Missing staged plugin lib directory: $plugin" }
@@ -78,6 +105,7 @@ try {
     Write-Output 'Running staged SageMath development target.'
     $args = @('run', '//build:sage_math', '--')
     if ($property) { $args += $property }
+    if ($sageProperty) { $args += $sageProperty }
     $args += '--jvm_flag=-Dintellij.build.build.plugins.by.bazel=true'
     Invoke-Bazel ($common + $args)
   }
@@ -85,9 +113,9 @@ try {
     Write-Output 'Running staged SageMath installer target.'
     $args = @('run', '//python/build:sage_i_build_target', '--')
     if ($property) { $args += $property }
+    if ($sageProperty) { $args += $sageProperty }
     $args += '--jvm_flag=-Dintellij.build.plugins.by.bazel=true'
     $args += '--jvm_flag=-Dintellij.build.build.plugins.by.bazel=true'
-    $args += '--jvm_flag=-Dintellij.build.target.os=current'
     Invoke-Bazel ($common + $args)
   }
 }

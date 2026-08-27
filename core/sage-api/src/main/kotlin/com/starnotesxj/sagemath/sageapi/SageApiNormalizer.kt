@@ -116,7 +116,8 @@ class SageApiNormalizer {
             leftParameter.type == rightParameter.type &&
                 leftParameter.optional == rightParameter.optional &&
                 leftParameter.keywordOnly == rightParameter.keywordOnly &&
-                leftParameter.variadic == rightParameter.variadic
+                leftParameter.variadic == rightParameter.variadic &&
+                leftParameter.positionalOnly == rightParameter.positionalOnly
         }
 
     private fun definitelyDisjointTypes(left: SageTypeRef, right: SageTypeRef): Boolean {

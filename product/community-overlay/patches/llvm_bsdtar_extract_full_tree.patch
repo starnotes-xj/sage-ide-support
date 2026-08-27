@@ -1,0 +1,13 @@
+diff --git a/http_bsdtar_archive.bzl b/http_bsdtar_archive.bzl
+--- a/http_bsdtar_archive.bzl
++++ b/http_bsdtar_archive.bzl
+@@ -164,9 +164,6 @@
+     includes = [_prefixed_pattern(strip_prefix, include) for include in rctx.attr.includes]
+     excludes = [_prefixed_pattern(strip_prefix, exclude) for exclude in rctx.attr.excludes]
+ 
+-    if strip_prefix and not includes:
+-        includes = [strip_prefix, strip_prefix + "/*"]
+-
+     args = []
+     for include in includes:
+         args.extend(["--include", include])

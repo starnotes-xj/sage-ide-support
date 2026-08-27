@@ -34,34 +34,45 @@ class SageDebugCommandLineState(
         val settings = SageRunSettings.getInstance().getState()
         val script = Path.of(configuration.scriptPath).toAbsolutePath().normalize()
         val launcher = launcherPath ?: createLauncher(script).also { launcherPath = it }
-        val executableResolution = configuration.resolveSageExecutables()
-        if (!executableResolution.succeeded) {
+        val usesConfiguredWsl = configuration.usesConfiguredWslRuntime(settings)
+        val executableResolution = if (usesConfiguredWsl) null else configuration.resolveSageExecutables()
+        if (executableResolution != null && !executableResolution.succeeded) {
             throw ExecutionException(
                 executableResolution.diagnostics.firstOrNull()?.message
                     ?: "The selected SageMath runtime has no usable bundled Python interpreter",
             )
         }
-        val executables = executableResolution.value!!
-        val mode = when (executables.target) {
-            com.starnotesxj.sagemath.runtime.RuntimeTarget.Native -> ExecutionMode.NATIVE
-            is com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl -> ExecutionMode.WSL
-            is com.starnotesxj.sagemath.runtime.RuntimeTarget.Docker ->
-                throw ExecutionException("Container Sage debugging is unavailable: helper deployment, source mapping, and debug-port transport are not validated")
-            is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh ->
-                throw ExecutionException("SSH SageMath debugging is not supported: verified remote debugger, helper deployment, port forwarding, and source mapping are required")
+        val executables = executableResolution?.value
+        val mode = if (usesConfiguredWsl) {
+            ExecutionMode.WSL
+        } else {
+            when (executables!!.target) {
+                com.starnotesxj.sagemath.runtime.RuntimeTarget.Native -> ExecutionMode.NATIVE
+                is com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl -> ExecutionMode.WSL
+                is com.starnotesxj.sagemath.runtime.RuntimeTarget.Docker ->
+                    throw ExecutionException("Container Sage debugging is unavailable: helper deployment, source mapping, and debug-port transport are not validated")
+                is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh ->
+                    throw ExecutionException("SSH SageMath debugging is not supported: verified remote debugger, helper deployment, port forwarding, and source mapping are required")
+            }
         }
-        val bundledPython = executables.python
-            ?: throw ExecutionException("The verified SageMath runtime has no usable bundled Python interpreter")
         val commandLine = if (mode == ExecutionMode.WSL) {
+            val command = if (usesConfiguredWsl) {
+                wslConfiguredDebugScript(settings.wslCondaEnvironment, settings.wslCondaExecutable)
+            } else {
+                val resolvedExecutables = executables!!
+                val bundledPython = resolvedExecutables.python
+                    ?: throw ExecutionException("The verified SageMath runtime has no usable bundled Python interpreter")
+                wslDebugScript(settings.wslCondaEnvironment, resolvedExecutables.sage, bundledPython, settings.wslCondaExecutable)
+            }
             GeneralCommandLine(
                 "wsl.exe", "-d", settings.wslDistribution, "--exec", "/bin/bash", "-lc",
-                wslDebugScript(settings.wslCondaEnvironment, executables.sage, bundledPython, settings.wslCondaExecutable),
+                command,
                 // bash -c uses the next item as $0; the debugger's injected
-                // arguments follow it and are forwarded by wslDebugScript.
+                // arguments follow it and are forwarded by the WSL wrapper.
                 "sage-debug-entry",
             )
         } else {
-            GeneralCommandLine(executables.sage)
+            GeneralCommandLine(executables!!.sage)
                 .withWorkDirectory(script.parent?.toString())
         }
         PythonCommandLineState.createStandardGroups(commandLine)

@@ -9,6 +9,7 @@ plugins {
 version = rootProject.version
 
 val onCi = System.getenv("CI") == "true"
+val fullIndexPath = providers.gradleProperty("sage.bundle.fullIndex").orNull
 
 repositories {
     mavenCentral()
@@ -59,9 +60,28 @@ intellijPlatform {
     buildSearchableOptions = false
 }
 
+tasks.named<ProcessResources>("processResources") {
+    inputs.property("sage.bundle.fullIndex", fullIndexPath ?: "")
+    if (fullIndexPath != null) {
+        val source = file(fullIndexPath)
+        inputs.file(source)
+        doLast {
+            require(source.isFile) { "sage.bundle.fullIndex must point to a regular file: $source" }
+            val target = destinationDir.resolve("sage-api-index.json")
+            source.copyTo(target, overwrite = true)
+        }
+    }
+}
+
 tasks.test {
     enabled = providers.gradleProperty("runSageCoreTests").map(String::toBoolean).orElse(false).get()
+    fullIndexPath?.let { path ->
+        systemProperty("sage.bundle.fullIndex", path)
+    }
     providers.gradleProperty("sage.external.fullIndex").orNull?.let { path ->
         systemProperty("sage.external.fullIndex", path)
+    }
+    providers.gradleProperty("sage.python.testSdk").orNull?.let { path ->
+        systemProperty("sage.python.testSdk", path)
     }
 }

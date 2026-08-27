@@ -116,22 +116,86 @@ class SageApiIndexQuery(val index: SageApiIndex) {
 
     /** Returns methods/properties/constants declared by the owner or its indexed parents. */
     fun members(ownerQualifiedName: String): List<SageApiEntry> {
-        val ownerRanks = reachableTypeRanks(ownerQualifiedName)
-        return ownerRanks.asSequence()
-            .flatMap { (owner, rank) ->
-                entriesByOwner[owner].orEmpty().asSequence()
-                    .filter { it.kind in MEMBER_KINDS }
-                    .map { rank to it }
+        // Use an indexed C3 order rather than only breadth-first ranks.  A rank
+        // is enough for reachability, but it cannot distinguish sibling bases in
+        // a diamond.  Python resolves one attribute name to the nearest owner,
+        // regardless of whether the competing metadata kinds differ.
+        val selected = linkedMapOf<String, MutableList<SageApiEntry>>()
+        for (owner in linearizedTypeNames(ownerQualifiedName)) {
+            entriesByOwner[owner].orEmpty()
+                .asSequence()
+                .filter { it.kind in MEMBER_KINDS }
+                .sortedWith(compareBy<SageApiEntry> { it.qualifiedName.substringAfterLast('.') }.thenBy { it.kind.name })
+                .forEach { entry ->
+                    val memberName = entry.qualifiedName.substringAfterLast('.')
+                    // Keep every declaration for the nearest owner.  METHOD and
+                    // PROPERTY pairs are both legitimate in generated Sage stubs
+                    // (a setter plus a getter), and query completeness must not
+                    // lose one merely because completion later chooses a view.
+                    selected.getOrPut(memberName) { mutableListOf() }.also { bucket ->
+                        if (bucket.isEmpty() || bucket.first().ownerName == entry.ownerName) bucket += entry
+                    }
+                }
+        }
+        return selected.values
+            .flatten()
+            .sortedWith(compareBy<SageApiEntry> { it.qualifiedName.substringAfterLast('.') }.thenBy { it.kind.name })
+    }
+
+    /**
+     * Computes the metadata-only Python MRO for one class.  Ambiguous class
+     * aliases and inconsistent/cyclic parent graphs stop at the known owner;
+     * they never cause a parent member to be fabricated or selected randomly.
+     */
+    private fun linearizedTypeNames(observedName: String): List<String> {
+        val resolved = classEntries(observedName).map { it.qualifiedName }.distinct()
+        if (resolved.size > 1) return listOf(observedName)
+        val start = resolved.singleOrNull() ?: observedName
+        val memo = mutableMapOf<String, List<String>>()
+        val active = mutableSetOf<String>()
+
+        fun mergeC3(sequences: List<List<String>>): List<String>? {
+            val work = sequences.map { it.toMutableList() }.toMutableList()
+            val result = mutableListOf<String>()
+            while (work.any { it.isNotEmpty() }) {
+                val candidate = work.asSequence()
+                    .mapNotNull { it.firstOrNull() }
+                    .distinct()
+                    .firstOrNull { head -> work.none { head in it.drop(1) } }
+                    ?: return null
+                result += candidate
+                work.forEach { sequence ->
+                    if (sequence.firstOrNull() == candidate) sequence.removeAt(0)
+                }
             }
-            .sortedWith(
-                compareBy<Pair<Int, SageApiEntry>> { it.second.qualifiedName.substringAfterLast('.') }
-                    .thenBy { it.second.kind.name }
-                    .thenBy { it.first }
-                    .thenBy { it.second.qualifiedName },
-            )
-            .map { it.second }
-            .distinctBy { it.qualifiedName.substringAfterLast('.') to it.kind }
-            .toList()
+            return result
+        }
+
+        fun linearize(name: String): List<String> {
+            val canonical = classEntries(name).map { it.qualifiedName }.distinct().singleOrNull() ?: name
+            memo[canonical]?.let { return it }
+            if (!active.add(canonical)) return listOf(canonical)
+            val entry = classEntries(canonical).singleOrNull { it.qualifiedName == canonical }
+            val parents = entry?.parents.orEmpty()
+                .flatMap { parent ->
+                    val candidates = classEntries(parent).map { it.qualifiedName }.distinct()
+                    when {
+                        candidates.size == 1 -> candidates
+                        candidates.isEmpty() -> listOf(parent)
+                        else -> emptyList()
+                    }
+                }
+                .filterNot { it in active }
+                .distinct()
+            val sequences = parents.map(::linearize) + listOf(parents)
+            val merged = mergeC3(sequences)
+            val result = if (merged == null) listOf(canonical) else listOf(canonical) + merged
+            active.remove(canonical)
+            memo[canonical] = result.distinct()
+            return memo.getValue(canonical)
+        }
+
+        return linearize(start)
     }
 
     fun members(ownerQualifiedName: String, memberName: String): List<SageApiEntry> =
@@ -163,20 +227,66 @@ class SageApiIndexQuery(val index: SageApiIndex) {
     fun documentation(qualifiedName: String): SageApiDocumentation? =
         resolve(qualifiedName)?.documentation
 
-    /** Only precise, unique return types are safe for assignment propagation. */
-    fun uniqueKnownReturnType(functionQualifiedName: String): SageTypeRef? {
-        val returns = callReturnTypes(functionQualifiedName)
-        if (returns.isEmpty() || returns.any { type ->
-                type.state != SageTypeState.KNOWN ||
-                    type.expression.isNullOrBlank() ||
-                    type.expression.contains('|')
-            }) return null
-        return returns.distinctBy { it.expression }.singleOrNull()
+    /** Returns one unanimous trusted KNOWN return proof for this exact signature. */
+    fun uniqueTrustedKnownReturnExpression(signature: SageApiSignature): SageTypeRef? {
+        val evidence = signature.trustedReturnEvidence
+        if (evidence.isEmpty() || evidence.any { it.returnType.state != SageTypeState.KNOWN || it.returnType.expression.isNullOrBlank() }) {
+            return null
+        }
+        return evidence
+            .map { SageTypeRef.known(it.returnType.expression!!.trim()) }
+            .distinctBy { it.expression }
+            .singleOrNull()
     }
 
-    /** Resolve a known class expression to one canonical indexed class name. */
+    /**
+     * Returns one complete known return expression when every indexed overload
+     * agrees. Unlike [uniqueKnownReturnType], this preserves generic, union,
+     * Optional, Literal, and Callable structure for the PSI lowering layer.
+     */
+    fun uniqueKnownReturnExpression(functionQualifiedName: String): SageTypeRef? {
+        val returns = callReturnTypes(functionQualifiedName)
+        if (returns.isEmpty() || returns.any { type ->
+                type.state != SageTypeState.KNOWN || type.expression.isNullOrBlank()
+            }) return null
+        return returns
+            .map { type -> SageTypeRef.known(type.expression!!.trim()) }
+            .distinctBy { it.expression }
+            .singleOrNull()
+    }
+
+    /** Only precise, unique simple/class return types are safe for legacy callers. */
+    fun uniqueKnownReturnType(functionQualifiedName: String): SageTypeRef? {
+        val type = uniqueKnownReturnExpression(functionQualifiedName) ?: return null
+        val expression = parseTypeExpression(type) ?: return null
+        if (expression is SageTypeExpression.Union ||
+            expression is SageTypeExpression.Optional ||
+            expression is SageTypeExpression.Callable
+        ) return null
+        if (expression is SageTypeExpression.NoneType) return type
+        if (expression is SageTypeExpression.Literal) return type
+        if (expression is SageTypeExpression.Generic) {
+            return type.takeIf { expression.base.qualifiedName != "typing.Union" && expression.base.qualifiedName != "typing.Optional" }
+        }
+        if (expression !is SageTypeExpression.Name) return null
+        return type.takeIf { !it.expression.orEmpty().contains('|') }
+    }
+
+    /** Parse a known type expression without silently discarding generic/union structure. */
+    fun parseTypeExpression(type: SageTypeRef): SageTypeExpression? =
+        SageTypeRefExpressionParser.parse(type)
+
+    fun parseTypeExpression(expression: String): SageTypeExpression? =
+        SageTypeRefExpressionParser.parse(expression)
+
+    /** Resolve a simple known class expression to one canonical indexed class name. */
     fun resolveKnownClassName(typeExpression: String): String? {
-        val normalized = typeExpression.substringBefore('[').trim()
+        val expression = parseTypeExpression(typeExpression) ?: return null
+        val normalized = when (expression) {
+            is SageTypeExpression.Name -> expression.qualifiedName
+            is SageTypeExpression.Generic -> expression.base.qualifiedName
+            else -> return null
+        }.trim()
         if (normalized.isBlank()) return null
         val exact = classEntries(normalized).map { it.qualifiedName }.distinct()
         if (exact.size == 1) return exact.single()

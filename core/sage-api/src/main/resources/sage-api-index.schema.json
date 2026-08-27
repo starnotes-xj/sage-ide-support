@@ -133,6 +133,12 @@
         },
         "returnType": {
           "$ref": "#/$defs/typeRef"
+        },
+        "trustedReturnEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returnEvidence"
+          }
         }
       }
     },
@@ -213,6 +219,28 @@
         "digest": {
           "type": "string",
           "pattern": "^[0-9a-fA-F]{64}$"
+        }
+      }
+    },
+    "returnEvidence": {
+      "type": "object",
+      "required": [
+        "kind",
+        "returnType",
+        "source"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "TRUSTED_MANIFEST",
+            "TRUSTED_STUB"
+          ]
+        },
+        "returnType": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
         }
       }
     }

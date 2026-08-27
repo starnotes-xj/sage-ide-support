@@ -13,6 +13,8 @@ from typing import Any, Iterable
 SCHEMA_VERSION = 1
 GENERATOR_VERSION = "sage-api-index-py/0.1"
 INVENTORY_SCHEMA_VERSION = 1
+RETURN_EVIDENCE_MANIFEST_SCHEMA_VERSION = 1
+RETURN_EVIDENCE_KIND = "TRUSTED_MANIFEST"
 KIND_ORDER = {name: index for index, name in enumerate(("MODULE", "CLASS", "FUNCTION", "METHOD", "PROPERTY", "CONSTANT", "ALIAS"))}
 CONFIDENCE_RANK = {"UNKNOWN": 1, "LOW": 2, "MEDIUM": 3, "HIGH": 4}
 
@@ -224,19 +226,131 @@ def signature_for(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[st
     args = node.args
     positional = list(args.posonlyargs) + list(args.args)
     defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
-    parameters = [parameter_for(argument, default, imports, False, False) for argument, default in zip(positional, defaults) if not (is_method and argument.arg in {"self", "cls"})]
+    positional_only_names = {argument.arg for argument in args.posonlyargs}
+    parameters = [parameter_for(argument, default, imports, False, False, positional_only=argument.arg in positional_only_names) for argument, default in zip(positional, defaults) if not (is_method and argument.arg in {"self", "cls"})]
     if args.vararg:
         parameters.append(parameter_for(args.vararg, None, imports, False, True))
     parameters.extend(parameter_for(argument, default, imports, True, False) for argument, default in zip(args.kwonlyargs, args.kw_defaults))
     if args.kwarg:
         parameters.append(parameter_for(args.kwarg, None, imports, True, True))
-    return {"parameters": parameters, "returnType": type_ref(node.returns, imports) or {"state": "UNKNOWN", "expression": None}}
+    type_parameters = explicit_type_parameters(node, imports)
+    return {
+        "parameters": parameters,
+        "returnType": type_ref(node.returns, imports) or {"state": "UNKNOWN", "expression": None},
+        **({"typeParameters": type_parameters} if type_parameters else {}),
+    }
 
-def parameter_for(argument: ast.arg, default: ast.AST | None, imports: dict[str, str], keyword_only: bool, variadic: bool) -> dict[str, Any]:
-    return {"name": argument.arg, "type": type_ref(argument.annotation, imports) or {"state": "UNKNOWN", "expression": None}, "defaultValue": default_text(default), "optional": default is not None, "keywordOnly": keyword_only, "variadic": variadic}
+def parameter_for(argument: ast.arg, default: ast.AST | None, imports: dict[str, str], keyword_only: bool, variadic: bool, positional_only: bool = False) -> dict[str, Any]:
+    parameter = {"name": argument.arg, "type": type_ref(argument.annotation, imports) or {"state": "UNKNOWN", "expression": None}, "defaultValue": default_text(default), "optional": default is not None, "keywordOnly": keyword_only, "variadic": variadic}
+    if positional_only:
+        parameter["positionalOnly"] = True
+    return parameter
+
+
+def explicit_type_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str]) -> list[dict[str, Any]]:
+    """Emit only declarations explicitly present in the function signature."""
+    declarations: list[dict[str, Any]] = []
+    annotation_nodes = [argument.annotation for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)]
+    annotation_nodes.append(node.returns)
+    explicit_names: set[str] = set()
+    for annotation in annotation_nodes:
+        if isinstance(annotation, ast.Name) and annotation.id in {"Self", "typing_Self"}:
+            explicit_names.add("Self")
+        elif isinstance(annotation, ast.Attribute) and annotation.attr == "Self":
+            explicit_names.add("Self")
+    if "Self" in explicit_names:
+        declarations.append({"name": "Self", "kind": "SELF"})
+    return declarations
+
 
 def signature_key(signature: dict[str, Any]) -> str:
     return json.dumps(signature, sort_keys=True, separators=(",", ":"))
+
+def canonical_signature_shape(signature: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "parameters": [
+            {key: parameter.get(key) for key in ("name", "type", "defaultValue", "optional", "keywordOnly", "variadic", "positionalOnly")}
+            for parameter in signature.get("parameters", [])
+        ],
+        "typeParameters": signature.get("typeParameters", []),
+    }
+
+def signature_shape_digest(signature: dict[str, Any]) -> str:
+    payload = json.dumps(canonical_signature_shape(signature), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+def source_digests_digest(source_digest_map: dict[str, str]) -> str:
+    payload = json.dumps(dict(sorted(source_digest_map.items())), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+def parse_return_evidence_manifest(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("return evidence manifest must be a JSON object")
+    if value.get("schemaVersion") != RETURN_EVIDENCE_MANIFEST_SCHEMA_VERSION:
+        raise ValueError("return evidence manifest has unsupported schemaVersion")
+    for field in ("artifactId", "sageVersion", "pythonVersion", "sourceDigestsDigest"):
+        if not isinstance(value.get(field), str) or not value[field].strip():
+            raise ValueError(f"return evidence manifest requires nonblank {field}")
+    if not is_sha256(value["sourceDigestsDigest"]):
+        raise ValueError("return evidence manifest sourceDigestsDigest is invalid")
+    entries = value.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("return evidence manifest entries must be an array")
+    return value
+
+def validate_return_evidence_manifest(manifest: dict[str, Any], index: dict[str, Any]) -> None:
+    if manifest["sageVersion"] != index.get("sageVersion") or manifest["pythonVersion"] != index.get("pythonVersion"):
+        raise ValueError("return evidence manifest version does not match index")
+    if manifest["artifactId"] != index.get("artifactId"):
+        raise ValueError("return evidence manifest artifactId does not match index")
+    if manifest["sourceDigestsDigest"] != source_digests_digest(index.get("sourceDigests", {})):
+        raise ValueError("return evidence manifest sourceDigestsDigest does not match index")
+    index_entries = {(entry.get("qualifiedName"), entry.get("kind")): entry for entry in index.get("entries", [])}
+    seen: set[tuple[str, str, str]] = set()
+    for position, item in enumerate(manifest["entries"]):
+        path = f"entries[{position}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"return evidence manifest {path} must be an object")
+        qualified_name, kind, digest = item.get("qualifiedName"), item.get("kind"), item.get("signatureDigest")
+        if not isinstance(qualified_name, str) or not qualified_name.strip() or kind not in KIND_ORDER or not isinstance(digest, str) or not is_sha256(digest):
+            raise ValueError(f"return evidence manifest {path} identity is invalid")
+        key = (qualified_name, kind, digest)
+        if key in seen:
+            raise ValueError(f"return evidence manifest {path} is duplicated")
+        seen.add(key)
+        entry = index_entries.get((qualified_name, kind))
+        if entry is None:
+            raise ValueError(f"return evidence manifest {path} targets an unknown entry")
+        if kind != "METHOD":
+            raise ValueError(f"return evidence manifest {path} target kind must be METHOD")
+        if entry.get("dynamicity") == "DYNAMIC":
+            raise ValueError(f"return evidence manifest {path} targets a dynamic entry")
+        matches = [signature for signature in entry.get("signatures", []) if signature_shape_digest(signature) == digest]
+        if len(matches) != 1:
+            raise ValueError(f"return evidence manifest {path} signatureDigest does not match exactly one signature")
+        return_type = item.get("returnType")
+        if not isinstance(return_type, dict) or return_type.get("state") != "KNOWN" or not isinstance(return_type.get("expression"), str) or not return_type["expression"].strip():
+            raise ValueError(f"return evidence manifest {path}.returnType must be KNOWN with an expression")
+        base_return = matches[0].get("returnType", {})
+        if base_return.get("state") == "DYNAMIC" or (base_return.get("state") == "KNOWN" and base_return.get("expression") != return_type["expression"]):
+            raise ValueError(f"return evidence manifest {path} contradicts indexed return metadata")
+        source = item.get("source")
+        if not isinstance(source, dict) or not isinstance(source.get("locator"), str) or not source["locator"].strip() or not is_sha256(source.get("digest", "")):
+            raise ValueError(f"return evidence manifest {path}.source is invalid")
+
+def attach_trusted_return_evidence(index: dict[str, Any], manifest: dict[str, Any], manifest_path: Path) -> None:
+    manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    entries = {(entry["qualifiedName"], entry["kind"]): entry for entry in index["entries"]}
+    for item in manifest["entries"]:
+        entry = entries[(item["qualifiedName"], item["kind"])]
+        signature = next(signature for signature in entry["signatures"] if signature_shape_digest(signature) == item["signatureDigest"])
+        evidence = {
+            "kind": RETURN_EVIDENCE_KIND,
+            "returnType": item["returnType"],
+            "source": {"kind": "SIGNATURE", "locator": item["source"]["locator"], "digest": manifest_digest},
+        }
+        signature["trustedReturnEvidence"] = signature.get("trustedReturnEvidence", []) + [evidence]
 
 def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_version: str, metadata: dict[str, Any] | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 
@@ -281,6 +395,8 @@ def normalize(raw_symbols: Iterable[RawSymbol], sage_version: str, python_versio
         entries.append(entry)
     index = {"schemaVersion": SCHEMA_VERSION, "sageVersion": sage_version, "pythonVersion": python_version, "generatorVersion": GENERATOR_VERSION, "sourceDigests": source_digests(entries), "entries": entries}
     if metadata:
+        if metadata.get("artifactId"):
+            index["artifactId"] = metadata["artifactId"]
         index = {**metadata, **index}
         index["sources"] = []
         for source in metadata.get("sourceSpecs", []):
@@ -311,7 +427,7 @@ def conflicting_signatures(signatures: list[dict[str, Any]]) -> bool:
 def same_call_shape(left: dict[str, Any], right: dict[str, Any]) -> bool:
     def shape(signature: dict[str, Any]) -> list[dict[str, Any]]:
         return [
-            {key: parameter.get(key) for key in ("name", "defaultValue", "optional", "keywordOnly", "variadic")}
+            {key: parameter.get(key) for key in ("name", "defaultValue", "optional", "keywordOnly", "variadic", "positionalOnly")}
             for parameter in signature.get("parameters", [])
         ]
     return shape(left) == shape(right)
@@ -488,12 +604,34 @@ def validate_signature(signature: Any, path: str) -> None:
         if not isinstance(parameter, dict) or not isinstance(parameter.get("name"), str) or not parameter["name"].strip() or not isinstance(parameter.get("type"), dict):
             raise ValueError(f"{path}.parameters[{parameter_index}] is invalid")
         validate_type_ref(parameter["type"], f"{path}.parameters[{parameter_index}].type")
-        for boolean_field in ("optional", "keywordOnly", "variadic"):
+        for boolean_field in ("optional", "keywordOnly", "variadic", "positionalOnly"):
             if boolean_field in parameter and type(parameter[boolean_field]) is not bool:
                 raise ValueError(f"{path}.parameters[{parameter_index}].{boolean_field} must be boolean")
         if "defaultValue" in parameter and parameter["defaultValue"] is not None and not isinstance(parameter["defaultValue"], str):
             raise ValueError(f"{path}.parameters[{parameter_index}].defaultValue must be a string or null")
     validate_type_ref(signature["returnType"], f"{path}.returnType")
+    type_parameters = signature.get("typeParameters", [])
+    if not isinstance(type_parameters, list):
+        raise ValueError(f"{path}.typeParameters must be an array")
+    seen_type_parameters: set[str] = set()
+    for index, parameter in enumerate(type_parameters):
+        parameter_path = f"{path}.typeParameters[{index}]"
+        if not isinstance(parameter, dict) or not isinstance(parameter.get("name"), str) or not parameter["name"].strip():
+            raise ValueError(f"{parameter_path} is invalid")
+        if parameter["name"] in seen_type_parameters:
+            raise ValueError(f"{parameter_path}.name is duplicated")
+        seen_type_parameters.add(parameter["name"])
+        if parameter.get("kind", "TYPE_VARIABLE") not in {"TYPE_VARIABLE", "SELF", "PARAM_SPEC"}:
+            raise ValueError(f"{parameter_path}.kind is invalid")
+        if "bound" in parameter:
+            validate_type_ref(parameter["bound"], f"{parameter_path}.bound")
+        constraints = parameter.get("constraints", [])
+        if not isinstance(constraints, list):
+            raise ValueError(f"{parameter_path}.constraints must be an array")
+        for constraint_index, constraint in enumerate(constraints):
+            validate_type_ref(constraint, f"{parameter_path}.constraints[{constraint_index}]")
+        if "bound" in parameter and constraints:
+            raise ValueError(f"{parameter_path} cannot contain both bound and constraints")
 
 def validate_type_ref(value: Any, path: str) -> None:
     if not isinstance(value, dict) or value.get("state") not in {"KNOWN", "UNKNOWN", "DYNAMIC"}:
@@ -682,6 +820,10 @@ def build(args: argparse.Namespace) -> int:
     index, diagnostics = normalize(raw, sage_version, python_version, metadata)
     if metadata:
         validate_source_contract(index, metadata)
+    if args.return_evidence_manifest:
+        manifest = parse_return_evidence_manifest(args.return_evidence_manifest)
+        validate_return_evidence_manifest(manifest, index)
+        attach_trusted_return_evidence(index, manifest, args.return_evidence_manifest)
     validate_index(index)
     validate_inventory(inventory)
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -716,6 +858,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--source-manifest", type=Path)
     result.add_argument("--source-base", type=Path)
     result.add_argument("--source-locator", default="runtime-export")
+    result.add_argument("--return-evidence-manifest", type=Path)
     result.add_argument("--sage-version", required=True)
     result.add_argument("--python-version", required=True)
     result.add_argument("--output", type=Path, required=True)

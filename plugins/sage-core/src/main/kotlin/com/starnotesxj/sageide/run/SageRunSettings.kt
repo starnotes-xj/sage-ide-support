@@ -25,7 +25,7 @@ class SageRunSettings : PersistentStateComponent<SageRunSettings.State> {
         var executionMode: String = ExecutionMode.WSL.name
         /** Native executable only; never reused as a WSL or container path. */
         var nativeSageExecutable: String = ""
-        /** Legacy field retained for settings XML migration; not read by runtime resolution. */
+        /** Legacy field retained for settings XML migration; also supports direct WSL launch. */
         var sageExecutable: String = ""
         /** Optional absolute POSIX Sage executable inside WSL. */
         var wslSageExecutable: String = ""

@@ -4,8 +4,10 @@ import com.starnotesxj.sageide.SagePluginTestBase
 import com.starnotesxj.sagemath.sageapi.SageApiIndexJsonReader
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
 import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
+import com.starnotesxj.sagemath.sageapi.SageTypeExpression
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -58,6 +60,67 @@ class SageApiIndexServiceTest : SagePluginTestBase() {
             }
         } finally {
             Files.deleteIfExists(temporary)
+        }
+    }
+
+    fun testExplicitExternalIndexTakesPrecedenceOverProductSidecar() {
+        val fixture = javaClass.classLoader.getResourceAsStream("sage-api-index.json")
+            ?: error("bundled sage-api-index.json is missing")
+        val temporary = Files.createTempFile("sage-api-index-precedence-", ".json")
+        try {
+            fixture.use { Files.copy(it, temporary, StandardCopyOption.REPLACE_EXISTING) }
+            val service = SageApiIndexService.getInstance()
+            val previousExternal = System.getProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+            val previousProduct = System.getProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+            try {
+                System.setProperty(SageApiIndexService.INDEX_PATH_PROPERTY, temporary.toString())
+                System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, temporary.resolveSibling("missing-product-index.json").toString())
+                assertTrue(service.reloadConfigured())
+                assertEquals(SageApiIndexOrigin.EXTERNAL, service.loadState().origin)
+                assertEquals(45, service.loadState().entryCount)
+            } finally {
+                if (previousExternal == null) System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.INDEX_PATH_PROPERTY, previousExternal)
+                if (previousProduct == null) System.clearProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, previousProduct)
+                service.install(null)
+            }
+        } finally {
+            Files.deleteIfExists(temporary)
+        }
+    }
+
+    fun testProductSidecarIncompleteCoverageFailsClosed() {
+        val source = System.getProperty("sage.external.fullIndex") ?: return
+        val sourcePath = Path.of(source)
+        val artifactRoot = sourcePath.parent
+        val temporaryRoot = Files.createTempDirectory("sage-api-product-incomplete-sidecar-")
+        val sidecarDir = temporaryRoot.resolve("sage-api/10.9")
+        Files.createDirectories(sidecarDir)
+        try {
+            Files.copy(sourcePath, sidecarDir.resolve("sage-api-index.json"), StandardCopyOption.REPLACE_EXISTING)
+            val envelopeText = Files.readString(artifactRoot.resolve("sage-api-index-envelope.json"))
+                .replace("    \"scope\": \"FULL\"", "    \"scope\": \"SCOPED\"")
+            Files.writeString(sidecarDir.resolve("sage-api-index-envelope.json"), envelopeText)
+            Files.copy(artifactRoot.resolve("artifact-receipt.json"), sidecarDir.resolve("artifact-receipt.json"), StandardCopyOption.REPLACE_EXISTING)
+            val service = SageApiIndexService.getInstance()
+            val previous = System.getProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+            val externalPrevious = System.getProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+            try {
+                System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+                System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, sidecarDir.resolve("sage-api-index.json").toString())
+                assertFalse(service.reloadConfigured())
+                assertEquals(SageApiIndexOrigin.UNAVAILABLE, service.loadState().origin)
+                assertEquals(null, service.query())
+            } finally {
+                if (previous == null) System.clearProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, previous)
+                if (externalPrevious == null) System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.INDEX_PATH_PROPERTY, externalPrevious)
+                service.install(null)
+            }
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
         }
     }
 
@@ -142,9 +205,14 @@ class SageApiIndexServiceTest : SagePluginTestBase() {
             val exactKnownReturns = query.index.entries.filter { entry ->
                 entry.signatures.isNotEmpty() &&
                     entry.signatures.all { signature ->
+                        val expression = query.parseTypeExpression(signature.returnType)
                         signature.returnType.state.name == "KNOWN" &&
                             !signature.returnType.expression.isNullOrBlank() &&
-                            '|' !in signature.returnType.expression.orEmpty()
+                            expression != null &&
+                            expression !is SageTypeExpression.Union &&
+                            expression !is SageTypeExpression.Optional &&
+                            expression !is SageTypeExpression.Callable &&
+                            expression !is SageTypeExpression.Generic
                     } &&
                     entry.signatures.map { it.returnType.expression }.distinct().size == 1
             }
@@ -159,13 +227,116 @@ class SageApiIndexServiceTest : SagePluginTestBase() {
                 entry.signatures.isNotEmpty() && entry !in exactKnownReturns
             }
             val fabricatedReturns = nonExactReturns.asSequence()
-                .filter { entry -> query.uniqueKnownReturnType(entry.qualifiedName) != null }
+                .filter { entry ->
+                    entry.signatures.any { it.returnType.state.name != "KNOWN" } &&
+                        query.uniqueKnownReturnType(entry.qualifiedName) != null
+                }
                 .map { entry -> "${entry.kind}:${entry.qualifiedName}" }
                 .take(10)
                 .toList()
             assertTrue(fabricatedReturns.isEmpty(), "DYNAMIC or UNKNOWN returns were incorrectly promoted to KNOWN: $fabricatedReturns")
         } finally {
             service.install(null)
+        }
+    }
+
+    fun testValidProductSidecarLoadsWithReceiptMetadata() {
+        val source = System.getProperty("sage.external.fullIndex") ?: return
+        val sourcePath = Path.of(source)
+        require(Files.isRegularFile(sourcePath)) { "Configured full Sage API index is not a file: $sourcePath" }
+        val artifactRoot = sourcePath.parent
+        val envelope = artifactRoot.resolve("sage-api-index-envelope.json")
+        val receipt = artifactRoot.resolve("artifact-receipt.json")
+        require(Files.isRegularFile(envelope) && Files.isRegularFile(receipt)) {
+            "Configured full index artifact metadata is missing under $artifactRoot"
+        }
+        val temporaryRoot = Files.createTempDirectory("sage-api-product-sidecar-")
+        val sidecarDir = temporaryRoot.resolve("sage-api/10.9")
+        Files.createDirectories(sidecarDir)
+        try {
+            Files.copy(sourcePath, sidecarDir.resolve("sage-api-index.json"), StandardCopyOption.REPLACE_EXISTING)
+            Files.copy(envelope, sidecarDir.resolve("sage-api-index-envelope.json"), StandardCopyOption.REPLACE_EXISTING)
+            Files.copy(receipt, sidecarDir.resolve("artifact-receipt.json"), StandardCopyOption.REPLACE_EXISTING)
+            val service = SageApiIndexService.getInstance()
+            val previous = System.getProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+            val externalPrevious = System.getProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+            try {
+                System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+                System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, sidecarDir.resolve("sage-api-index.json").toString())
+                assertTrue(service.reloadConfigured())
+                val state = service.loadState()
+                assertEquals(SageApiIndexOrigin.PRODUCT, state.origin)
+                assertEquals(84_159, state.entryCount)
+                assertEquals("4f8bd2fc2d26ee5b6f14dbbf1eab920e72d46d8573ef10fac95249f700df91f6", state.verifiedSha256)
+                assertEquals("wsl-ubuntu-sage-10.9-stubgen-0.8.3", state.artifactId)
+                assertNotNull(service.query())
+            } finally {
+                if (previous == null) System.clearProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, previous)
+                if (externalPrevious == null) System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.INDEX_PATH_PROPERTY, externalPrevious)
+                service.install(null)
+            }
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    fun testProductSidecarChecksumMismatchFailsClosed() {
+        val source = System.getProperty("sage.external.fullIndex") ?: return
+        val sourcePath = Path.of(source)
+        val artifactRoot = sourcePath.parent
+        val temporaryRoot = Files.createTempDirectory("sage-api-product-bad-sidecar-")
+        val sidecarDir = temporaryRoot.resolve("sage-api/10.9")
+        Files.createDirectories(sidecarDir)
+        try {
+            Files.copy(sourcePath, sidecarDir.resolve("sage-api-index.json"), StandardCopyOption.REPLACE_EXISTING)
+            val envelopeText = Files.readString(artifactRoot.resolve("sage-api-index-envelope.json"))
+                .replace("4f8bd2fc2d26ee5b6f14dbbf1eab920e72d46d8573ef10fac95249f700df91f6", "0".repeat(64))
+            Files.writeString(sidecarDir.resolve("sage-api-index-envelope.json"), envelopeText)
+            Files.copy(artifactRoot.resolve("artifact-receipt.json"), sidecarDir.resolve("artifact-receipt.json"), StandardCopyOption.REPLACE_EXISTING)
+            val service = SageApiIndexService.getInstance()
+            val previous = System.getProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+            val externalPrevious = System.getProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+            try {
+                System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+                System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, sidecarDir.resolve("sage-api-index.json").toString())
+                assertFalse(service.reloadConfigured())
+                assertEquals(SageApiIndexOrigin.UNAVAILABLE, service.loadState().origin)
+                assertEquals(null, service.query())
+            } finally {
+                if (previous == null) System.clearProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, previous)
+                if (externalPrevious == null) System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.INDEX_PATH_PROPERTY, externalPrevious)
+                service.install(null)
+            }
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
+    fun testInvalidProductSidecarDoesNotFallBackToBundledFixture() {
+        val temporaryRoot = Files.createTempDirectory("sage-api-product-missing-sidecar-")
+        val sidecarDir = temporaryRoot.resolve("sage-api/10.9")
+        Files.createDirectories(sidecarDir)
+        Files.writeString(sidecarDir.resolve("sage-api-index.json"), "{}")
+        val service = SageApiIndexService.getInstance()
+        val previous = System.getProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+        val externalPrevious = System.getProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+        try {
+            System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+            System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, sidecarDir.resolve("sage-api-index.json").toString())
+            assertFalse(service.reloadConfigured())
+            assertEquals(SageApiIndexOrigin.UNAVAILABLE, service.loadState().origin)
+            assertEquals(null, service.query())
+        } finally {
+            if (previous == null) System.clearProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+            else System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, previous)
+            if (externalPrevious == null) System.clearProperty(SageApiIndexService.INDEX_PATH_PROPERTY)
+            else System.setProperty(SageApiIndexService.INDEX_PATH_PROPERTY, externalPrevious)
+            service.install(null)
+            temporaryRoot.toFile().deleteRecursively()
         }
     }
 

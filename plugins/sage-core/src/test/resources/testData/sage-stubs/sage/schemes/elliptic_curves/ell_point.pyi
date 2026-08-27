@@ -1,0 +1,9 @@
+from sage.schemes.elliptic_curves.ell_generic import EllipticCurve_generic
+from sage.rings.integer import Integer
+
+class EllipticCurvePoint:
+    def curve(self) -> EllipticCurve_generic: ...
+    def order(self) -> Integer: ...
+
+class EllipticCurvePoint_finite_field(EllipticCurvePoint):
+    def log(self, base) -> Integer: ...

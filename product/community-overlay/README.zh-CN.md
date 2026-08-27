@@ -14,11 +14,11 @@
 
 ```text
 PyCharm Community Python Core / HTML / Git / Terminal / Markdown
-+ SageMath Core（默认随产品内置的外部插件）
++ SageMath Core（默认随产品内置的 Community 模块）
 = SageMath CTF IDE Community
 ```
 
-SageMath Core 当前先通过官方 `ProductProperties.getAdditionalPluginPaths()` 注入。它不是安装后手动复制，也不是普通 ZIP 被误称为 IDE；官方 Bazel dev target 和 installer target 都会处理该目录。后续可以把 SageMath Core 迁移为 Community JPS/Bazel 正式模块，再加入 `productLayout.bundledPluginModules`。
+SageMath Core 现在作为 Community JPS/Bazel 正式模块加入 `productLayout.bundledPluginModules`；旧的 `getAdditionalPluginPaths()` 仅保留为显式迁移兼容开关。全量 Sage 10.9 API 不嵌入插件资源，而是由产品构建复制到 `sage-api/10.9/` sidecar。`SageApiIndexService` 校验 sidecar 的 envelope、receipt、SHA-256、FULL 覆盖和 entry count 后才启用。
 
 ## 可重复流程
 
@@ -27,15 +27,19 @@ SageMath Core 当前先通过官方 `ProductProperties.getAdditionalPluginPaths(
 - 官方 checkout 为 `b0001cd6c53979b384def7a1e3febe061e2ef687` 且 `git status --porcelain` 为空；
 - JDK 25；
 - 已生成 `plugins/sage-core/build/distributions/sage-core-0.1.0-dev.zip`；
-- Windows 构建使用 ASCII staging/cache/user-home 路径，规避 Bazel/JDK 25 在中文用户目录中的编码崩溃。
+- Windows 构建使用 ASCII staging/cache/user-home 路径，规避 Bazel/JDK 25 在中文用户目录中的编码崩溃；
+- 发布构建必须显式提供已验证的 Sage 10.9 全量 sidecar 目录（含 sage-api-index.json、envelope 和 receipt），不会把 132 MiB 级索引嵌入插件 source resources。
 
 ```powershell
 $overlay = 'G:\Projects\sage-math-ctf-ide\product\community-overlay'
 $pluginZip = 'G:\Projects\sage-math-ctf-ide\plugins\sage-core\build\distributions\sage-core-0.1.0-dev.zip'
+$sageApi = 'G:\Projects\sage-math-ctf-ide\build\sage-api-real\final-live-9'
+& "$overlay\scripts\validate-sage-api-sidecar.ps1" -ArtifactDirectory $sageApi
 $stage = & "$overlay\scripts\prepare-upstream-staging.ps1" `
   -OfficialCheckout 'G:\Projects\intellij-community-sage-ide' `
   -StagingRoot 'G:\sage-build\staging' `
   -PluginZip $pluginZip `
+  -SageApiArtifactDirectory $sageApi `
   -OverlayRoot $overlay `
   -Force
 

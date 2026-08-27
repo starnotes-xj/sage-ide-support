@@ -42,12 +42,45 @@ class SageDebugCommandLineStateTest {
     }
 
     @Test
+    fun `direct WSL run arguments expose concise executable command`() {
+        assertEquals(
+            listOf("-d", "Ubuntu", "--", "/home/user/miniconda3/envs/sage/bin/sage", "/mnt/c/Users/星记/Downloads/test.sage"),
+            wslDirectRunArguments(
+                "Ubuntu",
+                "/home/user/miniconda3/envs/sage/bin/sage",
+                listOf("/mnt/c/Users/星记/Downloads/test.sage"),
+            ),
+        )
+    }
+
+    @Test
+    fun `configured WSL executable prefers dedicated field and legacy POSIX fallback`() {
+        val state = SageRunSettings.State()
+        state.sageExecutable = "/legacy/sage"
+        assertEquals("/legacy/sage", configuredWslSageExecutable(state))
+        state.wslSageExecutable = "/dedicated/sage"
+        assertEquals("/dedicated/sage", configuredWslSageExecutable(state))
+    }
+
+    @Test
     fun `activates configured conda environment before WSL run`() {
         val command = wslRunScript("sage", "/home/user/miniconda3/envs/sage/bin/sage", listOf("/mnt/c/test.sage"))
         assertEquals(true, command.contains("conda activate 'sage'"))
         assertEquals(true, command.contains("exec '/home/user/miniconda3/envs/sage/bin/sage' '/mnt/c/test.sage'"))
         assertEquals(true, command.contains("\"${'$'}HOME/miniconda3/etc/profile.d/conda.sh\""))
         assertEquals(true, command.contains("\"${'$'}{conda_sh%/etc/profile.d/conda.sh}/bin/conda\""))
+    }
+
+    @Test
+    fun `configured WSL run wrapper resolves Sage inside the child shell`() {
+        val command = wslConfiguredRunScript(
+            environment = "sage",
+            configuredExecutable = "",
+            arguments = listOf("/mnt/c/test.sage"),
+        )
+        assertTrue(command.contains("sage_executable=''"))
+        assertTrue(command.contains("command -v sage"))
+        assertTrue(command.contains("exec \"${'$'}sage_executable\" '/mnt/c/test.sage'"))
     }
 
     @Test

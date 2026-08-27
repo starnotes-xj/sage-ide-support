@@ -54,6 +54,30 @@ object SageApiIndexJsonWriter {
         "{" +
             jsonField("parameters", signature.parameters.joinToString(prefix = "[", postfix = "]", transform = ::parameterJson)) + "," +
             jsonField("returnType", typeJson(signature.returnType)) +
+            (if (signature.typeParameters.isEmpty()) "" else "," + jsonField("typeParameters", signature.typeParameters.joinToString(prefix = "[", postfix = "]", transform = ::typeParameterJson))) +
+            (if (signature.trustedReturnEvidence.isEmpty()) "" else "," + jsonField("trustedReturnEvidence", signature.trustedReturnEvidence.joinToString(prefix = "[", postfix = "]", transform = ::returnEvidenceJson))) +
+            "}"
+
+    private fun returnEvidenceJson(evidence: SageApiReturnEvidence): String =
+        "{" +
+            jsonField("kind", jsonString(evidence.kind.name)) + "," +
+            jsonField("returnType", typeJson(evidence.returnType)) + "," +
+            jsonField("source", sourceJson(evidence.source)) +
+            "}"
+
+    private fun sourceJson(source: SageApiSourceRef): String =
+        "{" +
+            jsonField("kind", jsonString(source.kind.name)) + "," +
+            jsonField("locator", jsonString(source.locator)) +
+            (source.digest?.let { "," + jsonField("digest", jsonString(it)) } ?: "") +
+            "}"
+
+    private fun typeParameterJson(parameter: SageApiTypeParameter): String =
+        "{" +
+            jsonField("name", jsonString(parameter.name)) + "," +
+            jsonField("kind", jsonString(parameter.kind.name)) +
+            (parameter.bound?.let { "," + jsonField("bound", typeJson(it)) } ?: "") +
+            (if (parameter.constraints.isEmpty()) "" else "," + jsonField("constraints", parameter.constraints.joinToString(prefix = "[", postfix = "]", transform = ::typeJson))) +
             "}"
 
     private fun parameterJson(parameter: SageApiParameter): String =
@@ -63,7 +87,8 @@ object SageApiIndexJsonWriter {
             jsonField("defaultValue", parameter.defaultValue?.let(::jsonString) ?: "null") + "," +
             jsonField("optional", parameter.optional.toString()) + "," +
             jsonField("keywordOnly", parameter.keywordOnly.toString()) + "," +
-            jsonField("variadic", parameter.variadic.toString()) +
+            jsonField("variadic", parameter.variadic.toString()) + "," +
+            jsonField("positionalOnly", parameter.positionalOnly.toString()) +
             "}"
 
     private fun typeJson(type: SageTypeRef): String =

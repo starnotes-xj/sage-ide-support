@@ -4,6 +4,7 @@ package org.jetbrains.intellij.build.pycharm
 
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.plus
 import kotlinx.collections.immutable.toPersistentList
 import com.intellij.platform.buildScripts.licenses.SoftwareBillOfMaterials
@@ -14,6 +15,7 @@ import org.jetbrains.intellij.build.FileAssociation
 import org.jetbrains.intellij.build.JvmArchitecture
 import org.jetbrains.intellij.build.LinuxDistributionCustomizer
 import org.jetbrains.intellij.build.MacDistributionCustomizer
+import org.jetbrains.intellij.build.OsFamily
 import org.jetbrains.intellij.build.WindowsDistributionCustomizer
 import org.jetbrains.intellij.build.impl.qodana.QodanaProductProperties
 import org.jetbrains.intellij.build.io.copyFileToDir
@@ -25,6 +27,7 @@ import org.jetbrains.intellij.build.productLayout.productModules
 import org.jetbrains.intellij.build.windowsCustomizer
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 
 /**
  * SageMath CTF IDE Community product built on PyCharm Community modules.
@@ -53,21 +56,44 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
       "intellij.platform.starter",
       "intellij.pycharm.community",
     )
-    productLayout.bundledPluginModules +=
-      sequenceOf(
-        "intellij.python.community.plugin",
-        "intellij.sagemath.ctf.sage-core",
-        "intellij.pycharm.community.customization",
-        "intellij.pycharm.community.customization.shared",
-        "intellij.vcs.github",
-        "intellij.vcs.gitlab") +
-      Files.readAllLines(communityHome.resolve("python/build/plugin-list.txt"))
+    // Keep staged packaging bounded to the explicit Sage/Python plugin set.
+    productLayout.pluginModulesToPublish = persistentSetOf()
+    productLayout.bundledPluginModules = persistentListOf(
+      "intellij.java.aetherDependencyResolver.plugin",
+      "intellij.jcef.plugin",
+      "intellij.libraries.misc.plugin",
+      "intellij.platform.bookmarks.plugin",
+      "intellij.grid.core.plugin",
+      "intellij.platform.navbar.plugin",
+      "intellij.platform.problemView.plugin",
+      "intellij.platform.testRunner.plugin",
+      "intellij.platform.recentFiles.plugin",
+      "intellij.platform.structuralSearch.plugin",
+      "intellij.platform.structureView.plugin",
+      "intellij.platform.tasks.plugin",
+      "intellij.platform.execution.serviceView.plugin",
+      "intellij.platform.todo.plugin",
+      "intellij.platform.vcs.plugin",
+      "intellij.platform.images",
+      "intellij.python.community.plugin",
+      "intellij.pycharm.community.customization",
+      "intellij.pycharm.community.customization.shared",
+      "intellij.sagemath.ctf.sage-core",
+      "intellij.vcs.github",
+      "intellij.vcs.gitlab",
+    )
 
     productLayout.pluginLayouts = productLayout.pluginLayouts
+      .filter { it.mainModule in productLayout.bundledPluginModules }
       .filterNot { it.mainModule.startsWith("intellij.android.") }
       .toPersistentList()
 
     productLayout.skipUnresolvedContentModules = true
+    // The Sage product declares its bundled plugins explicitly. Do not launch a
+    // nested dev IDE merely to discover and build every compatible marketplace
+    // plugin during the installer build.
+    productLayout.buildAllCompatiblePlugins = false
+    productLayout.prepareCustomPluginRepositoryForPublishedPlugins = false
     baseDownloadUrl = "https://download.jetbrains.com/python/"
     mavenArtifacts.forIdeModules = true
     additionalVmOptions = persistentListOf("-Dllm.show.ai.promotion.window.on.start=false")
@@ -117,10 +143,34 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
 
   override suspend fun copyAdditionalFiles(targetDir: Path, context: BuildContext) {
     super.copyAdditionalFiles(targetDir, context)
+    copySageApiSidecar(targetDir, context)
     copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir.resolve("license"))
     copyFileToDir(context.paths.communityHomeDir.resolve("NOTICE.txt"), targetDir.resolve("license"))
     copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir)
     copyFileToDir(context.paths.communityHomeDir.resolve("NOTICE.txt"), targetDir)
+  }
+
+  override suspend fun copyAdditionalOsSpecificFiles(runDir: Path, os: OsFamily, arch: JvmArchitecture, context: BuildContext) {
+    super.copyAdditionalOsSpecificFiles(runDir, os, arch, context)
+    copySageApiSidecar(runDir, context)
+  }
+
+  private fun copySageApiSidecar(targetDir: Path, context: BuildContext) {
+    val configured = System.getProperty("sagemath.api.artifact")?.trim()?.takeIf { it.isNotEmpty() }
+    val artifactDir = configured?.let(Path::of) ?: context.paths.communityHomeDir.resolve("sage-api/10.9")
+    val index = artifactDir.resolve("sage-api-index.json")
+    val envelope = artifactDir.resolve("sage-api-index-envelope.json")
+    val receipt = artifactDir.resolve("artifact-receipt.json")
+    val present = listOf(index, envelope, receipt).all(Files::isRegularFile)
+    if (!present) {
+      require(configured == null) { "Validated Sage API sidecar is missing under $artifactDir" }
+      return
+    }
+    val target = targetDir.resolve("sage-api/10.9")
+    Files.createDirectories(target)
+    for (source in listOf(index, envelope, receipt)) {
+      Files.copy(source, target.resolve(source.fileName), StandardCopyOption.REPLACE_EXISTING)
+    }
   }
 
   override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = windowsCustomizer(communityHome) {
@@ -131,6 +181,7 @@ open class SageMathCommunityProperties(private val communityHome: Path) : PyChar
     copyAdditionalFiles { targetDir, _, context ->
       PyCharmBuildUtils.copySkeletons(context, targetDir, "skeletons-win*.zip")
       // Windows OS-specific distributions do not inherit ProductProperties.copyAdditionalFiles(distAllDir).
+      copySageApiSidecar(targetDir, context)
       copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir.resolve("license"))
       copyFileToDir(context.paths.communityHomeDir.resolve("NOTICE.txt"), targetDir.resolve("license"))
       copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir)

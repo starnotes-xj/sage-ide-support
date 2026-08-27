@@ -13,6 +13,28 @@ if (Test-Path -LiteralPath $androidRoot) {
   exit 0
 }
 
+# Remove Android .iml entries from the project model when the pinned checkout
+# omits the entire Android source tree.
+$moduleFile = Join-Path $root '.idea/modules.xml'
+if (Test-Path -LiteralPath $moduleFile -PathType Leaf) {
+  $moduleText = Get-Content -LiteralPath $moduleFile -Raw
+  $moduleLines = $moduleText -split [Environment]::NewLine
+  $keptModuleLines = $moduleLines | Where-Object { $_ -notmatch 'fileurl="file://\$PROJECT_DIR\$/android/' }
+  $newModuleText = $keptModuleLines -join [Environment]::NewLine
+  if ($newModuleText -ne $moduleText) {
+    $moduleBackup = "$moduleFile.sage-android-backup"
+    Copy-Item -LiteralPath $moduleFile -Destination $moduleBackup -Force
+    Set-Content -LiteralPath $moduleFile -Value $newModuleText -NoNewline
+    try {
+      $xmlDocument = [System.Xml.XmlDocument]::new()
+      $xmlDocument.Load($moduleFile)
+    } catch {
+      Copy-Item -LiteralPath $moduleBackup -Destination $moduleFile -Force
+      throw "Android module pruning produced malformed XML: $moduleFile"
+    }
+  }
+}
+
 $changed = [System.Collections.Generic.List[object]]::new()
 $files = @(
   Get-ChildItem -LiteralPath $root -Filter 'BUILD.bazel' -File -Recurse -Force

@@ -22,6 +22,39 @@ import com.starnotesxj.sagemath.runtime.RuntimeDiagnosticCode
 import com.starnotesxj.sagemath.runtime.RuntimeOperationResult
 
 /**
+ * Performs only local run-configuration validation. It must not resolve or probe
+ * an external runtime because IntelliJ may call it under a ReadAction.
+ */
+internal fun configurationValidationError(scriptPath: String, settings: SageRunSettings.State): String? {
+    if (scriptPath.isBlank()) return "The Sage script path is empty"
+    val mode = runCatching { ExecutionMode.valueOf(settings.executionMode) }
+        .getOrElse { return "Unknown Sage execution mode: " + settings.executionMode }
+    return when (mode) {
+        ExecutionMode.NATIVE -> null
+        ExecutionMode.WSL -> runCatching {
+            SageAutoDetect.validateConfiguredWslSettings(
+                settings.wslDistribution,
+                settings.wslCondaEnvironment,
+                settings.wslCondaExecutable,
+                settings.wslSageExecutable,
+            )
+        }.exceptionOrNull()?.message
+        ExecutionMode.DOCKER -> {
+            val profile = com.starnotesxj.sagemath.runtime.ContainerProfileValidator.validate(
+                settings.containerExecutable,
+                settings.dockerImage,
+                settings.dockerCommand,
+                settings.dockerContainerDir,
+            )
+            if (profile.succeeded) null else profile.diagnostics.firstOrNull()?.message ?: "Container Sage settings are invalid"
+        }
+        // SSH resolution is intentionally deferred to execution: it may inspect
+        // user files and the transport is not needed for icon validation.
+        ExecutionMode.SSH -> null
+    }
+}
+
+/**
  * Sage run configurations execute the verified manifest launcher; the bundled
  * Python path is resolved separately for Python-dependent debug consumers.
  * Design follows renpe/intellij-sagemath (Apache 2.0).
@@ -61,6 +94,19 @@ class SageRunConfiguration(
         }
         return RuntimeOperationResult(sdk)
     }
+
+    /**
+     * The settings-backed WSL mode is intentionally launchable without a host probe.
+     *
+     * A run state can be constructed on the EDT, where waiting for `wsl.exe` is
+     * forbidden. When no managed Sage SDK is selected, the WSL shell can activate
+     * The configured absolute Sage path is passed directly to `wsl.exe`, so the
+     * command shown by IntelliJ remains concise and contains no shell bootstrap.
+     */
+    internal fun usesConfiguredWslRuntime(settings: SageRunSettings.State): Boolean =
+        settings.executionMode == ExecutionMode.WSL.name &&
+            sageSdkName.isNullOrBlank() &&
+            configuredWslSageExecutable(settings) != null
 
     fun resolveSageExecutables(): RuntimeOperationResult<ResolvedRuntimeExecutables> {
         val configured = sageSdkName?.trim().orEmpty()
@@ -134,14 +180,11 @@ class SageRunConfiguration(
     override fun canRunUnderDebug(): Boolean = true
 
     override fun checkConfiguration() {
-        // Managed SDKs remain manifest-verified. When no SDK is selected, WSL
-        // is allowed only through the explicitly configured Conda environment.
-        if (scriptPath.isBlank()) {
-            throw RuntimeConfigurationException("The Sage script path is empty")
-        }
-        val resolution = resolveSageExecutables()
-        if (!resolution.succeeded) {
-            throw RuntimeConfigurationException(resolution.diagnostics.firstOrNull()?.message ?: "The bundled SageMath Python is unavailable")
+        // IntelliJ invokes this method while recalculating run-configuration state
+        // under a ReadAction. Runtime discovery launches external processes (notably
+        // wsl.exe), so it must stay in the execution state rather than this callback.
+        configurationValidationError(scriptPath, SageRunSettings.getInstance().getState())?.let {
+            throw RuntimeConfigurationException(it)
         }
     }
 

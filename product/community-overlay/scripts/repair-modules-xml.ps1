@@ -17,6 +17,12 @@ if (-not (Test-Path -LiteralPath $modulesFile -PathType Leaf)) {
 
 $originalHash = (Get-FileHash -LiteralPath $modulesFile -Algorithm SHA256).Hash
 $xml = Get-Content -LiteralPath $modulesFile -Raw
+try {
+  $xmlDocument = [System.Xml.XmlDocument]::new()
+  $xmlDocument.LoadXml($xml)
+} catch {
+  throw "JPS module registry is malformed before repair: $modulesFile"
+}
 $missing = [System.Collections.Generic.List[string]]::new()
 $lines = $xml -split "`r?`n"
 $kept = foreach ($line in $lines) {

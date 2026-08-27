@@ -217,6 +217,7 @@
          also implements Python's DebugAwareConfiguration so PyCharm's native
          Python debug executor can attach pydevd for native Sage launches. -->
     <configurationType implementation="com.starnotesxj.sageide.run.SageRunConfigurationType"/>
+
     <runConfigurationProducer implementation="com.starnotesxj.sageide.run.SageRunConfigurationProducer"/>
     <runLineMarkerContributor language="Sage"
                               implementationClass="com.starnotesxj.sageide.run.SageRunLineMarkerContributor"/>
@@ -238,10 +239,14 @@
     <defaultLiveTemplates file="liveTemplates/Sage.xml"/>
 
     <!-- Implicit sage.all namespace and qualified member completion for .sage files.
-         Python PSI uses PythonLanguage even inside the Sage file type, so only
-         the Python registration participates in completion dispatch. The
-         provider itself gates on the containing file being .sage. -->
+         Sage is a dependent Python dialect, but completion dispatch in current
+         PyCharm selects the concrete Sage language rather than its Python base.
+         Keep both registrations for platform-version compatibility; the
+         contributor itself gates on the containing file being .sage. -->
     <completion.contributor language="Python"
+                            order="first"
+                            implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
+    <completion.contributor language="Sage"
                             order="first"
                             implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
 
@@ -297,4 +302,17 @@
          sugar statements, consulted when ordinary Python resolution fails. -->
     <pyReferenceResolveProvider implementation="com.starnotesxj.sageide.sugar.SageReferenceResolveProvider"/>
   </extensions>
+  <!-- Explicit editor/project context-menu actions. The line-marker contributor
+       covers the gutter; these registrations make Run/Debug available from the
+       .sage editor and Project View right-click menus as well. -->
+  <actions>
+    <action id="Sage.RunFile" class="com.starnotesxj.sageide.run.RunSageFileAction" text="Run Sage Script" description="Run the selected Sage script">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+    </action>
+    <action id="Sage.DebugFile" class="com.starnotesxj.sageide.run.DebugSageFileAction" text="Debug Sage Script" description="Debug the selected Sage script">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+    </action>
+  </actions>
 </idea-plugin>

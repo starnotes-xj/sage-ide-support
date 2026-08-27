@@ -93,6 +93,7 @@ data class SageApiParameter(
     val optional: Boolean = defaultValue != null,
     val keywordOnly: Boolean = false,
     val variadic: Boolean = false,
+    val positionalOnly: Boolean = false,
 ) {
     init {
         require(name.isNotBlank()) { "Sage API parameter name must not be blank" }
@@ -100,10 +101,73 @@ data class SageApiParameter(
     }
 }
 
+enum class SageApiTypeParameterKind {
+    TYPE_VARIABLE,
+    SELF,
+    PARAM_SPEC,
+}
+
+data class SageApiTypeParameter(
+    val name: String,
+    val kind: SageApiTypeParameterKind = SageApiTypeParameterKind.TYPE_VARIABLE,
+    val bound: SageTypeRef? = null,
+    val constraints: List<SageTypeRef> = emptyList(),
+) {
+    init {
+        require(name.isNotBlank()) { "Sage API type parameter name must not be blank" }
+        require(name.none { it.isISOControl() }) { "Sage API type parameter name contains a control character" }
+        require(kind != SageApiTypeParameterKind.SELF || name == "Self") {
+            "Self type parameters must be named Self"
+        }
+        require(bound == null || constraints.isEmpty()) {
+            "A Sage API type parameter cannot have both a bound and constraints"
+        }
+    }
+}
+
+enum class SageApiReturnEvidenceKind {
+    TRUSTED_MANIFEST,
+    TRUSTED_STUB,
+}
+
+data class SageApiReturnEvidence(
+    val kind: SageApiReturnEvidenceKind,
+    val returnType: SageTypeRef,
+    val source: SageApiSourceRef,
+) {
+    init {
+        require(source.locator.isNotBlank()) { "Trusted return evidence requires a source locator" }
+        require(source.digest != null) { "Trusted return evidence requires a source digest" }
+    }
+}
+
 data class SageApiSignature(
     val parameters: List<SageApiParameter> = emptyList(),
     val returnType: SageTypeRef = SageTypeRef.unknown(),
+    /** Explicitly declared generic variables in this signature's scope. */
+    val typeParameters: List<SageApiTypeParameter> = emptyList(),
+    /** Auditable, independent return proofs; never replaces [returnType]. */
+    val trustedReturnEvidence: List<SageApiReturnEvidence> = emptyList(),
 ) {
+    init {
+        require(typeParameters.map { it.name }.toSet().size == typeParameters.size) {
+            "Sage API signature type parameter names must be unique"
+        }
+        require(trustedReturnEvidence.map { evidence ->
+            evidence.kind to evidence.source.kind to evidence.source.locator to evidence.source.digest
+        }.toSet().size == trustedReturnEvidence.size) {
+            "Sage API signature trusted return evidence sources must be unique"
+        }
+        require(trustedReturnEvidence.all { it.returnType.state == SageTypeState.KNOWN && !it.returnType.expression.isNullOrBlank() }) {
+            "Trusted return evidence must contain only KNOWN return types"
+        }
+        require(trustedReturnEvidence.map { it.returnType.expression!!.trim() }.toSet().size <= 1) {
+            "Sage API signature trusted return evidence must agree"
+        }
+        require(trustedReturnEvidence.none { it.kind == SageApiReturnEvidenceKind.TRUSTED_MANIFEST && it.source.kind != SageApiSourceKind.SIGNATURE }) {
+            "Trusted manifest return evidence must cite a signature source"
+        }
+    }
     companion object {
         fun dynamic(): SageApiSignature = SageApiSignature(returnType = SageTypeRef.dynamic())
     }
