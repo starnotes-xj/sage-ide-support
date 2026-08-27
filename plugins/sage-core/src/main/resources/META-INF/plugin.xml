@@ -250,8 +250,8 @@
                             order="first"
                             implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
 
-    <!-- Index-backed Quick Documentation supplements Python's native provider only
-         for Sage source files and installed Sage SDK stubs. -->
+    <!-- Index-backed Quick Documentation owns Sage source files and installed
+         Sage SDK stubs, so remote WSL Sage docs do not require a local Python SDK. -->
     <lang.documentationProvider language="Python"
                                 implementationClass="com.starnotesxj.sageide.completion.SageApiDocumentationProvider"
                                 order="first"/>

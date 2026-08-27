@@ -610,12 +610,17 @@ class SageIntelligenceHarnessTest : SagePluginTestBase() {
             }.getOrDefault(false)
 
             if (nativePhysical) {
-                // Native physical stub declarations own their documentation:
-                // the additive index must defer so Python's own provider wins.
+                // Sage SDK stubs may be remote and have no local Python SDK;
+                // the Sage index must still provide the exact QuickDoc.
                 val quick = provider.getQuickNavigateInfo(element, element)
-                assertTrue(quick == null, "native physical stub docs must win over indexed QuickDoc; quick=" + quick)
+                    ?: error("Sage documentation provider returned no native-stub signature; resolved=" + resolved)
+                assertTrue("sage.matrix.matrix.Matrix.solve_right" in quick, quick)
+                assertTrue("rhs: sage.matrix.matrix.Matrix" in quick, quick)
+                assertTrue("-> sage.matrix.matrix.Matrix" in quick, quick)
                 val doc = provider.generateDoc(element, element)
-                assertTrue(doc == null, "native physical stub docs must win over indexed QuickDoc; doc=" + doc)
+                    ?: error("Sage documentation provider returned no native-stub documentation; resolved=" + resolved)
+                assertTrue("sage.matrix.matrix.Matrix.solve_right" in doc, doc)
+                assertTrue("rhs: sage.matrix.matrix.Matrix" in doc, doc)
             } else {
                 // A non-native resolution is the additive indexed/synthetic
                 // context; the exact qualified-name indexed docs must render.

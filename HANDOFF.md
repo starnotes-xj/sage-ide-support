@@ -214,3 +214,10 @@
 - `idea.log` 的 `00:05:58` 启动记录随后在 `00:06:10`、`00:06:18`、`00:06:22` 继续出现 `PyCustomMemberProviderImpl$MyInstanceElement parent is null`；同一会话的 `SageReferenceResolveProvider` 成功命中仍以 `WARN` 记录。最新源码已将成功命中降为 `DEBUG`，因此这组日志证明 00:05 会话实际加载的不是最新 `3cc8443` 代码行为。
 - 当前有效插件目录 `C:\Users\星记\AppData\Roaming\JetBrains\PyCharm2026.2\plugins\sage-core` 的核心 JAR 创建/修改时间仍为 `2026-08-27 23:29:15`，SHA-256 为 `6ED06694C64048B62E04A99657912913E3E7AAFC03921B16B5A332E08EF8F908`，与 `sage-core-0.1.0-dev-contract-all-20260827.zip` 内嵌 JAR 完全一致；它不等于 00:05 生成的 `20260828` ZIP 内嵌 JAR SHA `274579EE3C00545C878B1B08D5804B105415505393FF4F13328C3624C51277CD`。因此“00:05 执行了安装”不能证明 20260828 包已经成为有效运行时包，可能被 Settings Sync 保留/回滚为旧包。
 - 00:22:22 的 `SettingsSyncPluginManager` 又记录了一次 `Installed plugin com.starnotesxj.sagemath.ctf.sage-core`，并在 `00:22:24` 生成 `.updated_plugins_list`；当前仍未取得新包重新安装后的 fresh completion/Quick Documentation/analysis-spinner 证据。下一步应先在 PyCharm 完全退出后处理这个单一 `.port` 锁，再确认插件 JAR SHA 等于 20260828 包，最后重启做真实 `test2.sage` smoke。
+
+## 二十二、本轮增量（2026-08-28，Sage Quick Documentation 与 Minimap）
+
+- 用户反馈在 Sage 文件中按 `Ctrl+Q` 只显示“需要已配置的本地 Python 3 SDK 来呈现 docstring”。根因是 `SageApiDocumentationProvider.findEntry()` 对已解析到真实 `.pyi` 声明的目标主动返回 `null`，把 Sage 文档交还给 Python 原生 provider；远程 WSL Sage SDK 没有本地 Python SDK 时，原生 provider 无法呈现 docstring。
+- 已移除该 Sage 边界内的 native-target 让渡：对 `.sage` 文件和 Sage SDK stub，索引按精确 qualified name 直接提供 Quick Documentation；普通 `.py` 文件仍由 provider context gate 隔离，不消费 Sage 索引。`SageApiDocumentationProviderTest.testSageIndexedDocumentationWinsWithoutLocalPythonSdk` 与 `SageIntelligenceHarnessTest.testPsiDocumentationProviderRendersIndexedSignatureAndDocumentation` 已通过。
+- 用户所见右上角代码缩略图来自 PyCharm 用户配置 `C:\Users\星记\AppData\Roaming\JetBrains\PyCharm2026.2\options\Minimap.xml` 的 `enabled=true`，不是 Sage 插件。PyCharm 当前未运行时已将该单项改为 `enabled=false`；没有删除缓存或其他 IDE 配置，重启后应不再显示缩略图。
+- 本轮仅修改 Sage 文档优先级、对应回归测试、plugin.xml 注释和上述 Minimap 单项配置；Gradle 定向文档测试通过。最新插件 ZIP 尚未重新打包/安装，因此 20260828 包的 fresh Ctrl+Q 结果仍需在实际加载新 JAR 后确认。

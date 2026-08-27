@@ -9,7 +9,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SageApiDocumentationProviderTest : SagePluginTestBase() {
-    fun testNativeDocumentationWinsOverIndexedDocumentation() {
+    fun testSageIndexedDocumentationWinsWithoutLocalPythonSdk() {
         val indexResource = javaClass.classLoader.getResourceAsStream("sage-api-index.json")!!
         SageApiIndexService.getInstance().install(
             SageApiIndexQuery(indexResource.bufferedReader().use { SageApiIndexJsonReader.read(it.readText()) }),
@@ -26,8 +26,10 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
             val resolved = requireNotNull(reference.reference?.resolve())
             assertTrue(resolved.containingFile.virtualFile?.name?.endsWith(".pyi") == true, resolved.toString())
             val provider = SageApiDocumentationProvider()
-            assertNull(provider.getQuickNavigateInfo(resolved, reference))
-            assertNull(provider.generateDoc(resolved, reference))
+            val quick = provider.getQuickNavigateInfo(resolved, reference)
+            assertTrue(quick?.contains("sage.matrix.matrix.Matrix") == true, quick.orEmpty())
+            val doc = provider.generateDoc(resolved, reference)
+            assertTrue(doc?.contains("sage.matrix.matrix.Matrix") == true, doc.orEmpty())
         } finally {
             SageApiIndexService.getInstance().install(null)
         }

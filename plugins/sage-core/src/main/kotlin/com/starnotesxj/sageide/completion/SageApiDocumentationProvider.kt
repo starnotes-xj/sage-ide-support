@@ -4,13 +4,8 @@ import com.intellij.lang.documentation.DocumentationMarkup
 import com.intellij.lang.documentation.DocumentationProvider
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
-import com.jetbrains.python.codeInsight.PyCustomMember
-import com.jetbrains.python.psi.PyClass
-import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyQualifiedNameOwner
 import com.jetbrains.python.psi.PyReferenceExpression
-import com.jetbrains.python.psi.PyTargetExpression
 import com.starnotesxj.sagemath.sageapi.SageApiEntry
 import com.starnotesxj.sagemath.sageapi.SageApiParameter
 import com.starnotesxj.sagemath.sageapi.SageTypeState
@@ -20,9 +15,10 @@ import com.starnotesxj.sageide.sugar.SageStubIndex
 /**
  * Supplies Quick Documentation from the validated Sage API index.
  *
- * Native Python documentation remains authoritative for ordinary declarations.
- * This provider is deliberately additive: it answers only for Sage source or
- * Sage SDK stubs, and only when a qualified-name lookup is unambiguous.
+ * Sage index documentation is authoritative for Sage source and Sage SDK stubs.
+ * This provider remains isolated from ordinary Python files and only answers
+ * when a qualified-name lookup is unambiguous, so Python's native provider is
+ * still untouched outside the Sage boundary.
  */
 class SageApiDocumentationProvider : DocumentationProvider {
     override fun getQuickNavigateInfo(element: PsiElement, originalElement: PsiElement?): String? =
@@ -33,9 +29,9 @@ class SageApiDocumentationProvider : DocumentationProvider {
 
     private fun findEntry(element: PsiElement, originalElement: PsiElement?): SageApiEntry? {
         // Ctrl+Q supplies the documentation target separately from the caret
-        // element. Resolve the caret/original side first: if Python already has
-        // a physical .py/.pyi declaration, its documentation provider must own
-        // the result just as it owns Go to Definition.
+        // element. Resolve the caret/original side first so Sage SDK stubs can
+        // be documented from the immutable index even when the Python plugin
+        // has no local SDK configured for the remote/WSL Sage interpreter.
         val contextElement = originalElement ?: element
         val contextFile = runCatching { contextElement.containingFile }.getOrNull()
             ?: runCatching { element.containingFile }.getOrNull()
@@ -44,15 +40,9 @@ class SageApiDocumentationProvider : DocumentationProvider {
         val sourceTargets = sequenceOf(originalElement, element)
             .filterNotNull()
             .toList()
-        val resolvedTargets = sourceTargets
-            .flatMap { candidate ->
-                listOfNotNull(candidate, runCatching { candidate.reference?.resolve() }.getOrNull())
-            }
-            .distinct()
         val resolvedDeclarations = sourceTargets
             .mapNotNull { candidate -> runCatching { candidate.reference?.resolve() }.getOrNull() }
             .distinct()
-        if (resolvedTargets.any(::isNativeDocumentationTarget)) return null
 
         val query = SageApiIndexService.getInstance().query() ?: return null
         val candidates = sequenceOf(element, originalElement)
@@ -94,17 +84,6 @@ class SageApiDocumentationProvider : DocumentationProvider {
                 ?.let { return it }
         }
         return null
-    }
-
-    private fun isNativeDocumentationTarget(target: PsiElement): Boolean {
-        if (!target.isValid || target is PyCustomMember) return false
-        val file = runCatching { target.containingFile }.getOrNull() ?: return false
-        val virtualFile = file.virtualFile ?: return false
-        if (!virtualFile.isInLocalFileSystem || !virtualFile.extension.orEmpty().equals("py", ignoreCase = true) &&
-            !virtualFile.extension.orEmpty().equals("pyi", ignoreCase = true)
-        ) return false
-        return target is PyFunction || target is PyClass || target is PyTargetExpression ||
-            target is PyQualifiedNameOwner
     }
 
     private fun renderDocumentation(entry: SageApiEntry): String = buildString {
