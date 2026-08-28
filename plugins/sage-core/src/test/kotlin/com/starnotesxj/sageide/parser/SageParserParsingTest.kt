@@ -46,6 +46,15 @@ class SageParserParsingTest : SagePluginTestBase() {
         assertTrue(plain.any { it.targets.firstOrNull()?.name == "e" })
     }
 
+    fun testIncompleteSugarFallsBackToPythonParser() {
+        // The editor parses after every keystroke, so this is the state seen
+        // immediately after typing `R.<`.  It must return a PSI tree instead
+        // of retrying the rolled-back sugar branch forever on the EDT.
+        myFixture.configureByText("test.sage", "R.<")
+
+        assertEquals("R.<", myFixture.file.text)
+    }
+
     companion object {
         private val AES_EXERCISE = """
             # 必须指定 modulus=0x11B！Sage 默认用 Conway 多项式，结果和 AES 对不上

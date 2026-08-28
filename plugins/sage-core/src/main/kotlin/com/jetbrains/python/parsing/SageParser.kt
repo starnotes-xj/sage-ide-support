@@ -50,7 +50,17 @@ class SageParser : PythonParser(), PsiParser {
                 statementParser.parseStatement()
             }
             else if (looksLikeSugarStatement(builder)) {
-                parseSugarStatement(context, builder)
+                // An editor reparses incomplete input after every keystroke.
+                // `R.<` (or any other incomplete generator statement) has the
+                // sugar prefix but cannot be completed yet.  The sugar parser
+                // rolls its marker back in that case; always hand the token
+                // back to Python's parser so the outer loop still advances.
+                // Ignoring the Boolean result here used to spin forever on the
+                // EDT, which made the editor appear frozen and could trigger
+                // the IDE freeze watchdog.
+                if (!parseSugarStatement(context, builder)) {
+                    statementParser.parseStatement()
+                }
             }
             else {
                 statementParser.parseStatement()

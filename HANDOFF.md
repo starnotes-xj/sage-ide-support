@@ -257,3 +257,13 @@
 - 通过验证：./gradlew :plugins:sage-core:test -PrunSageCoreTests=true --project-prop sage.python.testSdk=D:/Python314/python.exe --no-daemon --console=plain 为 BUILD SUCCESSFUL；定向运行/调试、数字引用、尖括号 handler 测试也为 BUILD SUCCESSFUL。直接执行用户脚本 wsl.exe -d Ubuntu -- /home/starnotes/miniconda3/envs/sage/bin/sage /mnt/c/Users/星记/Downloads/test1.sage 退出码为 0，输出曲线参数及 crypto{s1ngul4r_s1mplif1c4t1on}。
 - 已重新构建并静态核验安装包：G:\sage-build\staging-build6\sage-core-0.1.0-dev-edt-literal-20260828.zip，16,142,754 bytes，SHA-256 202DBD64648575EE97E8E23EB38D409C2B3CDE046BEB66586D5158CEB6D289AD；顶层 sage-core/，内嵌 lib/sage-core-0.1.0-dev.jar 13,989,997 bytes（SHA-256 3B208DA128D28A60FBBC5421B8431EE3A9F9A58488D762B55A557F3DF080D266），JAR 内确认 META-INF/plugin.xml、sage-api-index.json（139,170,649 bytes）、SageAngleBracketTypedHandler、运行态和类型 provider 新类。该 ZIP 尚未在 PyCharm 中从磁盘安装并重启，因此仍需 fresh GUI 验证实际运行命令、p 类型提示、f.derivative() completion、Ctrl+Q 和分析指示器。
 - 另以插件子 shell 的等价路径执行了 WSL Conda 激活后 command -v sage，再运行 test1.sage；退出码为 0，输出同一 flag，证明运行时 wrapper 本身可用。
+
+## 二十七、本轮增量（2026-08-28，Sage 语法糖解析死循环）
+
+- 用户安装插件后报告 PyCharm 无法编辑、鼠标消失并最终卡死。读取真实 `C:\Users\星记\AppData\Local\JetBrains\PyCharm2026.2\log\threadDumps-freeze-20260828-135221-PY-262.9437.214` 确认 EDT 连续 41 秒停在 `DocumentCommitThread -> SageParser.parseRoot -> SageParser.parseSugarStatement`；`report.txt` 给出 `parseSugarStatement 24300ms`，所有采样均在 `SageParser.kt:81`。
+- 根因是编辑器输入不完整的 `R.<`/`F.<` 时，`parseSugarStatement()` 正确回滚并返回 `false`，但 `parseRoot()` 忽略返回值，没有交回 Python parser，外层 `while (!builder.eof())` 因当前位置未前进而无限重试。该 EDT 死循环解释了编辑、鼠标和窗口冻结；不是 WSL 运行或 Sage 类型索引问题。
+- `SageParser.parseRoot()` 现检查 sugar 分支的 Boolean 结果；不完整/不匹配时立即调用原生 `statementParser.parseStatement()`，保证解析位置继续前进。新增 `testIncompleteSugarFallsBackToPythonParser` 回归，覆盖逐键输入的 `R.<` 状态；没有类名/方法名白名单或运行时特判。
+- 通过验证：`SageParserParsingTest` 定向测试 BUILD SUCCESSFUL；完整 `:plugins:sage-core:test`（Python 3.13 测试 SDK）BUILD SUCCESSFUL。冻结会话的 `pycharm64` 进程随后已不存在，未对用户文件执行删除操作。
+- 已重新构建并复制修复包：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-parser-freeze-fix-20260828.zip`，16,142,769 bytes，SHA-256 `3AFF725F32527418AC634D7C461F74CA2D49240721F69A417E978F85D95A1BB4`；由最新 `sage-api-curated-type-contracts.json` 构建，包含修复后的 `SageParser`、语法糖 handler 及完整索引。此前安装的 ZIP 不包含本次回退修复，必须从磁盘安装此新包并重启 PyCharm。
+- 尚未完成安装新包后的 fresh GUI 编辑 smoke；下一步应先确认 PyCharm 完全退出，再安装上述 ZIP，打开 `test2.sage`，逐字输入 `R.<`、补全为 `R.<x> = PolynomialRing(F)`，确认编辑器不冻结、鼠标恢复、`f.derivative()`/`P.log(G)` 补全与 Ctrl+Q 正常，并检查新 `idea.log` 不再出现 `SageParser.parseSugarStatement` 长时间堆栈。
+- 本轮检查发现 `C:\Users\星记\AppData\Local\JetBrains\PyCharm2026.2\.port` 仍是 0 字节、不可访问的 `ReparsePoint`；无 PyCharm 进程时尝试普通删除、重命名、`fsutil reparsepoint delete` 均返回系统错误 1920。未扩大处理范围；若重启仍报 `DirectoryLock`，需在 Windows 重启后由系统清理该 Unix-socket 锁，或由用户手动处理该单一路径。
