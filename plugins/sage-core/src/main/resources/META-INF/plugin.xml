@@ -255,6 +255,9 @@
     <lang.documentationProvider language="Python"
                                 implementationClass="com.starnotesxj.sageide.completion.SageApiDocumentationProvider"
                                 order="first"/>
+    <lang.documentationProvider language="Sage"
+                                implementationClass="com.starnotesxj.sageide.completion.SageApiDocumentationProvider"
+                                order="first"/>
 
     <!-- "New -> SageMath -> Sage File" in the project view: the fileTemplates/
          resource "Sage File.sage.ft" is loaded as a default template by the

@@ -20,6 +20,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+private fun String.stripDocumentationHtml(): String = replace(Regex("<[^>]+>"), "")
+
 /**
  * Lightweight Sage intelligence harness.
  *
@@ -614,26 +616,30 @@ class SageIntelligenceHarnessTest : SagePluginTestBase() {
                 // the Sage index must still provide the exact QuickDoc.
                 val quick = provider.getQuickNavigateInfo(element, element)
                     ?: error("Sage documentation provider returned no native-stub signature; resolved=" + resolved)
-                assertTrue("sage.matrix.matrix.Matrix.solve_right" in quick, quick)
-                assertTrue("rhs: sage.matrix.matrix.Matrix" in quick, quick)
-                assertTrue("-> sage.matrix.matrix.Matrix" in quick, quick)
+                val quickText = quick.stripDocumentationHtml()
+                assertTrue("sage.matrix.matrix.Matrix.solve_right" in quickText, quick)
+                assertTrue("rhs: sage.matrix.matrix.Matrix" in quickText, quick)
+                assertTrue("-> sage.matrix.matrix.Matrix" in quickText, quick)
                 val doc = provider.generateDoc(element, element)
                     ?: error("Sage documentation provider returned no native-stub documentation; resolved=" + resolved)
-                assertTrue("sage.matrix.matrix.Matrix.solve_right" in doc, doc)
-                assertTrue("rhs: sage.matrix.matrix.Matrix" in doc, doc)
+                val docText = doc.stripDocumentationHtml()
+                assertTrue("sage.matrix.matrix.Matrix.solve_right" in docText, doc)
+                assertTrue("rhs: sage.matrix.matrix.Matrix" in docText, doc)
             } else {
                 // A non-native resolution is the additive indexed/synthetic
                 // context; the exact qualified-name indexed docs must render.
                 val signature = provider.getQuickNavigateInfo(element, element)
                     ?: error("Sage documentation provider returned no signature; resolved=" + resolved)
-                assertTrue("sage.matrix.matrix.Matrix.solve_right" in signature, signature)
-                assertTrue("rhs: sage.matrix.matrix.Matrix" in signature, signature)
-                assertTrue("-> sage.matrix.matrix.Matrix" in signature, signature)
+                val signatureText = signature.stripDocumentationHtml()
+                assertTrue("sage.matrix.matrix.Matrix.solve_right" in signatureText, signature)
+                assertTrue("rhs: sage.matrix.matrix.Matrix" in signatureText, signature)
+                assertTrue("-> sage.matrix.matrix.Matrix" in signatureText, signature)
 
                 val documentation = provider.generateDoc(element, element)
                     ?: error("Sage documentation provider returned no documentation; resolved=" + resolved)
-                assertTrue("sage.matrix.matrix.Matrix.solve_right" in documentation, documentation)
-                assertTrue("rhs: sage.matrix.matrix.Matrix" in documentation, documentation)
+                val documentationText = documentation.stripDocumentationHtml()
+                assertTrue("sage.matrix.matrix.Matrix.solve_right" in documentationText, documentation)
+                assertTrue("rhs: sage.matrix.matrix.Matrix" in documentationText, documentation)
             }
         }
     }
@@ -743,9 +749,10 @@ class SageIntelligenceHarnessTest : SagePluginTestBase() {
             val quick = requireNotNull(provider.getQuickNavigateInfo(reference, reference))
             val documentation = requireNotNull(provider.generateDoc(reference, reference))
 
-            assertTrue("sage.all.AffineSpace" in quick, quick)
-            assertTrue("n" in quick && "R = None" in quick, quick)
-            assertTrue("-> sage.schemes.affine.affine_space.AffineSpace_generic" in quick, quick)
+            val quickText = quick.replace(Regex("<[^>]+>"), "")
+            assertTrue("sage.all.AffineSpace" in quickText, quick)
+            assertTrue("n" in quickText && "R = None" in quickText, quick)
+            assertTrue("-> sage.schemes.affine.affine_space.AffineSpace_generic" in quickText, quick)
             assertTrue("Return affine space of dimension" in documentation, documentation)
             assertTrue(DocumentationMarkup.DEFINITION_START in documentation, documentation)
         } finally {
@@ -926,15 +933,11 @@ class SageIntelligenceHarnessTest : SagePluginTestBase() {
                 "power metadata=$powerSignatures",
             )
 
-            // The full index is additive metadata only. Native PyCharm operator
-            // result typing still requires a real callable dunder in the active
-            // PSI stub; this sparse external-only fixture intentionally remains
-            // untyped rather than receiving a fabricated operator result.
+            // The index contract is allowed to type an assignment when the
+            // active Sage stub proves the receiver class.  The result remains
+            // concrete even though this sparse fixture omits native dunders.
             val binaryResult = context.getType(targets.single { it.name == "b" })
-            assertTrue(
-                binaryResult == null,
-                "external-only indexed dunder unexpectedly drove native binary typing: $binaryResult",
-            )
+            assertEquals(owner, (binaryResult as? PyClassType)?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
         } finally {
             service.install(null)
         }

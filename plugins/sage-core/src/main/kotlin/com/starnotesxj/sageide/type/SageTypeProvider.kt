@@ -7,8 +7,10 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.PyElementTypes
 import com.jetbrains.python.psi.PyAssignmentStatement
+import com.jetbrains.python.psi.PyBinaryExpression
 import com.jetbrains.python.psi.PyCallExpression
 import com.jetbrains.python.psi.PyCallSiteExpression
+import com.jetbrains.python.psi.PyCallSiteOwner
 import com.jetbrains.python.psi.PyCallable
 import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyLambdaExpression
@@ -87,6 +89,27 @@ class SageTypeProvider : PyTypeProviderBase() {
     ): Ref<PyType>? {
         val inferred = inferredParameterType(param, function, context)
         return inferred?.let { Ref.create(it) }
+    }
+
+    /**
+     * The native Python engine asks for a callable's declared return while
+     * typing operator expressions.  Sage's generated stubs commonly expose a
+     * precise indexed contract alongside a native ``Any | NotImplemented``
+     * fallback; publish the unique concrete Sage return here so that the
+     * fallback cannot widen an expression such as ``x^3 + x`` back to Any.
+     */
+    override fun getReturnType(
+        callable: PyCallable,
+        context: TypeEvalContext,
+    ): Ref<PyType>? {
+        val function = callable as? PyFunction ?: return null
+        val qualifiedName = sageQualifiedName(function) ?: return null
+        val query = SageApiIndexService.getInstance().query() ?: return null
+        val signatures = query.signatures(qualifiedName)
+        if (signatures.size != 1) return null
+        val returnType = SageTypeLowering.lowerKnownReturn(signatures.single(), function, context, query)
+            ?: return null
+        return Ref.create(returnType)
     }
 
     override fun getReferenceExpressionType(
@@ -340,6 +363,19 @@ class SageTypeProvider : PyTypeProviderBase() {
         return Ref.create(lowered)
     }
 
+    /**
+     * Python's type engine asks the owner overload for operators such as
+     * ``x^3``/``x + y``.  Those PSI nodes implement both call-site interfaces,
+     * but dispatching through only the expression overload lets the native
+     * ``Any``/``NotImplemented`` union win before the Sage contract is seen.
+     * Route the owner entry point through the same concrete indexed contract.
+     */
+    override fun getCallType(
+        function: PyFunction,
+        callSite: PyCallSiteOwner,
+        context: TypeEvalContext,
+    ): Ref<PyType>? = (callSite as? PyCallSiteExpression)?.let { getCallType(function, it, context) }
+
     private fun receiverSpecificMemberReturn(
         callSite: PyCallSiteExpression,
         context: TypeEvalContext,
@@ -382,7 +418,13 @@ class SageTypeProvider : PyTypeProviderBase() {
             ?.replace('/', '.')
             ?.removeSuffix(".__init__")
         val name = function.name
-        return if (moduleName?.startsWith("sage.") == true && !name.isNullOrBlank()) "$moduleName.$name" else null
+        if (moduleName?.startsWith("sage.") == true && !name.isNullOrBlank()) {
+            function.containingClass?.name?.takeIf { it.isNotBlank() }?.let { owner ->
+                return "$moduleName.$owner.$name"
+            }
+            return "$moduleName.$name"
+        }
+        return null
     }
 
     override fun getReferenceType(
@@ -414,6 +456,7 @@ class SageTypeProvider : PyTypeProviderBase() {
                 directMemberAssignedType(target, rhsCall, context)?.let { return it }
             }
             genericFactoryAssignedType(target, context)?.let { return it }
+            indexedExpressionAssignedType(target, context)?.let { return it }
             return literalAssignedType(target)
         }
 
@@ -438,6 +481,12 @@ class SageTypeProvider : PyTypeProviderBase() {
         val indexedFactory = genericFactoryAssignedType(target, context)
         if (indexedFactory != null) return indexedFactory
 
+        // Python's native operator engine may widen a Sage dunder result with
+        // ``Any | NotImplemented`` even when the indexed contract is concrete.
+        // Resolve the RHS expression from its concrete Sage receiver/operator
+        // contracts before publishing the assignment target.
+        indexedExpressionAssignedType(target, context)?.let { return it }
+
         // The Sage preparser wraps EVERY numeric literal (verified against
         // sage.repl.preparse: `x = 5` -> `x = Integer(5)`, `x = 1.5` ->
         // `x = RealNumber('1.5')`), so `ct = 2432...` is a Sage Integer at
@@ -447,6 +496,124 @@ class SageTypeProvider : PyTypeProviderBase() {
         // assigned a bare int/float literal gets the converted class type.
         if (isSageFile) return literalAssignedType(target)
         return null
+    }
+
+    private fun indexedExpressionAssignedType(
+        target: PyTargetExpression,
+        context: TypeEvalContext,
+    ): Ref<PyType>? {
+        val expression = target.findAssignedValue() ?: return null
+        val query = SageApiIndexService.getInstance().query() ?: return null
+        val type = RecursionManager.doPreventingRecursion(expression, true) {
+            indexedExpressionType(expression, context, query)
+        } ?: return null
+        return Ref.create(type)
+    }
+
+    /**
+     * Recursively materializes only exact indexed Sage contracts for an RHS
+     * expression.  This deliberately does not manufacture a common base type:
+     * a binary result is published only when a concrete receiver class and one
+     * concrete operator contract are both proven by active Sage stubs.
+     */
+    private fun indexedExpressionType(
+        expression: com.jetbrains.python.psi.PyExpression,
+        context: TypeEvalContext,
+        query: SageApiIndexQuery,
+    ): PyType? {
+        when (expression) {
+            is PyBinaryExpression -> {
+                val operator = expression.referencedName ?: return null
+                val leftExpression = expression.leftExpression ?: return null
+                val rightExpression = expression.rightExpression ?: return null
+                val leftType = indexedExpressionType(leftExpression, context, query)
+                val rightType = indexedExpressionType(rightExpression, context, query)
+                val candidateNames = buildList {
+                    sageClassOwner(leftType)?.let { owner -> add(owner to operator) }
+                    reflectedOperator(operator)?.let { reflected -> sageClassOwner(rightType)?.let { owner -> add(owner to reflected) } }
+                }
+                for ((owner, memberName) in candidateNames.distinct()) {
+                    val members = query.members(owner, memberName)
+                        .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
+                    val owned = members.filter { it.qualifiedName.substringBeforeLast('.') == owner }
+                    val candidates = if (owned.isNotEmpty()) owned else members
+                    if (candidates.size != 1) continue
+                    val signatures = candidates.single().signatures
+                    SageTypeLowering.lowerCallReturnType(
+                        signatures,
+                        expression,
+                        context,
+                        query,
+                        candidates.single().qualifiedName,
+                        null,
+                    )?.let { return it }
+                    if (signatures.size == 1) {
+                        SageTypeLowering.lowerKnownReturn(signatures.single(), expression, context, query)?.let { return it }
+                    }
+                }
+                return null
+            }
+            is PyCallExpression -> {
+                val callee = expression.callee as? PyReferenceExpression ?: return null
+                val receiverType = callee.qualifier?.let { qualifier ->
+                    indexedExpressionType(qualifier, context, query)
+                        ?: context.getType(qualifier)
+                }
+                if (receiverType != null) {
+                    val owner = sageClassOwner(receiverType) ?: return null
+                    val members = query.members(owner, "__call__")
+                        .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
+                    val candidates = members.filter { it.qualifiedName.substringBeforeLast('.') == owner }
+                        .ifEmpty { members }
+                    if (candidates.size == 1) {
+                        val member = candidates.single()
+                        SageTypeLowering.lowerCallReturnType(
+                            member.signatures,
+                            expression,
+                            context,
+                            query,
+                            member.qualifiedName,
+                            null,
+                        )?.let { return it }
+                        if (member.signatures.size == 1) {
+                            SageTypeLowering.lowerKnownReturn(member.signatures.single(), expression, context, query)?.let { return it }
+                        }
+                    }
+                }
+                val function = callee.reference.resolve() as? PyFunction
+                val qualifiedName = function?.let(::sageQualifiedName)
+                val signatures = qualifiedName?.let(query::signatures).orEmpty()
+                if (signatures.size == 1) {
+                    SageTypeLowering.lowerCallReturnType(signatures, expression, context, query, qualifiedName, function)?.let { return it }
+                    SageTypeLowering.lowerKnownReturn(signatures.single(), expression, context, query)?.let { return it }
+                }
+                return null
+            }
+            is PyReferenceExpression -> {
+                val type = context.getType(expression) ?: return null
+                return type.takeUnless {
+                    it == com.jetbrains.python.psi.types.PyAnyType.Any || it == com.jetbrains.python.psi.types.PyAnyType.Unknown
+                }
+            }
+            else -> return null
+        }
+    }
+
+    private fun sageClassOwner(type: PyType?): String? = (type as? PyClassType)?.pyClass
+        ?.takeIf { it.isValid }
+        ?.let(SageStubIndex::canonicalQualifiedName)
+        ?.takeIf { it.startsWith("sage.") }
+
+    private fun reflectedOperator(operator: String): String? = when (operator) {
+        "__add__" -> "__radd__"
+        "__sub__" -> "__rsub__"
+        "__mul__" -> "__rmul__"
+        "__matmul__" -> "__rmatmul__"
+        "__truediv__" -> "__rtruediv__"
+        "__floordiv__" -> "__rfloordiv__"
+        "__mod__" -> "__rmod__"
+        "__pow__" -> "__rpow__"
+        else -> null
     }
 
     /** Resolve an explicitly resolved Sage call from the versioned API return type. */
@@ -615,6 +782,34 @@ class SageTypeProvider : PyTypeProviderBase() {
     /** `(a,) = F._first_ngens(1)` — the generator type is the element type of the tuple. */
     private fun generatorType(factoryType: PyType, context: TypeEvalContext): PyType? {
         val pyClass = (factoryType as? PyClassType)?.pyClass?.takeIf { it.isValid } ?: return null
+        // Lower the indexed ``gen`` contract directly.  Native PSI resolution
+        // of a short annotation such as ``Polynomial_dense_mod_p`` can select
+        // an unrelated class with the same simple name (or return an
+        // unresolved placeholder) in a remote SDK.  The index already stores
+        // the canonical return expression, so use it as the source of truth
+        // before consulting the native callable type.
+        val query = SageApiIndexService.getInstance().query()
+        val owner = SageStubIndex.canonicalQualifiedName(pyClass)
+        if (query != null && owner != null) {
+            val genEntries = query.members(owner, "gen")
+                .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
+            if (genEntries.size == 1) {
+                val signatures = genEntries.single().signatures
+                if (signatures.size == 1) {
+                    SageTypeLowering.lowerKnownReturn(signatures.single(), pyClass, context, query)?.let { return it }
+                }
+            }
+        }
+        // Concrete Sage ring stubs often expose the element contract directly
+        // on ``gen`` while the runtime's preparse helper calls
+        // ``_first_ngens``.  Prefer that declaration so a concrete factory
+        // return (for example a finite-field polynomial ring) propagates its
+        // own element class instead of falling back to a broad parent tuple.
+        val gen = pyClass.findMethodByName("gen", true, context)
+        val genCallable = gen?.let { context.getType(it) as? PyCallableType }
+        val directReturn = genCallable?.getReturnType(context)
+            ?.takeUnless { it == com.jetbrains.python.psi.types.PyAnyType.Any || it == com.jetbrains.python.psi.types.PyAnyType.Unknown }
+        if (directReturn != null) return directReturn
         val firstNgens = pyClass.findMethodByName("_first_ngens", true, context) ?: return null
         val callable = context.getType(firstNgens) as? PyCallableType ?: return null
         val returnType = callable.getReturnType(context) ?: return null

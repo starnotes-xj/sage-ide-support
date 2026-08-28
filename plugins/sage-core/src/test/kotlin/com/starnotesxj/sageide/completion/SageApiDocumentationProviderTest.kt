@@ -1,6 +1,7 @@
 package com.starnotesxj.sageide.completion
 
 import com.intellij.psi.util.PsiTreeUtil
+import com.jetbrains.python.psi.PyDocStringOwner
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.starnotesxj.sageide.SagePluginTestBase
 import com.starnotesxj.sagemath.sageapi.SageApiDocumentation
@@ -57,6 +58,44 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
         }
     }
 
+    fun testNativePythonDocumentationAvoidsRemoteSdkFormatter() {
+        myFixture.addFileToProject(
+            "native_docs.py",
+            """
+                def randint(a: int, b: int) -> int:
+                    '''Return an integer.
+
+                    Parameters:
+                    - ``a`` -- lower bound.
+
+                    Returns:
+                    ``int`` -- random value.
+                    '''
+                    return a
+            """.trimIndent(),
+        )
+        myFixture.configureByText(
+            "native.sage",
+            "from native_docs import randint\nrandint<caret>",
+        )
+        val reference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+            .lastOrNull { it.referencedName == "randint" }
+        requireNotNull(reference)
+        val resolved = requireNotNull(reference.reference.resolve())
+        assertTrue(resolved is PyDocStringOwner, resolved.toString())
+
+        val provider = SageApiDocumentationProvider()
+        val quick = requireNotNull(provider.getQuickNavigateInfo(resolved, reference))
+        assertTrue(quick.contains("randint"), "quick=$quick resolved=$resolved context=${reference.containingFile.name}")
+        assertTrue(quick.contains("<span"), "semantic quick info=$quick")
+        val quickText = quick.replace(Regex("<[^>]+>"), "")
+        assertTrue("def native_docs.randint(a: int, b: int) -> int" in quickText, quickText)
+        val doc = requireNotNull(provider.generateDoc(resolved, reference))
+        assertTrue(doc.contains("Return an integer."), doc)
+        assertTrue(doc.contains("<table class='sections'>"), doc)
+        assertTrue("QDOC.python.3.sdk.needed.to.render.docstrings" !in doc, doc)
+    }
+
     fun testIndexedDocumentationPreservesSectionsAndRendersFencedCode() {
         val entry = SageApiEntry(
             qualifiedName = "sage.demo.log",
@@ -91,6 +130,7 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
 
         assertTrue("<table class='sections'>" in html, html)
         assertTrue("class='section'" in html, html)
+        assertTrue("sage.demo.log" in html, html)
         assertTrue("<code>base</code>" in html, html)
         assertTrue("<pre><code>P.log(G)\nG.log(P)</code></pre>" in html, html)
         assertTrue("```" !in html, html)

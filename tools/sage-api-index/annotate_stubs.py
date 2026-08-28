@@ -91,6 +91,8 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     },
     "sage/rings/polynomial/polynomial_element.pyi": {
         "Polynomial": {
+            "__pow__": "Polynomial",
+            "derivative": "Polynomial",
             "gcd": "Polynomial",
             "xgcd": "tuple[Polynomial, Polynomial, Polynomial]",
             "quo_rem": "tuple[Polynomial, Polynomial]",
@@ -135,6 +137,9 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             "EllipticCurve": (
                 "def EllipticCurve(R: _FactoryReturn_GF, coefficients, *args, **kwargs) -> 'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field': ...",
             ),
+            "PolynomialRing": (
+                "def PolynomialRing(base_ring: 'sage.rings.finite_rings.finite_field_base.FiniteField', *args, **kwds) -> 'sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p': ...",
+            ),
         },
     },
     "sage/matrix/matrix2.pyi": {
@@ -167,6 +172,32 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     "sage/schemes/elliptic_curves/ell_point.pyi": {
         "EllipticCurvePoint_finite_field": (
             "def curve(self) -> 'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field': ...",
+        ),
+    },
+    "sage/rings/polynomial/polynomial_ring.pyi": {
+        "PolynomialRing_dense_mod_p": (
+            "def gen(self, n=0) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
+        ),
+        "PolynomialRing_dense_finite_field": (
+            "def gen(self, n=0) -> 'sage.rings.polynomial.polynomial_element_generic.Polynomial_generic_dense_field': ...",
+        ),
+    },
+    "sage/rings/polynomial/polynomial_modn_dense_ntl.pyi": {
+        "Polynomial_dense_mod_p": (
+            "def __pow__(self, n, modulus=None) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
+            "def __add__(self, other) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
+            "def __mul__(self, other) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
+            "def __rmul__(self, other) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
+            "def derivative(self, *args) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
+        ),
+    },
+    "sage/rings/polynomial/polynomial_zmod_flint.pyi": {
+        "Polynomial_zmod_flint": (
+            "def __pow__(self, exp, modulus=None) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
+            "def __add__(self, other) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
+            "def __mul__(self, other) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
+            "def __rmul__(self, other) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
+            "def derivative(self, *args) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
         ),
     },
 }

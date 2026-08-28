@@ -246,7 +246,13 @@ object SageTypeLowering {
             ?.replace('/', '.')
             ?.removeSuffix(".__init__")
         val name = function.name
-        return if (moduleName?.startsWith("sage.") == true && !name.isNullOrBlank()) "$moduleName.$name" else null
+        if (moduleName?.startsWith("sage.") == true && !name.isNullOrBlank()) {
+            function.containingClass?.name?.takeIf { it.isNotBlank() }?.let { owner ->
+                return "$moduleName.$owner.$name"
+            }
+            return "$moduleName.$name"
+        }
+        return null
     }
 
     private fun bindTypeExpression(
@@ -616,7 +622,14 @@ object SageTypeLowering {
         if (name == "Any" || name == "typing.Any") return PyAnyType.Any
         if (name == "None") return PyBuiltinCache.getInstance(anchor).noneType
         if (name == "Ellipsis") return null
-        PyBuiltinCache.getInstance(anchor).getObjectType(name)?.let { return it }
+        // Do not ask PyBuiltinCache to resolve fully-qualified Sage names: in
+        // a remote WSL SDK it can return an unresolved ``PyClassType``
+        // placeholder, which would mask the canonical active-stub lookup and
+        // erase all downstream member completion.  Python/builtin names still
+        // use the platform cache normally.
+        if (!name.startsWith("sage.")) {
+            PyBuiltinCache.getInstance(anchor).getObjectType(name)?.let { return it }
+        }
         val canonical = query.resolveKnownClassName(name) ?: name.takeIf { it.startsWith("sage.") } ?: return null
         val activeClass = SageStubIndex.findClassByCanonicalName(anchor.project, canonical)
             ?: return null
