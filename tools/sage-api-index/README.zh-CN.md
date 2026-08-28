@@ -102,3 +102,5 @@ python tools/sage-api-index/audit_contracts.py `
 ```
 
 报告中的 `CONCRETE` 只表示源合同给出了限定名；`TYPE_VARIABLE` 表示返回值随调用参数绑定（例如 `gcd(a: T, b: T) -> T`），而 `UNKNOWN`/`DYNAMIC` 保持 fail-closed。`source.missingReturnCount` 是 stubgen 源文件仍未声明返回值的真实数量，不能用空 expected set 的 `coverageRatio=1.0` 替代。
+
+`annotate_stubs.py` 在生成索引前只应用可审计的源合同：Python 数据模型协议、文档中明确的原子 `OUTPUT:` 标签、唯一 Sphinx `:class:` 引用、完整源类索引中唯一的多词类名短语、明确的标量/容器结果语义（例如 Bernoulli 有理数、素幂/除数 Integer、CTF ASCII/bit 工具、稳定的 tuple/list 外层结果），以及有明确“同一参数父类型”语义的 TypeVar 合同（`gcd`、`lcm`、`binomial`、阶乘函数）。对中文 Sage 合同，只接受明确的同类型矩阵变换、已验证的矩阵密度 Rational 和带“对象”标记且唯一的类名；有限域椭圆曲线的 cardinality/Frobenius/plot 与点的 order 使用 Sage 10.9 WSL 运行时核验的具体合同；Integer 的位运算/整除等同样依据文档语义映射。普通单词（`image`、`action`、`representation` 等）和 `matrix`/`polynomial`/`vector`/`element` 等多实现概念会主动排除；联合返回、条件返回、`iterator` 等依赖运行时父对象的描述不会被猜测。重复执行补丁必须幂等；新增 Sage 版本应先重新运行该脚本和 `audit_contracts.py`，再检查 UNKNOWN 是否只因源合同缺失而存在。

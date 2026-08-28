@@ -4,7 +4,7 @@
 >
 > 产品首要目标已明确为 SageMath 全量代码智能：API 索引、类型推断、补全、参数/文档提示、跳转和 source-map；Jupyter 仅保留为后续可选兼容层。
 
-> **2026-08-28 SageMath 智能增量**：Sage 10.9/Python 3.13 开发索引已达到 84,201 identities、84,238 raw AST declarations、2,843 source files。`plugins:sage-core` 已以数据驱动合同统一具体返回类型、参数绑定、成员补全和 Quick Documentation；具体 canonical active stub 才能进入最终 PSI 类型，基类只用于成员继承查找，UNKNOWN/DYNAMIC/歧义保持 fail-closed。新增只读合同质量审计和 1,045 个安全 Python 协议返回合同；审计显示 52,715 个可调用条目中仍有 45,126 个 UNKNOWN 返回，因此未把索引规模冒充全量精确语义。外部索引 query/harness 已通过，但 fresh PyCharm 编辑器 smoke、product-sidecar envelope/receipt 与最终 installer 验收仍未完成。
+> **2026-08-28 SageMath 智能增量**：Sage 10.9/Python 3.13 开发索引已达到 84,285 identities、84,333 raw AST declarations、2,843 source files。`plugins:sage-core` 已以数据驱动合同统一具体返回类型、参数绑定、成员补全和 Quick Documentation；具体 canonical active stub 才能进入最终 PSI 类型，基类只用于成员继承查找，UNKNOWN/DYNAMIC/歧义保持 fail-closed。新增安全 Python 协议、原子 `OUTPUT:`/唯一 Sphinx class/唯一多词源类合同、稳定 Python 容器合同、CTF crypto 工具合同、有限域椭圆曲线合同、Integer 运算合同和 `gcd`/`lcm`/阶乘 TypeVar 合同；只读审计显示 52,715 个可调用条目中 UNKNOWN 已从 45,126 降至 32,563（减少 12,563，27.84%），CONCRETE 为 3,672、TYPE_VARIABLE 为 222。剩余 UNKNOWN 仍是源 stubgen 没有可证明返回合同的真实缺口，未把索引规模冒充全量精确语义。外部索引 query/harness 已通过，但 fresh PyCharm 编辑器 smoke、product-sidecar envelope/receipt 与最终 installer 验收仍未完成。
 
 ## 一、结论
 

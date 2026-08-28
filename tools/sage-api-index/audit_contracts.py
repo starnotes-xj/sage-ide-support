@@ -90,6 +90,8 @@ def classify_return(return_type: Any, type_parameters: Iterable[dict[str, Any]] 
     names = {item.get("name") for item in type_parameters if isinstance(item, dict)}
     if expression in names or expression in {"Self", "typing.Self"}:
         return "TYPE_VARIABLE"
+    if expression == "None":
+        return "NONE"
     if expression in BROAD_BUILTINS:
         return "BROAD_BUILTIN"
     final = expression.rsplit(".", 1)[-1].lower()
@@ -155,7 +157,19 @@ def _source_stats(root: Path) -> dict[str, Any]:
     files = 0
     syntax_errors: list[str] = []
     protocol_missing = Counter()
-    protocol_names = {"__str__", "__repr__", "__format__", "__bytes__", "__bool__", "__len__", "__index__", "__hash__"}
+    protocol_names = {
+        "__init__",
+        "__del__",
+        "__init_subclass__",
+        "__str__",
+        "__repr__",
+        "__format__",
+        "__bytes__",
+        "__bool__",
+        "__len__",
+        "__index__",
+        "__hash__",
+    }
     for path in sorted(root.rglob("*.pyi")):
         files += 1
         try:

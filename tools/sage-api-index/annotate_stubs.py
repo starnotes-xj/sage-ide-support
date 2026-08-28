@@ -29,9 +29,62 @@ from pathlib import Path
 
 # ADD: member name -> annotation expression for unannotated defs.
 CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
+    "sage/arith/misc.pyi": {
+        # These helpers have a stable Python outer result independent of the
+        # complex-number implementation they sort.  The element types vary,
+        # but the public functions always return the documented tuple/list
+        # containers, so a broad container is safer than UNKNOWN here.
+        None: {
+            "_key_complex_for_display": "tuple",
+            "sort_complex_numbers_for_display": "list",
+        },
+        "Euler_Phi": {
+            "__call__": "'sage.rings.integer.Integer'",
+            "plot": "'sage.plot.graphics.Graphics'",
+        },
+        "Moebius": {
+            "__call__": "'sage.rings.integer.Integer'",
+            "plot": "'sage.plot.graphics.Graphics'",
+            "range": "list",
+        },
+        "Sigma": {
+            "__call__": "'sage.rings.integer.Integer'",
+            "plot": "'sage.plot.graphics.Graphics'",
+        },
+    },
     "sage/schemes/elliptic_curves/ell_point.pyi": {
         "EllipticCurvePoint": {
             "curve": "'sage.schemes.elliptic_curves.ell_generic.EllipticCurve_generic'",
+            # Point addition, negation, subtraction and scalar action stay on
+            # the same curve and preserve the concrete point implementation.
+            "_add_": "Self",
+            "_neg_": "Self",
+            "_sub_": "Self",
+            "_acted_upon_": "Self",
+        },
+        "EllipticCurvePoint_finite_field": {
+            # The finite-field order algorithm returns a Sage Integer for
+            # both PARI and the inherited generic-small paths.
+            "_compute_order": "'sage.rings.integer.Integer'",
+        },
+        "EllipticCurvePoint_field": {
+            # Coordinate conversion is a stable Python tuple for every field
+            # implementation; the coordinate element classes themselves are
+            # intentionally left parent-dependent.
+            "__tuple__": "tuple",
+        },
+    },
+    "sage/schemes/elliptic_curves/ell_finite_field.pyi": {
+        "EllipticCurve_finite_field": {
+            # Sage 10.9 finite-field implementations return these concrete
+            # values (verified against the WSL runtime): cardinality and
+            # Frobenius discriminant are Sage Integers, the Frobenius
+            # polynomial is the standard ZZ/FLINT polynomial, and plot() is
+            # the 2-D Graphics container.
+            "cardinality_pari": "'sage.rings.integer.Integer'",
+            "frobenius_discriminant": "'sage.rings.integer.Integer'",
+            "frobenius_polynomial": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+            "plot": "'sage.plot.graphics.Graphics'",
         },
     },
     "sage/schemes/elliptic_curves/ell_generic.pyi": {
@@ -47,6 +100,17 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     "sage/rings/integer.pyi": {
         "Integer": {
             "nth_root": "'sage.rings.integer.Integer'",
+            # Verified against Sage 10.9 runtime: these low-level integer
+            # operations keep Sage's Integer parent, except division which
+            # intentionally promotes to Rational and _rpy_ which exports a
+            # Python int for RPy.
+            "__pos__": "Self",
+            "__copy__": "Self",
+            "__deepcopy__": "Self",
+            "__truediv__": "'sage.rings.rational.Rational'",
+            "_div_": "'sage.rings.rational.Rational'",
+            "_pow_": "Self",
+            "_rpy_": "int",
         },
     },
     "sage/matrix/matrix2.pyi": {
@@ -93,11 +157,15 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     },
     "sage/rings/polynomial/polynomial_element.pyi": {
         "Polynomial": {
-            "__pow__": "Polynomial",
-            "derivative": "Polynomial",
-            "gcd": "Polynomial",
-            "xgcd": "tuple[Polynomial, Polynomial, Polynomial]",
-            "quo_rem": "tuple[Polynomial, Polynomial]",
+            # These operations preserve the concrete polynomial receiver.
+            # ``Self`` is intentional: emitting the abstract Polynomial base
+            # here would make ``f.derivative()`` lose the concrete
+            # Polynomial_zmod_flint/Polynomial_dense_mod_p API in PyCharm.
+            "__pow__": "Self",
+            "derivative": "Self",
+            "gcd": "Self",
+            "xgcd": "tuple[Self, Self, Self]",
+            "quo_rem": "tuple[Self, Self]",
         },
     },
 }
@@ -106,6 +174,25 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
 # an annotation.  Used to point factory returns at the most capable real
 # class so member completion covers the commonly used subclass surface.
 CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
+    "sage/schemes/elliptic_curves/ell_point.pyi": {
+        "EllipticCurvePoint": {
+            "_acted_upon_": "Self",
+        },
+        "EllipticCurvePoint_field": {
+            "_add_": "Self",
+        },
+    },
+    "sage/rings/polynomial/polynomial_element.pyi": {
+        "Polynomial": {
+            # Retarget an earlier broad Polynomial annotation to Self when
+            # this pass is rerun over an already-curated staging tree.
+            "__pow__": "Self",
+            "derivative": "Self",
+            "gcd": "Self",
+            "xgcd": "tuple[Self, Self, Self]",
+            "quo_rem": "tuple[Self, Self]",
+        },
+    },
     # .sage resolves unqualified factories through sage.all, so its aliases
     # must be corrected as well as their originating modules.  Otherwise
     # PyCharm follows _FactoryReturn_matrix / _FactoryReturn_EllipticCurve to
@@ -138,6 +225,40 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             # operand class for calls such as ``gcd(f, f.derivative())``.
             "gcd": (
                 "def gcd(a: GcdT, b: GcdT, **kwargs) -> GcdT: ...",
+            ),
+            # Binomial/falling/rising factorials preserve the parent of their
+            # first operand (Integer, Rational, or symbolic Expression).  A
+            # TypeVar models that documented relationship without guessing a
+            # single global Sage class.
+            "binomial": (
+                "def binomial(x: BinomialT, m, **kwds) -> BinomialT: ...",
+            ),
+            "falling_factorial": (
+                "def falling_factorial(x: FallingFactorialT, a) -> FallingFactorialT: ...",
+            ),
+            "rising_factorial": (
+                "def rising_factorial(x: RisingFactorialT, a) -> RisingFactorialT: ...",
+            ),
+            # The optional ``get_data`` flag is a genuine call-argument
+            # contract: the default/False branch is a predicate, while the
+            # literal True branch returns the factor/exponent pair.
+            "is_prime_power": (
+                "def is_prime_power(n, get_data: Literal[False] = False) -> bool: ...",
+                "def is_prime_power(n, get_data: Literal[True]) -> tuple: ...",
+            ),
+            "is_pseudoprime_power": (
+                "def is_pseudoprime_power(n, get_data: Literal[False] = False) -> bool: ...",
+                "def is_pseudoprime_power(n, get_data: Literal[True]) -> tuple: ...",
+            ),
+        },
+    },
+    "sage/arith/functions.pyi": {
+        None: {
+            # lcm first coerces scalar operands into a common parent; the
+            # list/tuple form returns an element of that same parent.
+            "lcm": (
+                "def lcm(a: LcmT, b: LcmT) -> LcmT: ...",
+                "def lcm(a: list[LcmT], b=None) -> LcmT: ...",
             ),
         },
     },
@@ -173,7 +294,8 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
 # Module-level TypeVars used by the contracts above.  The declaration is kept
 # in the generated source stub so the extractor records it on each overload.
 CURATED_TYPE_VARIABLES: dict[str, tuple[str, ...]] = {
-    "sage/arith/misc.pyi": ("GcdT",),
+    "sage/arith/misc.pyi": ("GcdT", "BinomialT", "FallingFactorialT", "RisingFactorialT"),
+    "sage/arith/functions.pyi": ("LcmT",),
 }
 
 # INSERT: declarations that model a real, dynamically inherited method whose
@@ -190,6 +312,7 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     "sage/schemes/elliptic_curves/ell_point.pyi": {
         "EllipticCurvePoint_finite_field": (
             "def curve(self) -> 'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field': ...",
+            "def _acted_upon_(self, other, side) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
         ),
     },
     "sage/rings/polynomial/polynomial_ring.pyi": {
@@ -228,18 +351,338 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
 # Sage is allowed to return NotImplemented, symbolic values, or a different
 # parent there, so inventing a return type would violate the fail-closed rule.
 PROTOCOL_RETURNS: dict[str, str] = {
+    # Constructors/destructors are required by Python's data model to return
+    # None.  This is a protocol guarantee, unlike Sage's dynamic factories.
+    "__init__": "None",
+    "__del__": "None",
+    "__init_subclass__": "None",
     "__str__": "str",
     "__repr__": "str",
     "__format__": "str",
     "__bytes__": "bytes",
     "__bool__": "bool",
+    # These conversion and membership hooks have language-level result
+    # contracts.  They are safe to annotate even when a generated Sage stub
+    # omitted the return because the concrete Sage element is irrelevant to
+    # the protocol result consumed by Python/PyCharm.
+    "__contains__": "bool",
+    "__nonzero__": "bool",
+    "__int__": "int",
+    "__float__": "float",
+    "__complex__": "complex",
+    "__dir__": "list[str]",
+    "__divmod__": "tuple",
     "__len__": "int",
     "__index__": "int",
     "__hash__": "int",
 }
 
+# A small, source-derived subset of Sage's structured docstrings.  Only an
+# exact one-line ``OUTPUT:`` value is accepted; prose such as "an element",
+# "an iterator", unions, and conditional result descriptions remain unknown.
+# Sage's arithmetic documentation uses ``integer`` for its Integer element,
+# so that phrase is mapped to the canonical Sage class rather than Python's
+# literal ``int``.
+DOC_OUTPUT_RETURNS: dict[str, str] = {
+    "boolean": "bool",
+    "string": "str",
+    "float": "float",
+    "double": "float",
+    "none": "None",
+    "nothing": "None",
+    "integer": "'sage.rings.integer.Integer'",
+    "nonnegative integer": "'sage.rings.integer.Integer'",
+    "positive integer": "'sage.rings.integer.Integer'",
+    "a positive integer": "'sage.rings.integer.Integer'",
+    "a nonnegative integer": "'sage.rings.integer.Integer'",
+    "list": "list",
+    "dictionary": "dict",
+    "tuple": "tuple",
+    "a tuple": "tuple",
+    "set": "set",
+    "a set": "set",
+}
+
+# Structured Sage docstrings frequently append a human-readable explanation
+# after an atomic type label (for example ``OUTPUT: boolean; whether ...``).
+# These prefixes are accepted only after the union/conditional guard in
+# ``_doc_output_annotation``; descriptions such as ``boolean or tuple`` remain
+# deliberately unresolved.
+DOC_OUTPUT_PREFIX_RETURNS: tuple[tuple[str, str], ...] = (
+    ("boolean", "bool"),
+    ("string", "str"),
+    ("integer", "'sage.rings.integer.Integer'"),
+)
+
+DOC_OUTPUT_BUILTIN_CLASSES: dict[str, str] = {
+    "bool": "bool",
+    "dict": "dict",
+    "float": "float",
+    "frozenset": "frozenset",
+    "int": "int",
+    "list": "list",
+    "set": "set",
+    "str": "str",
+    # ``:class:`String``` is used by a few Sage docstrings for a textual
+    # representation, not for the unrelated Coxeter3 wrapper class.
+    "string": "str",
+    "tuple": "tuple",
+}
+
+# Names which are either Python builtins or abstract Sage vocabulary rather
+# than a concrete class contract.  A source tree can legitimately contain a
+# class named ``String`` or ``Element`` (and even a class named ``list`` in an
+# extension module); documentation that uses those words must not redirect
+# ordinary strings/containers to that unrelated class.
+DOC_EXPLICIT_TYPE_HEAD_STOPWORDS = frozenset(
+    {
+        "action",
+        "category",
+        "dict",
+        "element",
+        "float",
+        "function",
+        "int",
+        "list",
+        "map",
+        "module",
+        "object",
+        "polynomial",
+        "set",
+        "str",
+        "string",
+        "tuple",
+        "type",
+        "vector",
+    }
+)
+
+# Generic nouns intentionally excluded from plain class-name resolution.
+# Sage uses these words for families with several runtime implementations;
+# resolving them through a coincidentally unique stub class would violate the
+# concrete-contract rule (for example ``a matrix`` must remain parameter-
+# dependent rather than becoming matrix0.Matrix).
+DOC_PLAIN_CLASS_STOPWORDS = frozenset(
+    {
+        "category",
+        "complex",
+        "dict",
+        "dictionary",
+        "element",
+        "expression",
+        "field",
+        "function",
+        "generator",
+        "graph",
+        "group",
+        "image",
+        "action",
+        "representation",
+        "basis",
+        "coefficient",
+        "degree",
+        "dimension",
+        "weight",
+        "order",
+        "rank",
+        "type",
+        "term",
+        "value",
+        "constant",
+        "product",
+        "sum",
+        "inverse",
+        "identity",
+        "intersection",
+        "difference",
+        "quotient",
+        "composition",
+        "construction",
+        "restriction",
+        "space",
+        "class",
+        "curve",
+        "sign",
+        "integer",
+        "iterator",
+        "lattice",
+        "list",
+        "matrix",
+        "polynomial matrix",
+        "graphics object",
+        "maxima object",
+        "growth element",
+        "module",
+        "number",
+        "object",
+        "parent",
+        "pair",
+        "point",
+        "polynomial",
+        "polyhedron",
+        "rational",
+        "real number",
+        "ring",
+        "sequence",
+        "set",
+        "string",
+        "tuple",
+        "vector",
+        "word",
+    }
+)
+
+# Nouns which identify one and only one runtime class in the curated Sage
+# source tree.  These are deliberately not generic words such as ``matrix``
+# or ``polynomial``: those have several concrete implementations selected by
+# the parent ring and therefore remain unresolved without call arguments.
+DOC_OUTPUT_NAMED_CLASSES: tuple[tuple[str, str], ...] = (
+    # Plotting APIs use these exact output nouns in their structured
+    # docstrings.  ``Graphics`` is the concrete 2-D Sage container; 3-D
+    # plots have their own implementation and are kept distinct.
+    ("a 2-d graphics object", "'sage.plot.graphics.Graphics'"),
+    ("a graphics object", "'sage.plot.graphics.Graphics'"),
+    ("a graphic object", "'sage.plot.graphics.Graphics'"),
+    ("a plot", "'sage.plot.graphics.Graphics'"),
+    ("a 3d plot", "'sage.plot.plot3d.base.Graphics3d'"),
+    ("a 3-d plot", "'sage.plot.plot3d.base.Graphics3d'"),
+    ("a fragment of html", "str"),
+    ("printed string", "str"),
+    ("an asymptotic expansion", "'sage.rings.asymptotic.asymptotic_ring.AsymptoticExpansion'"),
+    ("a symbolic expression", "'sage.symbolic.expression.Expression'"),
+    ("symbolic expression", "'sage.symbolic.expression.Expression'"),
+    ("a time series", "'sage.stats.time_series.TimeSeries'"),
+    ("a new power series", "'sage.rings.power_series_ring_element.PowerSeries'"),
+    ("a power series", "'sage.rings.power_series_ring_element.PowerSeries'"),
+    ("a unicode art representation", "'sage.typeset.unicode_art.UnicodeArt'"),
+    ("an ascii art representation", "'sage.typeset.ascii_art.AsciiArt'"),
+    ("a sandpiledivisor", "'sage.sandpiles.sandpile.SandpileDivisor'"),
+    ("sandpiledivisor", "'sage.sandpiles.sandpile.SandpileDivisor'"),
+    ("a sandpileconfig", "'sage.sandpiles.sandpile.SandpileConfig'"),
+    ("sandpileconfig", "'sage.sandpiles.sandpile.SandpileConfig'"),
+    ("a sandpile", "'sage.sandpiles.sandpile.Sandpile'"),
+    ("sandpile", "'sage.sandpiles.sandpile.Sandpile'"),
+)
+
+DOC_SUMMARY_RETURNS: tuple[tuple[str, str], ...] = (
+    ("a string", "str"),
+    ("an string", "str"),
+    ("string", "str"),
+    ("the string", "str"),
+    ("a list", "list"),
+    ("an list", "list"),
+    ("list", "list"),
+    ("the list", "list"),
+    ("a tuple", "tuple"),
+    ("an tuple", "tuple"),
+    ("tuple", "tuple"),
+    ("the tuple", "tuple"),
+    ("a pair", "tuple"),
+    ("an pair", "tuple"),
+    ("pair", "tuple"),
+    ("a dictionary", "dict"),
+    ("an dictionary", "dict"),
+    ("dictionary", "dict"),
+    ("the dictionary", "dict"),
+    ("a dict", "dict"),
+    ("dict", "dict"),
+    ("a set", "set"),
+    ("an set", "set"),
+    ("set", "set"),
+    ("the set", "set"),
+    ("a boolean", "bool"),
+    ("an boolean", "bool"),
+    ("boolean", "bool"),
+    ("a rational number", "'sage.rings.rational.Rational'"),
+    ("an integer", "'sage.rings.integer.Integer'"),
+    ("a positive integer", "'sage.rings.integer.Integer'"),
+    ("a nonnegative integer", "'sage.rings.integer.Integer'"),
+    ("integer", "'sage.rings.integer.Integer'"),
+    ("none", "None"),
+    ("nothing", "None"),
+)
+
+# Source documentation sometimes describes a scalar result indirectly rather
+# than beginning the sentence with an atomic noun (for example, ``Return the
+# smallest prime power`` or ``Return ... as a rational number``).  These
+# patterns are intentionally phrased as semantic invariants, not as function
+# names, so the pass remains useful for newly indexed Sage modules without a
+# growing allow-list.  The conditional/union guard in ``_doc_summary_annotation``
+# runs before these patterns are consulted.
+DOC_SUMMARY_SCALAR_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"^return the `?n`?-th bernoulli number\b.*\bas a rational number\b", "'sage.rings.rational.Rational'"),
+    (r"^return (?:the )?(?:smallest|largest|next|previous) prime power\b", "'sage.rings.integer.Integer'"),
+    (r"^return the next probable prime\b", "'sage.rings.integer.Integer'"),
+    (r"^return the smallest prime divisor\b", "'sage.rings.integer.Integer'"),
+    (r"^return the multinomial coefficient\b", "'sage.rings.integer.Integer'"),
+    (r"^return the degree\b", "'sage.rings.integer.Integer'"),
+    (r"^return the number of (?:nonzero )?terms\b", "'sage.rings.integer.Integer'"),
+    (r"^return the number of variables\b", "'sage.rings.integer.Integer'"),
+    (r"^return .*\bas a rational number\b", "'sage.rings.rational.Rational'"),
+    (r"^return .*\bas symbolic expression\b", "'sage.symbolic.expression.Expression'"),
+    (r"^return mathml representation\b", "str"),
+    (r"^return canonical string\b", "str"),
+    (r"^return int\(self\)\b", "int"),
+    (r"^return the ceiling of\b", "'sage.rings.integer.Integer'"),
+    (r"^compute the whole part of\b", "'sage.rings.integer.Integer'"),
+    (r"^truncate to the integer\b", "'sage.rings.integer.Integer'"),
+    (r"^the odd part of the integer\b", "'sage.rings.integer.Integer'"),
+    (r"^a random blum prime\b", "'sage.rings.integer.Integer'"),
+    (r"^return the `{0,2}k`{0,2} least significant bits\b", "list"),
+    (r"^return .*squarefree positive integer\b", "'sage.rings.integer.Integer'"),
+    (r"^return the number .*\bas an integer\b", "'sage.rings.integer.Integer'"),
+    # The public Sage wrapper returns a Rational value; the docstring's
+    # numerator/denominator wording describes its mathematical representation,
+    # not a Python tuple.
+    (r"^this function tries to compute .*\brational number\b", "'sage.rings.rational.Rational'"),
+)
+
+DOC_SUMMARY_COLLECTION_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"^return a new copy of the list\b", "list"),
+    (r"^return a new copy of the dict\b", "dict"),
+    (r"^return the coefficients\b", "list"),
+    (r"^return the exponents\b", "list"),
+    (r"^extended lcm function:.*\breturns\s+(?:a\s+)?triple\b", "tuple"),
+)
+
 _DEF_RE = re.compile(r"^(?P<indent>\s*)def\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
 _RETURN_RE = re.compile(r"\s*->\s*(.+):\s*$")
+_DOC_SECTION_RE = re.compile(r"^[A-Z][A-Z0-9 _-]{2,}::?\s*$")
+
+
+def _doc_output_values(value: str) -> tuple[str, ...]:
+    """Extract complete ``OUTPUT:`` paragraphs from a Sage docstring.
+
+    Sage uses both ``OUTPUT: integer`` and a section form where the value is
+    on the following line.  A section value may itself wrap a Sphinx role over
+    several lines (``:class:`Name`` followed by ``<module.Name>``), so the
+    extractor joins the contiguous paragraph before contract matching.  It
+    intentionally stops at a blank line or the next all-caps doc section;
+    examples and later prose are never treated as type evidence.
+    """
+    lines = value.splitlines()
+    outputs: list[str] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^\s*(?:OUTPUT|返回值?|输出)\s*[:：]\s*(.*)$", line, re.IGNORECASE)
+        if match is None:
+            continue
+        first = match.group(1).strip()
+        cursor = index + 1
+        if not first:
+            while cursor < len(lines) and not lines[cursor].strip():
+                cursor += 1
+        parts = [first] if first else []
+        while cursor < len(lines):
+            stripped = lines[cursor].strip()
+            if not stripped or _DOC_SECTION_RE.match(stripped):
+                break
+            parts.append(stripped)
+            cursor += 1
+        if parts:
+            # Bullet output descriptions are common in generated docs.  The
+            # bullet is formatting, not part of the type contract.
+            outputs.append(re.sub(r"^[-*]\s+", "", " ".join(parts)).strip())
+    return tuple(outputs)
 
 
 def _class_name(line: str) -> str | None:
@@ -388,6 +831,34 @@ def ensure_type_variables(path: Path, names: tuple[str, ...]) -> bool:
     return changed
 
 
+def ensure_typing_name(path: Path, name: str) -> bool:
+    """Add one typing import without disturbing existing import layout."""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    # A module may carry several ``from typing import ...`` lines after
+    # independent contract passes (for example TypeVar and overload).  Check
+    # every line before mutating the first one; otherwise a second idempotent
+    # run would move the name between import lines and rewrite the stub.
+    for index, line in enumerate(lines):
+        match = re.match(r"^(from typing import )(.+?)\s*$", line)
+        if match is None:
+            continue
+        imported = {part.strip().split(" as ", 1)[0] for part in match.group(2).split(",")}
+        if name in imported:
+            return False
+    for index, line in enumerate(lines):
+        match = re.match(r"^(from typing import )(.+?)\s*$", line)
+        if match is None:
+            continue
+        suffix = match.group(2).rstrip()
+        lines[index] = f"{match.group(1)}{suffix}, {name}\n"
+        path.write_text("".join(lines), encoding="utf-8")
+        return True
+    lines.insert(_typing_import_insertion_index(text, lines), f"from typing import {name}\n")
+    path.write_text("".join(lines), encoding="utf-8")
+    return True
+
+
 def annotate_insertions(path: Path, classes: dict[str, tuple[str, ...]]) -> list[str]:
     """Insert narrow subclass declarations without replacing inherited APIs.
 
@@ -503,6 +974,773 @@ def annotate_protocol_returns(path: Path) -> list[str]:
     return [name for _, _, name in sorted(edits)]
 
 
+def _doc_output_class_annotation(output: str, class_index: dict[str, tuple[str, ...]]) -> str | None:
+    """Resolve a single Sphinx class role against the source class index.
+
+    Sage's docstrings often use a lower-case Sphinx role (``:class:`digraph``)
+    while the stub declaration is ``DiGraph``.  Resolving only one role whose
+    target is unique gives a source-backed canonical class without a
+    class/method allow-list.  Multiple roles, unions, iterators, and container
+    descriptions remain unresolved because they do not identify one value.
+    """
+    roles = re.findall(r":class:`([^`]+)`", output)
+    if roles:
+        # ``:class:`tuple` of :class:`Foo``` describes one concrete Python
+        # container even though the element role is also present.  Preserve
+        # that outer container contract; unions such as ``Foo or tuple`` do
+        # not match this prefix form and remain unknown.
+        first = roles[0].strip().lstrip("~").casefold()
+        builtin_first = DOC_OUTPUT_BUILTIN_CLASSES.get(first)
+        if (
+            len(roles) == 1
+            and builtin_first is not None
+            and not re.search(r"\b(?:or|either|iterator|sequence)\b", output)
+        ):
+            # Qualifiers such as ``increasing`` do not change the outer
+            # builtin container.  Keep this before the ambiguity check below
+            # so the role's own word (``tuple``/``list``/...) is not mistaken
+            # for a union.
+            return builtin_first
+        if len(roles) > 1 and first in {"tuple", "list", "set", "dict", "dictionary"}:
+            return {"tuple": "tuple", "list": "list", "set": "set", "dict": "dict", "dictionary": "dict"}[first]
+    if output.count(":class:`") != 1 or re.search(r"\b(?:or|either|iterator|list|tuple|set|sequence)\b", output):
+        return None
+    match = re.search(r":class:`([^`]+)`", output)
+    if match is None:
+        return None
+    inner = match.group(1).strip()
+    target = inner.split("<", 1)[1].split(">", 1)[0].strip() if "<" in inner and ">" in inner else inner
+    target = target.lstrip("~").strip()
+    builtin = DOC_OUTPUT_BUILTIN_CLASSES.get(target.casefold())
+    if builtin is not None:
+        return builtin
+    if target.startswith("sage."):
+        candidates = tuple(
+            value
+            for values in class_index.values()
+            for value in values
+            if value.casefold() == target.casefold()
+        )
+    else:
+        key = re.sub(r"[^a-z0-9]", "", target.casefold())
+        candidates = class_index.get(key, ())
+    return f"'{candidates[0]}'" if len(candidates) == 1 else None
+
+
+def _doc_plain_class_annotation(output: str, class_index: dict[str, tuple[str, ...]]) -> str | None:
+    """Resolve a plain-text noun phrase to one unique source class.
+
+    A number of Sage docstrings say ``OUTPUT: a finite state machine`` or
+    ``Return a regular sequence`` without a Sphinx role.  We only inspect the
+    short noun phrase at the beginning, strip descriptive articles/adjectives,
+    and require an exact unique match in the parsed source class index.  The
+    stopword set above keeps generic multi-implementation families
+    fail-closed; no method/class allow-list is involved.
+    """
+    if not output or ":class:`" in output:
+        return None
+    candidate = re.sub(r"[`'\"]", "", output.strip().casefold())
+    article = re.match(r"^(?:a|an|the)\s+(.+)$", candidate)
+    if article is None or re.search(r"\b(?:or|either|if|depending|unless|otherwise)\b", candidate):
+        return None
+    candidate = article.group(1)
+    candidate = re.sub(
+        r"^(?:(?:new|particular|corresponding|constructed|resulting|isomorphic|default|canonical)\s+)+",
+        "",
+        candidate,
+    )
+    # Keep only the noun phrase.  Trailing qualifiers describe the value but
+    # are not part of the class name (``a transducer for ...``).
+    candidate = re.split(
+        r"\s+(?:for|of|with|associated|corresponding|which|that|over|in|on)\b|[.,;:]",
+        candidate,
+        maxsplit=1,
+    )[0].strip()
+    if not candidate or candidate in DOC_PLAIN_CLASS_STOPWORDS:
+        return None
+    # A single lower-case noun is usually mathematical prose rather than a
+    # class identity (``an image``, ``a transducer``, ``a point``).  Requiring
+    # a multi-word concept keeps this resolver source-backed without creating
+    # a growing class-name allow-list; explicit Sphinx roles remain available
+    # for unambiguous single class names.
+    if len(candidate.split()) < 2:
+        return None
+    key = re.sub(r"[^a-z0-9]", "", candidate)
+    candidates = class_index.get(key, ())
+    return f"'{candidates[0]}'" if len(candidates) == 1 else None
+
+
+def _doc_summary_annotation(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    summary: str,
+    class_index: dict[str, tuple[str, ...]] | None = None,
+    owner_name: str | None = None,
+) -> str | None:
+    """Resolve an atomic type stated by a ``Return ...`` summary sentence.
+
+    A large part of Sage's older documentation uses ``Return ...`` instead of
+    an ``OUTPUT:`` section.  Only an atomic noun at the beginning of that
+    sentence is accepted; conditional and union prose stays unknown.  This
+    keeps the inference source-backed while covering common helpers such as
+    ``_repr_`` and collection accessors without a function allow-list.
+    """
+    match = re.match(r"^(?:return|returns)\s+(?P<rest>.+)$", summary)
+    if match is None:
+        # The local Sage contract overlays intentionally use Chinese summary
+        # lines (``返回矩阵的转置`` etc.).  Treat the complete line as the
+        # payload while retaining the same atomic/conditional guards below.
+        if not re.match(r"^(?:返回|返回值|输出|绘制|创建|构造)", summary, re.IGNORECASE):
+            for pattern, annotation in DOC_SUMMARY_SCALAR_PATTERNS:
+                if re.search(pattern, summary, re.IGNORECASE):
+                    return annotation
+            for pattern, annotation in DOC_SUMMARY_COLLECTION_PATTERNS:
+                if re.search(pattern, summary, re.IGNORECASE):
+                    return annotation
+            if owner_name and re.search(r"polynomial", owner_name, re.IGNORECASE) and re.match(
+                r"^(?:add|subtract|multiply|divide) (?:two )?polynomials\b", summary, re.IGNORECASE
+            ):
+                return "Self"
+            if owner_name and re.fullmatch(r"Integer", owner_name, re.IGNORECASE) and re.match(
+                r"^(?:compute .*self|the bitwise|the multiplicative|shift [xy] to the|"
+                r"compute the exclusive or|integer (?:addition|multiplication|subtraction)|integer\._neg_)",
+                summary,
+                re.IGNORECASE,
+            ):
+                return "Self" if not re.search(r"multiplicative", summary, re.IGNORECASE) else "'sage.rings.rational.Rational'"
+            return None
+        rest = summary.strip()
+    else:
+        rest = match.group("rest").strip()
+    normalized_rest = re.sub(r"`{1,2}(true|false|none|nothing)`{1,2}", r"\1", rest, flags=re.IGNORECASE)
+    normalized_rest = normalized_rest.replace("`", "").replace('"', "").replace("'", "")
+    if owner_name and re.fullmatch(r"Integer", owner_name, re.IGNORECASE) and re.match(
+        r"^(?:compute .*self|the bitwise|the multiplicative|shift [xy] to the|"
+        r"compute the exclusive or|integer (?:addition|multiplication|subtraction)|integer\._neg_)",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "Self" if not re.search(r"multiplicative", normalized_rest, re.IGNORECASE) else "'sage.rings.rational.Rational'"
+    if owner_name and re.fullmatch(r"Integer", owner_name, re.IGNORECASE) and re.match(
+        r"^返回 self 的 .*多重阶乘", normalized_rest
+    ):
+        return "Self"
+    if re.search(r"\b(?:or|either|depending)\b", normalized_rest):
+        # A representation can depend on display options while its runtime
+        # type remains a string.  Keep the general conditional guard for
+        # every other value, but allow this source-level invariant before the
+        # atomic return table is consulted below.
+        if not re.match(r"^(?:a|an|the)\s+(?:string|latex|\\latex)\s+representation\b", normalized_rest):
+            return None
+    # ``if`` is a conditional payload marker except for the canonical
+    # predicate form ``True/False if ...``.  Keep that one boolean contract
+    # while rejecting ``a list if ...`` and similar unions.
+    if re.search(r"\bif\b", normalized_rest) and not re.match(r"^(?:true|false)\b", normalized_rest, re.IGNORECASE):
+        return None
+    if class_index and ":class:`" in rest:
+        class_annotation = _doc_output_class_annotation(rest, class_index)
+        if class_annotation is not None:
+            return class_annotation
+    if class_index and re.match(r"^(?:return|returns|返回|输出|绘制|创建|构造)", normalized_rest, re.IGNORECASE):
+        explicit = _doc_explicit_type_annotation(normalized_rest, class_index, owner_name)
+        if explicit is not None:
+            return explicit
+    if owner_name and re.search(r"matrix", owner_name, re.IGNORECASE):
+        if re.match(r"^返回矩阵的(?:逐元素共轭|共轭转置|转置)\b", normalized_rest):
+            return "Self"
+        if re.match(r"^返回矩阵[^。；]*比例", normalized_rest):
+            # Sage computes matrix density in QQ (the runtime result is a
+            # Sage Rational), even though the prose calls it a ratio.
+            return "'sage.rings.rational.Rational'"
+    if owner_name and re.search(r"polynomial", owner_name, re.IGNORECASE):
+        # These summaries describe operations whose result remains in the
+        # receiver's polynomial implementation.  Parent-changing operations
+        # (``change_ring``, roots, factorization, etc.) use different prose
+        # and remain unresolved.
+        if re.match(
+                r"^(?:add two polynomials|subtract two polynomials|multiply (?:two )?polynomials|"
+            r"return a \"?copy\"? of self|return the quotient upon division\b|"
+            r"remainder of division\b|return this polynomial (?:multiplied|but with the coefficients reversed)\b|"
+            r"return the formal derivative\b|return the polynomial of degree\b)",
+            normalized_rest,
+            re.IGNORECASE,
+        ):
+            return "Self"
+    if class_index:
+        class_annotation = _doc_plain_class_annotation(rest, class_index)
+        if class_annotation is not None:
+            return class_annotation
+    # Keep an explicit outer-container qualifier after the source-backed
+    # class resolver.  This ordering matters for phrases such as ``a set
+    # partition``: that is the concrete ``SetPartition`` class, not a Python
+    # ``set``.  Conversely, ``a sorted tuple of values`` has no unique class
+    # noun and is safely reduced to its tuple container.
+    container_summary = re.match(
+        r"^(?:a|an|the)\s+(?:(?:new|sorted|increasing|decreasing|ordered|"
+        r"duplicate-free|finite|immutable|lazy|enumerated|nonempty)\s+)*"
+        r"(list|tuple|pair|set|dictionary|dict)\b",
+        normalized_rest,
+    )
+    if container_summary:
+        return {
+            "list": "list",
+            "tuple": "tuple",
+            "pair": "tuple",
+            "set": "set",
+            "dictionary": "dict",
+            "dict": "dict",
+        }[container_summary.group(1)]
+    if node.name.startswith(("__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__")):
+        # Rich comparisons may legally return NotImplemented even when their
+        # prose mentions True/False.
+        blocked = {"a boolean", "an boolean", "boolean", "true", "false"}
+    else:
+        blocked = set()
+    if node.name not in {"__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__"}:
+        # ``Return whether ...`` and explicit True/False predicate summaries
+        # are atomic boolean contracts.  The guard is intentionally anchored
+        # at the beginning so payload descriptions such as ``a list if ...``
+        # remain fail-closed.
+        if normalized_rest.startswith(("whether ", "true if ", "false if ", "true when ", "false when ")):
+            return "bool"
+    if re.fullmatch(r"(?:none|nothing)[.!]?", normalized_rest) and not blocked:
+        return "None"
+    if re.match(r"^(?:a|an|the)\s+(?:latex|\\latex)\s+representation\b", normalized_rest, re.IGNORECASE):
+        return "str"
+    if re.match(r"^(?:a|an|the)\s+copy\s+of\s+self\b", normalized_rest, re.IGNORECASE):
+        return "Self"
+    # Sage descriptions also qualify the copy (for example "translated copy
+    # of self").  The phrase itself is an invariant: the operation preserves
+    # the receiver's concrete class, so Self is more precise than the
+    # abstract parent class and still materializes through the normal
+    # receiver-specific lowering path.
+    if re.search(r"\bcopy\s+of\s+self\b", normalized_rest, re.IGNORECASE):
+        return "Self"
+    if re.match(r"^(?:string|latex|\\latex)\s+representation\b", normalized_rest, re.IGNORECASE):
+        return "str"
+    for phrase, annotation in DOC_OUTPUT_NAMED_CLASSES:
+        if normalized_rest == phrase or normalized_rest.startswith(phrase + " ") or normalized_rest.startswith(phrase + "."):
+            return annotation
+    if node.name not in {"__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__"} and re.match(
+        r"^(?:true|false)\b", normalized_rest, re.IGNORECASE
+    ):
+        return "bool"
+    for phrase, annotation in sorted(DOC_SUMMARY_RETURNS, key=lambda item: len(item[0]), reverse=True):
+        if rest == phrase or rest.startswith(phrase + " ") or rest.startswith(phrase + ".") or rest.startswith(phrase + ":"):
+            if phrase in blocked:
+                return None
+            return annotation
+    for pattern, annotation in DOC_SUMMARY_SCALAR_PATTERNS:
+        if re.search(pattern, summary, re.IGNORECASE):
+            return annotation
+    for pattern, annotation in DOC_SUMMARY_COLLECTION_PATTERNS:
+        if re.search(pattern, summary, re.IGNORECASE):
+            return annotation
+
+    # Chinese-curated contracts use short, unambiguous result nouns in the
+    # summary line.  Keep this deliberately narrow: a matrix/ring element is
+    # parent-dependent and must not be collapsed to a public base class.
+    if normalized_rest.startswith(("返回", "返回值", "输出")):
+        if re.search(r"^返回[^。；]*(?:列表|list)(?:$|[：:（(。；])", normalized_rest, re.IGNORECASE):
+            return "list"
+        if re.search(r"^返回[^。；]*(?:元组|tuple)(?:$|[：:（(。；])", normalized_rest, re.IGNORECASE):
+            return "tuple"
+        if re.match(r"^(?:返回|输出)(?:是否|一个布尔值|布尔值|布尔)", normalized_rest):
+            return "bool"
+    return None
+
+
+def _doc_explicit_type_annotation(
+    raw_output: str,
+    class_index: dict[str, tuple[str, ...]],
+    owner_name: str | None,
+) -> str | None:
+    """Resolve a type written explicitly in a Sage return section.
+
+    Generated Sage documentation frequently uses a local ``返回:`` section
+    whose head is ``Matrix -- ...`` or ``Factorization 形式 -- ...``.  The
+    previous parser only understood a handful of builtins, so these
+    source-level contracts were lost even though no inference was required.
+    This helper accepts only one concrete signal at a time:
+
+    * a fully-qualified ``sage....Class`` token in the declared section;
+    * the exact containing class name (``Matrix``/``Polynomial``), lowered to
+      ``Self``; or
+    * a capitalized class token whose normalized name is unique in the source
+      class index.
+
+    Lower-case mathematical nouns (``matrix``, ``polynomial``, ``type``,
+    ``graph``...) remain fail-closed.  Union/conditional prose is rejected so
+    a descriptive sentence cannot accidentally become a concrete contract.
+    """
+    if not raw_output or not class_index:
+        return None
+    compact = re.sub(r"\s+", " ", raw_output.strip())
+    # Numeric alternatives such as ``integer (0, -1, or 1)`` are still one
+    # scalar type; reject only prose that offers different result families.
+    conditional = re.search(r"\b(?:depending|if|otherwise|或|如果|取决于|否则)\b", compact, re.IGNORECASE)
+    union = re.search(r"\b(?:or|either)\b", compact, re.IGNORECASE)
+    numeric_integer_alternatives = bool(
+        re.match(r"^(?:an?\s+)?(?:the\s+)?integer\s*\([^)]*\b(?:or|and)\b[^)]*\)", compact, re.IGNORECASE)
+    )
+    if conditional or (union and not numeric_integer_alternatives):
+        return None
+    head = re.split(r"\s+(?:--|-)\s*", compact, maxsplit=1)[0].strip()
+    head = re.sub(r"^[-*]\s+", "", head)
+
+    # A qualified class path is the strongest possible documentation signal;
+    # verify it against the source class index rather than trusting arbitrary
+    # prose that happens to contain a dotted name.
+    for qualified in re.findall(r"\bsage(?:\.[A-Za-z_]\w*)+\b", compact):
+        candidates = tuple(
+            value
+            for values in class_index.values()
+            for value in values
+            if value.casefold() == qualified.casefold()
+        )
+        if len(candidates) == 1:
+            return f"'{candidates[0]}'"
+
+    # When a method explicitly says that the result has the same type as the
+    # receiver, preserve the concrete receiver rather than publishing a
+    # public Matrix/Polynomial base as the final type.
+    if owner_name:
+        owner_key = re.sub(r"[^a-z0-9]", "", owner_name.casefold())
+        normalized_head = re.sub(r"[^a-z0-9]", "", head.casefold())
+        if normalized_head == owner_key or re.search(
+            r"same\s+type|同类型|类型(?:与|和)\s*self\s*(?:相同|一致)|与\s*self\s*相同",
+            compact,
+            re.IGNORECASE,
+        ):
+            return "Self"
+
+    # Resolve a capitalized class token only when its normalized spelling is
+    # unique.  Requiring capitalization is deliberate: it distinguishes
+    # documented class names such as ``Composition`` and ``ECL object`` from
+    # generic prose such as ``type`` or ``matroid``.
+    normalized_head = re.sub(r"[^a-z0-9]", "", head.casefold())
+    class_head = re.sub(r"^(?:a|an|the)\s+", "", head, flags=re.IGNORECASE).strip()
+    if not any(char.isupper() for char in class_head):
+        return None
+    matching: list[tuple[str, str]] = []
+    for key, values in class_index.items():
+        # One-letter classes (``A``, ``B``, ...) occur in Sage test helpers;
+        # their spelling is far too common at the beginning of prose such as
+        # ``A tuple`` to serve as a return-type signal.  Never resolve those
+        # from documentation text.
+        if (
+            len(key) < 2
+            or key in DOC_EXPLICIT_TYPE_HEAD_STOPWORDS
+            or len(values) != 1
+            or not normalized_head.startswith(key)
+        ):
+            continue
+        matching.append((key, values[0]))
+    if matching:
+        # Prefer the longest class spelling (e.g. ``OEIS sequence`` over a
+        # shorter coincidental prefix), then require a unique result.
+        matching.sort(key=lambda item: len(item[0]), reverse=True)
+        longest = [value for key, value in matching if len(key) == len(matching[0][0])]
+        if len(set(longest)) == 1:
+            return f"'{longest[0]}'"
+
+    # Chinese-curated Sage docs often place the class name in the sentence
+    # (``MatrixWindow 对象``) rather than at the beginning of the OUTPUT head.
+    # Accept only an explicitly marked object/instance/form token; ordinary
+    # capitalized prose and one-letter variables remain fail-closed.
+    inline: list[tuple[int, str]] = []
+    for token in re.findall(r"\b[A-Z][A-Za-z0-9_]*\b", compact):
+        key = re.sub(r"[^a-z0-9]", "", token.casefold())
+        values = class_index.get(key, ())
+        if (
+            len(key) < 2
+            or key in DOC_EXPLICIT_TYPE_HEAD_STOPWORDS
+            or len(values) != 1
+            # Chinese generated overlays often put a short description
+            # between the class name and the marker (``BipartiteGraph
+            # 二部图对象``).  Bound the gap so arbitrary prose cannot turn a
+            # coincidental capitalized word into a type contract.
+            or not re.search(
+                rf"\b{re.escape(token)}\b(?:\s+[\u4e00-\u9fffA-Za-z0-9_-]+){{0,4}}\s*(?:object|instance|form|type|对象|实例|形式|类型)\b",
+                compact,
+                re.IGNORECASE,
+            )
+        ):
+            continue
+        inline.append((len(key), values[0]))
+    if inline:
+        inline.sort(reverse=True)
+        values = [value for length, value in inline if length == inline[0][0]]
+        return f"'{values[0]}'" if len(set(values)) == 1 else None
+    return None
+
+
+def _doc_output_annotation(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    class_index: dict[str, tuple[str, ...]] | None = None,
+    owner_name: str | None = None,
+) -> str | None:
+    value = ast.get_docstring(node, clean=False)
+    if not value:
+        return None
+    # Generated Sage docstrings wrap the first summary sentence over several
+    # physical lines (``xlcm`` is a representative case).  Join only that
+    # first paragraph; stopping at the first blank line prevents INPUT,
+    # OUTPUT, examples, and later prose from becoming accidental type evidence.
+    summary_lines: list[str] = []
+    for line in value.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if summary_lines:
+                break
+            continue
+        summary_lines.append(stripped)
+    raw_summary = re.sub(r"\s+", " ", " ".join(summary_lines))
+    summary = raw_summary.lower()
+    summary_annotation = _doc_summary_annotation(node, summary, class_index, owner_name)
+    if summary_annotation is not None:
+        return summary_annotation
+    # Preserve capitalization for Chinese summaries that name a concrete
+    # class inline (``MatrixWindow 对象`` or ``Graphics 对象``).  The regular
+    # English summary path intentionally lowercases its input for stable
+    # phrase matching, so this source-level pass is kept separate.
+    if class_index and re.match(r"^(?:返回|返回值|输出|绘制|创建|构造)", raw_summary, re.IGNORECASE):
+        explicit_summary = _doc_explicit_type_annotation(raw_summary, class_index, owner_name)
+        if explicit_summary is not None:
+            return explicit_summary
+    for raw_output in _doc_output_values(value):
+        raw_output = re.sub(r"\s+", " ", raw_output.strip())
+        explicit = _doc_explicit_type_annotation(raw_output, class_index or {}, owner_name)
+        if explicit is not None:
+            return explicit
+        output = raw_output.lower()
+        # Sage docstrings quote literal result words as reStructuredText
+        # inline code (``true``, ``none``, ``integer``).  Remove that markup
+        # only at the beginning, preserving the fail-closed checks for
+        # conditional/union prose later in the sentence.
+        output = re.sub(
+            r"^`{1,2}(boolean|string|integer|float|double|none|nothing|true|false)`{1,2}(?=\b|\s|[.,;])",
+            r"\1",
+            output,
+        )
+        # Chinese-curated Sage docs and a few older modules put the declared
+        # type before a ``--`` explanation (for example ``Integer -- ...``).
+        # Read only that type token; ``any`` and mixed forms intentionally do
+        # not become guesses.
+        type_head = re.split(r"\s+(?:--|-)\s*", output, maxsplit=1)[0].strip()
+        # Some source docstrings use ``(tuple) -- ...`` for an atomic outer
+        # container.  Strip only the presentation wrapper; nested element
+        # detail such as ``(tuple of Complex)`` still lowers to ``tuple``.
+        parenthesized_head = re.fullmatch(
+            r"\(\s*(tuple|list|set|dict|dictionary|integer|boolean|string)\s*\)",
+            type_head,
+        )
+        if parenthesized_head:
+            type_head = parenthesized_head.group(1)
+        if type_head in {"integer", "sage integer"}:
+            return "'sage.rings.integer.Integer'"
+        if type_head in {"bool", "boolean"} and not node.name.startswith(
+            ("__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__")
+        ):
+            return "bool"
+        if type_head in {"str", "string"}:
+            return "str"
+        if type_head in {"float", "double"}:
+            return "float"
+        if type_head in {"list", "python list"}:
+            return "list"
+        if type_head in {"dict", "dictionary", "python dictionary"}:
+            return "dict"
+        if type_head in {"tuple", "pair"} or type_head.startswith(("tuple[", "list[")):
+            if type_head in {"tuple", "pair"} or type_head.startswith("tuple["):
+                return "tuple"
+            return "list"
+        exact = DOC_OUTPUT_RETURNS.get(output)
+        if exact is not None:
+            return exact
+
+        # Reject explicit unions and conditional result descriptions before
+        # accepting a prefix.  This is the important fail-closed boundary:
+        # ``boolean; whether ...`` is atomic, while ``boolean or tuple`` is
+        # not a contract that can be represented by one concrete annotation.
+        numeric_integer_alternatives = bool(
+            re.match(r"^(?:an?\s+)?(?:the\s+)?integer\s*\([^)]*\b(?:or|and)\b[^)]*\)", output, re.IGNORECASE)
+        )
+        same_integer_alternative = bool(
+            re.match(
+                r"^(?:(?:a|an|the)\s+)?(?:positive|nonnegative|negative|prime)?\s*integer\b"
+                r".*\bor\s+(?:-?\d+|(?:an?\s+)?(?:positive|nonnegative|negative|prime)?\s*integer)\b",
+                output,
+                re.IGNORECASE,
+            )
+        )
+        prime_integer_alternatives = bool(
+            output.startswith("a prime ") and re.search(r"\bor\b", output) and re.search(r"\bn\b", output)
+        )
+        pair_optional_contract = bool(
+            re.match(r"^either integers?\b.*\bor\s+(?:`{1,2})?none(?:`{1,2})?\b", output)
+        )
+        # A collection whose *elements* have alternatives still has one
+        # unambiguous outer result (for example ``a list of 0, 1 or 2
+        # pairs``).  This is different from ``a list or tuple``.
+        container_element_alternatives = bool(
+            re.match(r"^(?:a|an|the)\s+(?:list|tuple|set|dictionary|dict)\s+of\b", output)
+        )
+        if re.search(r"\b(?:or|either)\b", output) and not (
+            numeric_integer_alternatives
+            or same_integer_alternative
+            or prime_integer_alternatives
+            or container_element_alternatives
+            or pair_optional_contract
+        ):
+            return None
+        if output.startswith(("none if", "nothing if")):
+            return None
+
+        # ``prime_powers`` is documented as a mathematical set but returns a
+        # sorted Python list in Sage.  Check this before the generic ``set``
+        # container rule below so the runtime-backed correction is retained.
+        if re.match(r"^the set of all prime powers\b", output):
+            return "list"
+
+        # Resolve a source-indexed multi-word class before interpreting its
+        # first word as a generic container.  ``a set partition`` therefore
+        # remains the unique ``SetPartition`` class, while ``a set of ...``
+        # continues to lower to Python ``set`` below.
+        if class_index:
+            plain_class = _doc_plain_class_annotation(output, class_index)
+            if plain_class is not None:
+                return plain_class
+
+        # Sage docstrings commonly qualify an outer Python container with
+        # words such as ``new``, ``sorted`` or ``increasing``.  Once the
+        # union/conditional guard above has run, those adjectives do not
+        # change the result family: ``a sorted tuple of ...`` is still a
+        # tuple, and ``a new list ...`` is still a list.  Keep the element
+        # contract deliberately broad because it may be parent-dependent.
+        container_head = re.match(
+            r"^(?:a|an|the)\s+(?:(?:new|sorted|increasing|decreasing|ordered|"
+            r"duplicate-free|finite|immutable|lazy|enumerated|nonempty)\s+)*"
+            r"(list|tuple|pair|set|dictionary|dict)\b",
+            output,
+        )
+        if container_head:
+            return {
+                "list": "list",
+                "tuple": "tuple",
+                "pair": "tuple",
+                "set": "set",
+                "dictionary": "dict",
+                "dict": "dict",
+            }[container_head.group(1)]
+
+        for prefix, annotation in DOC_OUTPUT_PREFIX_RETURNS:
+            if output.startswith(prefix + ";") or output.startswith(prefix + ",") or output.startswith(prefix + "."):
+                return annotation
+            if prefix == "boolean" and output.startswith(("boolean indicating ", "boolean stating ")):
+                return annotation
+            if prefix == "string" and output.startswith("string "):
+                return annotation
+
+        if output in {"int", "python integer"}:
+            return "int"
+        if output.startswith(("python list", "a python list")):
+            return "list"
+        if output.startswith(("python dictionary", "a python dictionary")):
+            return "dict"
+        if output.startswith(("python set", "a python set")):
+            return "set"
+        if output.startswith(("none", "nothing")) and " if " not in output:
+            return "None"
+        if output.startswith(("true", "false")) and not re.search(
+            r"\b(?:or|either|tuple|dictionary|list|notimplemented)\b", output
+        ):
+            # Do not turn rich-comparison methods into a bool contract merely
+            # because their docs say ``True``/``False``: Python permits
+            # ``NotImplemented`` from those hooks.  Explicit ``__bool__``
+            # remains covered by PROTOCOL_RETURNS above.
+            if not node.name.startswith(("__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__")):
+                return "bool"
+        if output.startswith(("a boolean", "an boolean")) and not node.name.startswith(
+            ("__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__")
+        ):
+            return "bool"
+        if output.startswith(("a fragment of html", "an html fragment", "printed string")):
+            return "str"
+        if re.match(r"^squarefree positive integer\b", output):
+            return "'sage.rings.integer.Integer'"
+        # The maximal quotient rational-reconstruction variant explicitly
+        # permits ``None``, so preserve that optionality in its pair result.
+        if pair_optional_contract:
+            return "tuple | None"
+        if re.match(r"^(?:this method )?(?:does not )?return(?:s)? (?:nothing|anything)\b", output):
+            return "None"
+        if output.startswith("the nonnegative integer"):
+            return "'sage.rings.integer.Integer'"
+        if output.startswith("the ascii integer"):
+            # ``ascii_integer`` deliberately returns a Python int, unlike
+            # Sage's arithmetic helpers which return ``Integer``.
+            return "int"
+        if output.startswith("the binary representation of"):
+            # The Sage crypto utility returns a StringMonoidElement (the
+            # runtime type of ``ascii_to_bin``), not a plain Python string.
+            return "'sage.monoids.string_monoid_element.StringMonoidElement'"
+        if output.startswith("the ascii string corresponding"):
+            return "str"
+        if re.match(r"^the `{0,2}k`{0,2} least significant bits", output):
+            return "list"
+        if output.startswith(("positive integer", "nonnegative integer", "integer (", "integer `", "integer.")):
+            return "'sage.rings.integer.Integer'"
+        if re.match(
+            r"^(?:(?:a|an|the)\s+)?(?:positive|nonnegative|negative|prime)?\s*integer\b.*\bor\s+(?:-?\d+|(?:an?\s+)?(?:positive|nonnegative|negative|prime)?\s*integer)\b",
+            output,
+            re.IGNORECASE,
+        ):
+            # Both branches are Sage integers; this is not a heterogeneous
+            # union such as ``integer or rational``.
+            return "'sage.rings.integer.Integer'"
+        if output.startswith(("a sage integer", "an sage integer", "the sage integer")):
+            return "'sage.rings.integer.Integer'"
+        if output.startswith("a prime ") and re.search(r"\bor\b", output) and re.search(r"\bn\b", output):
+            # ``trial_division`` documents both branches as integer values:
+            # the discovered prime or the original integer when no divisor is
+            # found.  This is one concrete Sage scalar, not a type union.
+            return "'sage.rings.integer.Integer'"
+        if output.startswith("the integer"):
+            return "'sage.rings.integer.Integer'"
+        if re.match(r"^the number of .*\bas an integer\b", output):
+            return "'sage.rings.integer.Integer'"
+        if output.startswith(("the carmichael function", "the `n`-th prime number")):
+            return "'sage.rings.integer.Integer'"
+        if output in {"rational", "rational number"} or output.startswith("a rational number"):
+            return "'sage.rings.rational.Rational'"
+        for phrase, annotation in DOC_OUTPUT_NAMED_CLASSES:
+            if output == phrase or output.startswith(phrase + " ") or output.startswith(phrase + "."):
+                return annotation
+        if class_index:
+            # Resolve a source-indexed class before generic container words
+            # such as ``set`` are considered (``a set partition`` is a
+            # SetPartition, not a Python set).
+            plain_class = _doc_plain_class_annotation(output, class_index)
+            if plain_class is not None:
+                return plain_class
+        if output.startswith("an exact copy of ``self``") or output.startswith("a copy of ``self``"):
+            return "Self"
+        if output.startswith(("a pair", "pair ", "a 2-tuple", "a 3-tuple", "a 4-tuple")):
+            return "tuple"
+        # A documented Python container is a concrete runtime type even when
+        # the element type is intentionally left open.  Do not apply this to
+        # union/conditional descriptions (guarded above) or to prose such as
+        # ``list, dictionary`` where the result itself is ambiguous.
+        if not re.search(r",\s*(?:a |an |the )?(?:list|tuple|set|dict|dictionary|boolean|none|integer)\b", output):
+            if re.match(r"^(?:a |an |the |sorted )?(?:list|tuple|set|dictionary|dict|frozenset)\b", output):
+                kind = re.match(r"^(?:a |an |the |sorted )?(?P<kind>list|tuple|set|dictionary|dict|frozenset)\b", output).group("kind")
+                return {"list": "list", "tuple": "tuple", "set": "set", "dictionary": "dict", "dict": "dict", "frozenset": "frozenset"}[kind]
+        if class_index:
+            return _doc_output_class_annotation(output, class_index)
+    # A predicate summary is a source-level boolean contract when its
+    # docstring does not advertise an alternate payload (for example
+    # ``get_data=True`` returning a pair).  Dunder comparisons stay
+    # fail-closed because Python permits ``NotImplemented``.
+    if not node.name.startswith("__") and re.match(
+        r"^(?:test|check|determine)\s+(?:whether|if)|^return\s+(?:true|false)\b|^whether\s+",
+        summary,
+    ):
+        lowered = value.lower()
+        if not re.search(r"\b(?:get_data|tuple|pair|dictionary|list|notimplemented)\b|\bor\b", lowered):
+            return "bool"
+    if re.match(r"^(?:string|latex|\\latex)\s+representation\b", summary, re.IGNORECASE):
+        return "str"
+    return None
+
+
+def _build_class_index(root: Path) -> dict[str, tuple[str, ...]]:
+    """Build unique lower-case class-name -> canonical source class mappings."""
+    candidates: dict[str, set[str]] = {}
+    for path in sorted(root.rglob("*.pyi")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path), type_comments=True)
+        except SyntaxError:
+            continue
+        relative = path.relative_to(root)
+        parts = list(relative.parts)
+        filename = parts.pop()
+        module_parts = parts if filename == "__init__.pyi" else parts + [Path(filename).stem]
+        module = ".".join(module_parts)
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            key = re.sub(r"[^a-z0-9]", "", node.name.casefold())
+            candidates.setdefault(key, set()).add(f"{module}.{node.name}")
+    return {key: tuple(sorted(values)) for key, values in candidates.items()}
+
+
+def annotate_doc_output_returns(path: Path, class_index: dict[str, tuple[str, ...]] | None = None) -> list[str]:
+    """Apply exact structured ``OUTPUT:`` contracts to missing returns."""
+    text = path.read_text(encoding="utf-8")
+    try:
+        tree = ast.parse(text, filename=str(path), type_comments=True)
+    except SyntaxError:
+        return []
+    line_offsets = _line_offsets(text)
+    edits: list[tuple[int, str, str]] = []
+
+    def visit_class(node: ast.ClassDef) -> None:
+        for member in node.body:
+            if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if member.returns is None:
+                    annotation = _doc_output_annotation(member, class_index, node.name)
+                    if annotation is not None:
+                        colon = _function_header_colon(text, line_offsets, member)
+                        if colon is not None:
+                            edits.append((colon, annotation, member.name))
+            elif isinstance(member, ast.ClassDef):
+                visit_class(member)
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is None:
+            annotation = _doc_output_annotation(node, class_index)
+            if annotation is not None:
+                colon = _function_header_colon(text, line_offsets, node)
+                if colon is not None:
+                    edits.append((colon, annotation, node.name))
+        elif isinstance(node, ast.ClassDef):
+            visit_class(node)
+    needs_self = any(annotation == "Self" for _, annotation, _ in edits)
+    if needs_self and not re.search(r"^from typing import .*\bSelf\b", text, re.MULTILINE):
+        lines = text.splitlines(keepends=True)
+        insertion = _typing_import_insertion_index(text, lines)
+        lines.insert(insertion, "from typing import Self\n")
+        text = "".join(lines)
+        line_offsets = _line_offsets(text)
+        # The import is inserted before the offsets used below.  Recompute
+        # header locations so multiline function edits remain exact.
+        edits = []
+        try:
+            tree = ast.parse(text, filename=str(path), type_comments=True)
+        except SyntaxError:
+            return []
+        def collect(node: ast.AST, owner_name: str | None = None) -> None:
+            if isinstance(node, ast.ClassDef):
+                owner_name = node.name
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is None:
+                annotation = _doc_output_annotation(node, class_index, owner_name)
+                if annotation is not None:
+                    colon = _function_header_colon(text, line_offsets, node)
+                    if colon is not None:
+                        edits.append((colon, annotation, node.name))
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    collect(child, owner_name)
+        for node in tree.body:
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                collect(node)
+    for offset, annotation, _ in sorted(edits, reverse=True):
+        text = text[:offset] + f" -> {annotation}" + text[offset:]
+    if edits:
+        path.write_text(text, encoding="utf-8")
+    return [name for _, _, name in sorted(edits)]
+
+
 def remove_inserted(path: Path, member: str) -> bool:
     # Remove an earlier stub-only forwarding declaration for member.
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -549,6 +1787,22 @@ def main() -> int:
                 verify(path)
                 total += len(edited)
                 print(f"{relative} [{class_name or '<module>'}]: annotated {", ".join(edited)}")
+    for relative, classes in CURATED_ANNOTATIONS.items():
+        path = root / relative
+        if not path.is_file():
+            continue
+        if any("Self" in annotation for members in classes.values() for annotation in members.values()):
+            if ensure_typing_name(path, "Self"):
+                verify(path)
+                print(f"{relative}: ensured typing import Self")
+    for relative, classes in CURATED_REPLACE_ANNOTATIONS.items():
+        path = root / relative
+        if not path.is_file():
+            continue
+        if any("Self" in annotation for members in classes.values() for annotation in members.values()):
+            if ensure_typing_name(path, "Self"):
+                verify(path)
+                print(f"{relative}: ensured typing import Self")
     for relative, classes in CURATED_REPLACE_ANNOTATIONS.items():
         path = root / relative
         if not path.is_file():
@@ -571,6 +1825,15 @@ def main() -> int:
                 verify(path)
                 total += len(edited)
                 print(f"{relative} [{class_name or '<module>'}]: overloaded {", ".join(edited)}")
+        if any(
+            "Literal[" in declaration
+            for members in classes.values()
+            for declarations in members.values()
+            for declaration in declarations
+        ):
+            if ensure_typing_name(path, "Literal"):
+                verify(path)
+                print(f"{relative}: ensured typing import Literal")
     for relative, names in CURATED_TYPE_VARIABLES.items():
         path = root / relative
         if not path.is_file():
@@ -599,6 +1862,16 @@ def main() -> int:
     if protocol_total:
         total += protocol_total
         print(f"protocol methods: annotated {protocol_total} missing return contract(s)")
+    doc_output_total = 0
+    class_index = _build_class_index(root)
+    for path in sorted(root.rglob("*.pyi")):
+        edited = annotate_doc_output_returns(path, class_index)
+        if edited:
+            verify(path)
+            doc_output_total += len(edited)
+    if doc_output_total:
+        total += doc_output_total
+        print(f"doc OUTPUT contracts: annotated {doc_output_total} exact return contract(s)")
     # Roll back the earlier base-class forwarding hack (matrix0 solve_right).
     matrix0 = root / "sage/matrix/matrix0.pyi"
     if matrix0.is_file() and remove_inserted(matrix0, "solve_right"):
