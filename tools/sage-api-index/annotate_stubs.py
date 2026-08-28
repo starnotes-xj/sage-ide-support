@@ -88,6 +88,236 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "__next__": "bool",
         },
     },
+    "sage/crypto/sbox.pyi": {
+        None: {
+            "feistel_construction": "'sage.crypto.sbox.SBox'",
+            "misty_construction": "'sage.crypto.sbox.SBox'",
+        },
+        "SBox": {
+            # Sage's S-box analysis API has stable concrete result families:
+            # table constructors use their documented integer/rational matrix
+            # implementation, algebraic transforms preserve SBox, and the
+            # scalar metrics use the runtime-proven Python/Sage scalar type.
+            "derivative": "Self",
+            "difference_distribution_table": "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'",
+            "maximal_difference_probability_absolute": "'sage.rings.integer.Integer'",
+            "maximal_difference_probability": "float",
+            "linear_approximation_table": "'sage.matrix.matrix_rational_dense.Matrix_rational_dense'",
+            "maximal_linear_bias_absolute": "'sage.rings.rational.Rational'",
+            "maximal_linear_bias_relative": "float",
+            "boomerang_connectivity_table": "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'",
+            "boomerang_uniformity": "'sage.rings.integer.Integer'",
+            "cnf": "list",
+            "differential_branch_number": "int",
+            "interpolation_polynomial": "'sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX'",
+            "inverse": "Self",
+            "linear_branch_number": "int",
+            "linearity": "'sage.rings.rational.Rational'",
+            "min_degree": "int",
+            "max_degree": "int",
+            "nonlinearity": "'sage.rings.rational.Rational'",
+            "ring": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomialRing_libsingular'",
+            "autocorrelation_table": "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'",
+            "__iter__": "Iterator['sage.rings.integer.Integer']",
+        },
+    },
+    "sage/crypto/sboxes.pyi": {
+        None: {
+            # Every named constructor in this module returns the concrete SBox
+            # table described by its cryptographic construction.
+            "bracken_leander": "'sage.crypto.sbox.SBox'",
+            "carlet_tang_tang_liao": "'sage.crypto.sbox.SBox'",
+            "gold": "'sage.crypto.sbox.SBox'",
+            "kasami": "'sage.crypto.sbox.SBox'",
+            "niho": "'sage.crypto.sbox.SBox'",
+            "welch": "'sage.crypto.sbox.SBox'",
+            "monomial_function": "'sage.crypto.sbox.SBox'",
+            "inversion": "'sage.crypto.sbox.SBox'",
+            "chi": "'sage.crypto.sbox.SBox'",
+        },
+    },
+    "sage/crypto/mq/rijndael_gf.pyi": {
+        "RijndaelGF": {
+            # Rijndael-GF's algebraic helpers use fixed GF(2^8) matrices and
+            # multivariate FLINT/libSingular objects in Sage 10.9.  State
+            # transforms are kept as TypeVar overloads below so a polynomial
+            # matrix is not collapsed to the finite-field matrix class.
+            "__call__": "str",
+            "number_rounds": "'sage.rings.integer.Integer'",
+            "_GF_to_hex": "str",
+            "_GF_to_bin": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "decrypt": "str",
+            "_check_valid_PRmatrix": "None",
+            "expand_key": "list['sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense']",
+            "expand_key_poly": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
+            "_add_round_key_pc": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
+            "_sub_bytes_pc": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
+            "_srd": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
+            "_mix_columns_pc": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
+            "_shift_rows_pc": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
+        },
+        "Round_Component_Poly_Constr": {
+            "__call__": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
+        },
+    },
+    "sage/crypto/block_cipher/des.pyi": {
+        "DES": {
+            # DES permutation helpers always construct dense GF(2) bit
+            # vectors, independent of the cipher instance's key schedule.
+            "_ip": "'sage.modules.vector_mod2_dense.Vector_mod2_dense'",
+        },
+        "DES_KS": {
+            # The key-schedule half-register is a GF(2) bit vector and the
+            # documented left rotation preserves that concrete implementation.
+            "_left_shift": "'sage.modules.vector_mod2_dense.Vector_mod2_dense'",
+        },
+    },
+    "sage/crypto/block_cipher/miniaes.pyi": {
+        "MiniAES": {
+            # These helpers construct fixed Mini-AES objects rather than a
+            # public matrix base: random_key uses the GF(2^4) dense matrix
+            # implementation and sbox returns Sage's concrete SBox table.
+            "random_key": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "sbox": "'sage.crypto.sbox.SBox'",
+        },
+    },
+    "sage/crypto/block_cipher/present.pyi": {
+        None: {
+            # The small PRESENT linear layer is the dense GF(2) permutation
+            # matrix shown by its doctest, not a generic Matrix base.
+            "_smallscale_present_linearlayer": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
+        },
+    },
+    "sage/crypto/mq/sr.pyi": {
+        "SR_generic": {
+            # SR's state representation and AES transforms are concrete
+            # GF(2^e) dense matrices for both SR_gf2n and SR_gf2 variants.
+            "new_generator": "Self",
+            "sbox": "'sage.crypto.sbox.SBox'",
+            "sub_bytes": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "shift_rows": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "mix_columns": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "add_round_key": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "key_schedule": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "__call__": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "hex_str": "str",
+            "hex_str_matrix": "str",
+            "hex_str_vector": "str",
+            "varformatstr": "str",
+            "block_order": "'sage.rings.polynomial.term_order.TermOrder'",
+            "state_array": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "random_state_array": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "round_polynomials": "tuple",
+            "key_schedule_polynomials": "tuple",
+            "polynomial_system": "tuple",
+            "_insert_matrix_into_matrix": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+        },
+        "SR_gf2n": {
+            "vector": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "shift_rows_matrix": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "lin_matrix": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "mix_columns_matrix": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "inversion_polynomials": "list",
+        },
+        "SR_gf2": {
+            "vector": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
+            "shift_rows_matrix": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
+            "lin_matrix": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
+            "mix_columns_matrix": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
+            "_mul_matrix": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
+            "_square_matrix": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
+            "inversion_polynomials": "list",
+            "inversion_polynomials_single_sbox": "list",
+            "_inversion_polynomials_single_sbox": "list",
+        },
+        "SR_gf2_2": {
+            "inversion_polynomials_single_sbox": "list",
+        },
+        "AllowZeroInversionsContext": {
+            "__enter__": "None",
+            "__exit__": "None",
+        },
+        None: {
+            "check_consistency": "bool",
+        },
+    },
+    "sage/crypto/classical.pyi": {
+        "AffineCryptosystem": {
+            "brute_force": "dict",
+            "deciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "enciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "inverse_key": "tuple",
+            "random_key": "tuple",
+        },
+        "HillCryptosystem": {
+            "deciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "enciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+        },
+        "ShiftCryptosystem": {
+            "brute_force": "dict",
+            "deciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "enciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "inverse_key": "'sage.rings.integer.Integer'",
+            "random_key": "'sage.rings.integer.Integer'",
+        },
+        "SubstitutionCryptosystem": {
+            "__call__": "'sage.crypto.classical_cipher.SubstitutionCipher'",
+            "random_key": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "inverse_key": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "deciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "enciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+        },
+        "TranspositionCryptosystem": {
+            "__call__": "'sage.crypto.classical_cipher.TranspositionCipher'",
+            "random_key": "'sage.groups.perm_gps.permgroup_element.SymmetricGroupElement'",
+            "inverse_key": "'sage.groups.perm_gps.permgroup_element.SymmetricGroupElement'",
+            "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "deciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "enciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+        },
+        "VigenereCryptosystem": {
+            "__call__": "'sage.crypto.classical_cipher.VigenereCipher'",
+            "random_key": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "inverse_key": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "deciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "enciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+        },
+    },
+    "sage/crypto/classical_cipher.pyi": {
+        "AffineCipher": {
+            "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+        },
+        "HillCipher": {
+            "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "inverse": "'sage.crypto.classical_cipher.HillCipher'",
+        },
+        "ShiftCipher": {
+            "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+        },
+        "SubstitutionCipher": {
+            "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "inverse": "'sage.crypto.classical_cipher.SubstitutionCipher'",
+        },
+        "TranspositionCipher": {
+            "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "inverse": "'sage.crypto.classical_cipher.TranspositionCipher'",
+        },
+        "VigenereCipher": {
+            "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "inverse": "'sage.crypto.classical_cipher.VigenereCipher'",
+        },
+    },
+    "sage/crypto/lfsr.pyi": {
+        None: {
+            "lfsr_sequence": "list",
+            "lfsr_autocorrelation": "'sage.rings.rational.Rational'",
+        },
+    },
     "sage/schemes/elliptic_curves/ell_point.pyi": {
         "EllipticCurvePoint": {
             "curve": "'sage.schemes.elliptic_curves.ell_generic.EllipticCurve_generic'",
@@ -326,6 +556,14 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "matrix": "'sage.matrix.matrix2.Matrix'",
         },
     },
+    "sage/crypto/mq/rijndael_gf.pyi": {
+        "RijndaelGF": {
+            # Sage 10.9 returns a plain Python ``str`` here (rather than a
+            # StringMonoidElement despite older generated stubs claiming the
+            # latter).  Keep the index aligned with the runtime object.
+            "_GF_to_bin": "str",
+        },
+    },
     "sage/all.pyi": {
         None: {
             "matrix": "'sage.matrix.matrix2.Matrix'",
@@ -392,6 +630,92 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             "truth_table": (
                 "def truth_table(self, format: Literal['hex']) -> str: ...",
                 "def truth_table(self, format: Literal['bin', 'int'] = 'bin') -> tuple: ...",
+            ),
+        },
+    },
+    "sage/crypto/sbox.pyi": {
+        "SBox": {
+            # The S-box documentation specifies distinct integer, list and
+            # GF(2)-vector input branches.  Keep the finite-field branch
+            # unresolved because its element implementation depends on the
+            # caller's field parent.
+            "__call__": (
+                "def __call__(self, X: int) -> 'sage.rings.integer.Integer': ...",
+                "def __call__(self, X: list) -> list: ...",
+                "def __call__(self, X: tuple) -> list: ...",
+                "def __call__(self, X: 'sage.modules.vector_mod2_dense.Vector_mod2_dense') -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense': ...",
+            ),
+            "__getitem__": (
+                "def __getitem__(self, X: int) -> 'sage.rings.integer.Integer': ...",
+            ),
+        },
+    },
+    "sage/crypto/mq/rijndael_gf.pyi": {
+        "RijndaelGF": {
+            # The conversion helpers have a documented matrix/list flag.  A
+            # literal overload retains the concrete Matrix_gf2e_dense result
+            # for the default path without lying about matrix=False.
+            "_hex_to_GF": (
+                "def _hex_to_GF(self, H, matrix: Literal[False]) -> list: ...",
+                "def _hex_to_GF(self, H, matrix: Literal[True] = True) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense': ...",
+            ),
+            "_bin_to_GF": (
+                "def _bin_to_GF(self, B, matrix: Literal[False]) -> list: ...",
+                "def _bin_to_GF(self, B, matrix: Literal[True] = True) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense': ...",
+            ),
+            # Matrix round components preserve the concrete matrix parent
+            # supplied by the caller, including polynomial-state matrices.
+            "apply_poly": (
+                "def apply_poly(self, state: RijndaelStateT, poly_constr, algorithm='encrypt', keys=None, poly_constr_attr=None) -> RijndaelStateT: ...",
+            ),
+            "add_round_key": (
+                "def add_round_key(self, state: RijndaelStateT, round_key: RijndaelStateT) -> RijndaelStateT: ...",
+            ),
+            "sub_bytes": (
+                "def sub_bytes(self, state: RijndaelStateT, algorithm='encrypt') -> RijndaelStateT: ...",
+            ),
+            "mix_columns": (
+                "def mix_columns(self, state: RijndaelStateT, algorithm='encrypt') -> RijndaelStateT: ...",
+            ),
+            "shift_rows": (
+                "def shift_rows(self, state: RijndaelStateT, algorithm='encrypt') -> RijndaelStateT: ...",
+            ),
+            # compose returns a constructor for constructor inputs, and a
+            # polynomial when the second input is already a polynomial.
+            "compose": (
+                "def compose(self, f: 'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr', g: 'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr', algorithm='encrypt', f_attr=None, g_attr=None) -> 'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr': ...",
+                "def compose(self, f: 'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr', g: 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular', algorithm='encrypt', f_attr=None, g_attr=None) -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular': ...",
+            ),
+        },
+    },
+    "sage/crypto/mq/sr.pyi": {
+        None: {
+            # The factory selects the concrete generator from the literal
+            # ``gf2`` flag; preserve that branch instead of exposing the
+            # abstract SR_generic base as the final result.
+            "SR": (
+                "def SR(n=1, r=1, c=1, e=4, star=False, *, gf2: Literal[False] = False, **kwargs) -> 'sage.crypto.mq.sr.SR_gf2n': ...",
+                "def SR(n=1, r=1, c=1, e=4, star=False, *, gf2: Literal[True], **kwargs) -> 'sage.crypto.mq.sr.SR_gf2': ...",
+            ),
+        },
+        "SR_gf2n": {
+            "phi": (
+                "def phi(self, l: list) -> list: ...",
+                "def phi(self, l: 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense') -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense': ...",
+            ),
+            "antiphi": (
+                "def antiphi(self, l: list) -> list: ...",
+                "def antiphi(self, l: 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense') -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense': ...",
+            ),
+        },
+        "SR_gf2": {
+            "phi": (
+                "def phi(self, l: list) -> list: ...",
+                "def phi(self, l: 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense') -> 'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense': ...",
+            ),
+            "antiphi": (
+                "def antiphi(self, l: list) -> list: ...",
+                "def antiphi(self, l: 'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense') -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense': ...",
             ),
         },
     },
@@ -493,6 +817,7 @@ CURATED_TYPE_VARIABLES: dict[str, tuple[str, ...]] = {
     "sage/arith/misc.pyi": ("GcdT", "BinomialT", "FallingFactorialT", "RisingFactorialT"),
     "sage/arith/functions.pyi": ("LcmT",),
     "sage/crypto/block_cipher/miniaes.pyi": ("MiniAEST",),
+    "sage/crypto/mq/rijndael_gf.pyi": ("RijndaelStateT",),
 }
 
 # INSERT: declarations that model a real, dynamically inherited method whose

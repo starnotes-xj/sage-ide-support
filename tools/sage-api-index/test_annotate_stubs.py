@@ -292,6 +292,12 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    def shift_row(self, block): ...\n",
                 encoding="utf-8",
             )
+            stub.write_text(
+                stub.read_text(encoding="utf-8")
+                + "    def random_key(self):\n        ...\n"
+                + "    def sbox(self):\n        ...\n",
+                encoding="utf-8",
+            )
             command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
             first = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, first.returncode, first.stderr)
@@ -307,8 +313,244 @@ class AnnotateStubsTest(unittest.TestCase):
                 "def nibble_sub(self, block: MiniAEST, algorithm='encrypt') -> MiniAEST: ...",
                 "def round_key(self, key: MiniAEST, n) -> MiniAEST: ...",
                 "def shift_row(self, block: MiniAEST) -> MiniAEST: ...",
+                "def random_key(self) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':",
+                "def sbox(self) -> 'sage.crypto.sbox.SBox':",
             ):
                 self.assertIn(declaration, patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_present_linear_layer_contract_returns_mod2_matrix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "block_cipher" / "present.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "def _smallscale_present_linearlayer(nsboxes=16):\n"
+                "    ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn(
+                "def _smallscale_present_linearlayer(nsboxes=16) -> 'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense':",
+                patched,
+            )
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_sr_factory_and_crypto_helpers_keep_concrete_generator_families(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "mq" / "sr.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "def SR(n=1, r=1, c=1, e=4, star=False, **kwargs):\n"
+                "    ...\n"
+                "class SR_generic:\n"
+                "    def new_generator(self, **kwds):\n        ...\n"
+                "    def sbox(self):\n        ...\n"
+                "    def sub_bytes(self, d):\n        ...\n"
+                "    def state_array(self, d=None):\n        ...\n"
+                "    def hex_str(self, M, typ='matrix'):\n        ...\n"
+                "    def block_order(self):\n        ...\n"
+                "    def _insert_matrix_into_matrix(self, dst, src, row, col):\n        ...\n"
+                "class SR_gf2n(SR_generic):\n"
+                "    def vector(self, d=None):\n        ...\n"
+                "    def shift_rows_matrix(self):\n        ...\n"
+                "    def phi(self, l):\n        ...\n"
+                "    def antiphi(self, l):\n        ...\n"
+                "    def inversion_polynomials(self, xi, wi, length):\n        ...\n"
+                "class SR_gf2(SR_generic):\n"
+                "    def vector(self, d=None):\n        ...\n"
+                "    def phi(self, l):\n        ...\n"
+                "    def antiphi(self, l):\n        ...\n"
+                "    def _mul_matrix(self, x):\n        ...\n",
+                encoding="utf-8",
+            )
+            stub.write_text(
+                stub.read_text(encoding="utf-8")
+                + "class AllowZeroInversionsContext:\n"
+                + "    def __enter__(self):\n        ...\n"
+                + "    def __exit__(self, typ, value, tb):\n        ...\n"
+                + "def check_consistency(max_n=2, **kwargs):\n"
+                + "    ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("from typing import Self", patched)
+            self.assertIn("Literal", patched)
+            self.assertIn(
+                "def SR(n=1, r=1, c=1, e=4, star=False, *, gf2: Literal[False] = False, **kwargs) -> 'sage.crypto.mq.sr.SR_gf2n': ...",
+                patched,
+            )
+            self.assertIn(
+                "def SR(n=1, r=1, c=1, e=4, star=False, *, gf2: Literal[True], **kwargs) -> 'sage.crypto.mq.sr.SR_gf2': ...",
+                patched,
+            )
+            self.assertIn("def new_generator(self, **kwds) -> Self:", patched)
+            self.assertIn("def sbox(self) -> 'sage.crypto.sbox.SBox':", patched)
+            self.assertIn("def sub_bytes(self, d) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':", patched)
+            self.assertIn("def state_array(self, d=None) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':", patched)
+            self.assertIn("def hex_str(self, M, typ='matrix') -> str:", patched)
+            self.assertIn("def block_order(self) -> 'sage.rings.polynomial.term_order.TermOrder':", patched)
+            self.assertIn("def vector(self, d=None) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':", patched)
+            self.assertIn("def vector(self, d=None) -> 'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense':", patched)
+            self.assertIn("def _mul_matrix(self, x) -> 'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense':", patched)
+            self.assertIn("def _insert_matrix_into_matrix(self, dst, src, row, col) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':", patched)
+            self.assertIn("def phi(self, l: list) -> list: ...", patched)
+            self.assertIn("def antiphi(self, l: list) -> list: ...", patched)
+            self.assertIn(
+                "def phi(self, l: 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense') -> 'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense': ...",
+                patched,
+            )
+            self.assertIn("def inversion_polynomials(self, xi, wi, length) -> list:", patched)
+            self.assertIn("def __enter__(self) -> None:", patched)
+            self.assertIn("def __exit__(self, typ, value, tb) -> None:", patched)
+            self.assertIn("def check_consistency(max_n=2, **kwargs) -> bool:", patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_classical_cryptosystem_contracts_match_runtime_key_and_text_families(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "classical.pyi"
+            stub.parent.mkdir(parents=True)
+            classes = {
+                "AffineCryptosystem": (
+                    "brute_force(self, C, ranking='none')",
+                    "deciphering(self, a, b, C)",
+                    "enciphering(self, a, b, P)",
+                    "encoding(self, S)",
+                    "inverse_key(self, a, b)",
+                    "random_key(self)",
+                ),
+                "HillCryptosystem": (
+                    "deciphering(self, A, C)",
+                    "enciphering(self, A, M)",
+                    "encoding(self, M)",
+                ),
+                "ShiftCryptosystem": (
+                    "brute_force(self, C, ranking='none')",
+                    "deciphering(self, K, C)",
+                    "enciphering(self, K, P)",
+                    "encoding(self, S)",
+                    "inverse_key(self, K)",
+                    "random_key(self)",
+                ),
+                "SubstitutionCryptosystem": (
+                    "__call__(self, K)",
+                    "random_key(self)",
+                    "inverse_key(self, K)",
+                    "encoding(self, M)",
+                    "deciphering(self, K, C)",
+                    "enciphering(self, K, M)",
+                ),
+                "TranspositionCryptosystem": (
+                    "__call__(self, K)",
+                    "random_key(self)",
+                    "inverse_key(self, K, check=True)",
+                    "encoding(self, M)",
+                    "deciphering(self, K, C)",
+                    "enciphering(self, K, M)",
+                ),
+                "VigenereCryptosystem": (
+                    "__call__(self, K)",
+                    "random_key(self)",
+                    "inverse_key(self, K)",
+                    "encoding(self, M)",
+                    "deciphering(self, K, C)",
+                    "enciphering(self, K, M)",
+                ),
+            }
+            text = ""
+            for class_name, methods in classes.items():
+                text += f"class {class_name}:\n"
+                for method in methods:
+                    text += f"    def {method}:\n        ...\n"
+            stub.write_text(text, encoding="utf-8")
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def brute_force(self, C, ranking='none') -> dict:", patched)
+            self.assertIn("def inverse_key(self, a, b) -> tuple:", patched)
+            self.assertIn("def random_key(self) -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def __call__(self, K) -> 'sage.crypto.classical_cipher.SubstitutionCipher':", patched)
+            self.assertIn("def random_key(self) -> 'sage.groups.perm_gps.permgroup_element.SymmetricGroupElement':", patched)
+            self.assertIn("def __call__(self, K) -> 'sage.crypto.classical_cipher.VigenereCipher':", patched)
+            self.assertGreaterEqual(patched.count("StringMonoidElement"), 20)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_classical_cipher_call_and_inverse_contracts_stay_concrete(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "classical_cipher.pyi"
+            stub.parent.mkdir(parents=True)
+            classes = {
+                "AffineCipher": ("__call__(self, M)",),
+                "HillCipher": ("__call__(self, M)", "inverse(self)"),
+                "ShiftCipher": ("__call__(self, M)",),
+                "SubstitutionCipher": ("__call__(self, M)", "inverse(self)"),
+                "TranspositionCipher": ("__call__(self, M, mode='ECB')", "inverse(self)"),
+                "VigenereCipher": ("__call__(self, M, mode='ECB')", "inverse(self)"),
+            }
+            text = ""
+            for class_name, methods in classes.items():
+                text += f"class {class_name}:\n"
+                for method in methods:
+                    text += f"    def {method}:\n        ...\n"
+            stub.write_text(text, encoding="utf-8")
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            string_type = "'sage.monoids.string_monoid_element.StringMonoidElement'"
+            self.assertIn(f"def __call__(self, M) -> {string_type}:", patched)
+            self.assertIn("def inverse(self) -> 'sage.crypto.classical_cipher.HillCipher':", patched)
+            self.assertIn("def inverse(self) -> 'sage.crypto.classical_cipher.SubstitutionCipher':", patched)
+            self.assertIn("def inverse(self) -> 'sage.crypto.classical_cipher.TranspositionCipher':", patched)
+            self.assertIn("def inverse(self) -> 'sage.crypto.classical_cipher.VigenereCipher':", patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_lfsr_sequence_and_correlation_contracts_match_sage_scalars(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "lfsr.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "def lfsr_sequence(key, fill, n):\n"
+                "    ...\n"
+                "def lfsr_autocorrelation(L, p, k):\n"
+                "    ...\n"
+                "def lfsr_connection_polynomial(s):\n"
+                "    ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def lfsr_sequence(key, fill, n) -> list:", patched)
+            self.assertIn("def lfsr_autocorrelation(L, p, k) -> 'sage.rings.rational.Rational':", patched)
+            self.assertNotIn("lfsr_connection_polynomial(s) ->", patched)
             ast.parse(patched)
             second = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, second.returncode, second.stderr)
@@ -361,6 +603,204 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def random_boolean_function(n) -> 'sage.crypto.boolean_function.BooleanFunction':", patched)
             self.assertIn("def truth_table(self, format: Literal['hex']) -> str: ...", patched)
             self.assertIn("def truth_table(self, format: Literal['bin', 'int'] = 'bin') -> tuple: ...", patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_sbox_contracts_cover_ctf_tables_metrics_and_input_branches(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "sbox.pyi"
+            stub.parent.mkdir(parents=True)
+            method_names = (
+                "derivative(self, u)",
+                "difference_distribution_table(self)",
+                "maximal_difference_probability_absolute(self)",
+                "maximal_difference_probability(self)",
+                "linear_approximation_table(self, scale='absolute_bias')",
+                "maximal_linear_bias_absolute(self)",
+                "maximal_linear_bias_relative(self)",
+                "boomerang_connectivity_table(self)",
+                "boomerang_uniformity(self)",
+                "cnf(self)",
+                "differential_branch_number(self)",
+                "interpolation_polynomial(self)",
+                "inverse(self)",
+                "linear_branch_number(self)",
+                "linearity(self)",
+                "min_degree(self)",
+                "max_degree(self)",
+                "nonlinearity(self)",
+                "ring(self)",
+                "autocorrelation_table(self)",
+                "__iter__(self)",
+                "__call__(self, X)",
+                "__getitem__(self, X)",
+            )
+            methods = "".join(f"    def {name}:\n        ...\n" for name in method_names)
+            stub.write_text("class SBox:\n" + methods, encoding="utf-8")
+            constructors = root / "sage" / "crypto" / "sbox.pyi"
+            constructors.write_text(
+                constructors.read_text(encoding="utf-8")
+                + "def feistel_construction(*args):\n    ...\n"
+                + "def misty_construction(*args):\n    ...\n",
+                encoding="utf-8",
+            )
+            factories = root / "sage" / "crypto" / "sboxes.pyi"
+            factories.write_text(
+                "def bracken_leander(n):\n    ...\n"
+                "def carlet_tang_tang_liao(n, c=None, bf=None):\n    ...\n"
+                "def gold(n, i):\n    ...\n"
+                "def kasami(n, i):\n    ...\n"
+                "def niho(n):\n    ...\n"
+                "def welch(n):\n    ...\n"
+                "def monomial_function(n, e):\n    ...\n"
+                "def inversion(n):\n    ...\n"
+                "def chi(n):\n    ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("from typing import Self, Iterator", patched)
+            self.assertIn("from typing import Self", patched)
+            self.assertIn("from typing import overload", patched)
+            expected = (
+                "def derivative(self, u) -> Self:",
+                "def difference_distribution_table(self) -> 'sage.matrix.matrix_integer_dense.Matrix_integer_dense':",
+                "def maximal_difference_probability_absolute(self) -> 'sage.rings.integer.Integer':",
+                "def maximal_difference_probability(self) -> float:",
+                "def linear_approximation_table(self, scale='absolute_bias') -> 'sage.matrix.matrix_rational_dense.Matrix_rational_dense':",
+                "def maximal_linear_bias_absolute(self) -> 'sage.rings.rational.Rational':",
+                "def maximal_linear_bias_relative(self) -> float:",
+                "def boomerang_connectivity_table(self) -> 'sage.matrix.matrix_integer_dense.Matrix_integer_dense':",
+                "def boomerang_uniformity(self) -> 'sage.rings.integer.Integer':",
+                "def cnf(self) -> list:",
+                "def interpolation_polynomial(self) -> 'sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX':",
+                "def inverse(self) -> Self:",
+                "def linearity(self) -> 'sage.rings.rational.Rational':",
+                "def nonlinearity(self) -> 'sage.rings.rational.Rational':",
+                "def __iter__(self) -> Iterator['sage.rings.integer.Integer']:",
+            )
+            for declaration in expected:
+                self.assertIn(declaration, patched)
+            self.assertIn(
+                "def __call__(self, X: int) -> 'sage.rings.integer.Integer': ...",
+                patched,
+            )
+            self.assertIn("def __call__(self, X: list) -> list: ...", patched)
+            self.assertIn(
+                "def __call__(self, X: 'sage.modules.vector_mod2_dense.Vector_mod2_dense') -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense': ...",
+                patched,
+            )
+            self.assertIn(
+                "def __getitem__(self, X: int) -> 'sage.rings.integer.Integer': ...",
+                patched,
+            )
+            constructors_text = constructors.read_text(encoding="utf-8")
+            self.assertIn("def feistel_construction(*args) -> 'sage.crypto.sbox.SBox':", constructors_text)
+            self.assertIn("def misty_construction(*args) -> 'sage.crypto.sbox.SBox':", constructors_text)
+            factories_text = factories.read_text(encoding="utf-8")
+            self.assertIn("def gold(n, i) -> 'sage.crypto.sbox.SBox':", factories_text)
+            self.assertIn("def inversion(n) -> 'sage.crypto.sbox.SBox':", factories_text)
+            ast.parse(patched)
+            ast.parse(constructors_text)
+            ast.parse(factories_text)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+            self.assertEqual(constructors_text, constructors.read_text(encoding="utf-8"))
+            self.assertEqual(factories_text, factories.read_text(encoding="utf-8"))
+
+    def test_rijndael_gf_contracts_preserve_matrix_and_polynomial_parents(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "mq" / "rijndael_gf.pyi"
+            stub.parent.mkdir(parents=True)
+            methods = (
+                "    def __call__(self, text, key, algorithm='encrypt', format='hex'):\n        ...\n"
+                "    def number_rounds(self):\n        ...\n"
+                "    def _hex_to_GF(self, H, matrix=True) -> list:\n        ...\n"
+                "    def _GF_to_hex(self, GF):\n        ...\n"
+                "    def _bin_to_GF(self, B, matrix=True) -> list:\n        ...\n"
+                "    def _GF_to_bin(self, GF) -> 'sage.monoids.string_monoid_element.StringMonoidElement':\n        ...\n"
+                "    def decrypt(self, ciphertext, key, format='hex'):\n        ...\n"
+                "    def _check_valid_PRmatrix(self, PRm, keyword):\n        ...\n"
+                "    def expand_key(self, key):\n        ...\n"
+                "    def expand_key_poly(self, row, col, round):\n        ...\n"
+                "    def apply_poly(self, state, poly_constr, algorithm='encrypt', keys=None, poly_constr_attr=None):\n        ...\n"
+                "    def compose(self, f, g, algorithm='encrypt', f_attr=None, g_attr=None):\n        ...\n"
+                "    def _add_round_key_pc(self, row, col, algorithm='encrypt', round=0):\n        ...\n"
+                "    def add_round_key(self, state, round_key):\n        ...\n"
+                "    def _sub_bytes_pc(self, row, col, algorithm='encrypt', no_inversion=False):\n        ...\n"
+                "    def _srd(self, el, algorithm='encrypt'):\n        ...\n"
+                "    def sub_bytes(self, state, algorithm='encrypt'):\n        ...\n"
+                "    def _mix_columns_pc(self, row, col, algorithm='encrypt'):\n        ...\n"
+                "    def mix_columns(self, state, algorithm='encrypt'):\n        ...\n"
+                "    def _shift_rows_pc(self, row, col, algorithm='encrypt'):\n        ...\n"
+                "    def shift_rows(self, state, algorithm='encrypt'):\n        ...\n"
+                "    def add_round_key_poly_constr(self):\n        ...\n"
+                "    def sub_bytes_poly_constr(self):\n        ...\n"
+                "    def mix_columns_poly_constr(self):\n        ...\n"
+                "    def shift_rows_poly_constr(self):\n        ...\n"
+            )
+            nested = (
+                "    class Round_Component_Poly_Constr:\n"
+                "        def __call__(self, row, col, algorithm='encrypt', **kwargs):\n"
+                "            ...\n"
+            )
+            stub.write_text(
+                "class RijndaelGF:\n"
+                + methods
+                + nested,
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn('RijndaelStateT = TypeVar("RijndaelStateT")', patched)
+            self.assertIn("def __call__(self, text, key, algorithm='encrypt', format='hex') -> str:", patched)
+            self.assertIn("def _GF_to_hex(self, GF) -> str:", patched)
+            self.assertIn("def _GF_to_bin(self, GF) -> str:", patched)
+            self.assertIn("def decrypt(self, ciphertext, key, format='hex') -> str:", patched)
+            self.assertIn("def expand_key(self, key) -> list['sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense']:", patched)
+            self.assertIn("def _srd(self, el, algorithm='encrypt') -> 'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement':", patched)
+            self.assertIn("def __call__(self, row, col, algorithm='encrypt', **kwargs) -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular':", patched)
+            self.assertIn("def _hex_to_GF(self, H, matrix: Literal[False]) -> list: ...", patched)
+            self.assertIn("def _hex_to_GF(self, H, matrix: Literal[True] = True) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense': ...", patched)
+            self.assertIn("def _bin_to_GF(self, B, matrix: Literal[False]) -> list: ...", patched)
+            self.assertIn("def apply_poly(self, state: RijndaelStateT, poly_constr, algorithm='encrypt', keys=None, poly_constr_attr=None) -> RijndaelStateT: ...", patched)
+            self.assertIn("def add_round_key(self, state: RijndaelStateT, round_key: RijndaelStateT) -> RijndaelStateT: ...", patched)
+            self.assertIn("def compose(self, f: 'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr', g: 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'", patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_des_permutation_contracts_use_dense_gf2_vectors(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "block_cipher" / "des.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class DES:\n"
+                "    def _ip(self, block):\n"
+                "        ...\n"
+                "class DES_KS:\n"
+                "    def _left_shift(self, half, i):\n"
+                "        ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            vector = "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"
+            self.assertIn(f"def _ip(self, block) -> {vector}:", patched)
+            self.assertIn(f"def _left_shift(self, half, i) -> {vector}:", patched)
             ast.parse(patched)
             second = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, second.returncode, second.stderr)
