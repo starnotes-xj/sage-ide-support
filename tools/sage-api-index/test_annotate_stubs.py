@@ -13,6 +13,52 @@ GENERATOR = ROOT / "generate.py"
 
 
 class AnnotateStubsTest(unittest.TestCase):
+    def test_gcd_typevar_contract_is_indexed_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "arith" / "misc.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "\"\"\"Arithmetic helpers\"\"\"\n"
+                "def gcd(a, b=None, **kwargs): ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def gcd(a: GcdT, b: GcdT, **kwargs) -> GcdT: ...", patched)
+            self.assertTrue(patched.startswith('"""Arithmetic helpers"""\nfrom typing import TypeVar\n'))
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+            index_path = root / "index.json"
+            indexed = subprocess.run(
+                [
+                    sys.executable,
+                    str(GENERATOR),
+                    "--source-root",
+                    str(root),
+                    "--source-locator",
+                    "fixture",
+                    "--sage-version",
+                    "10.9",
+                    "--python-version",
+                    "3.13",
+                    "--output",
+                    str(index_path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(indexed.returncode, 0, indexed.stderr)
+            entries = json.loads(index_path.read_text(encoding="utf-8"))["entries"]
+            gcd = next(entry for entry in entries if entry["qualifiedName"] == "sage.arith.misc.gcd")
+            signature = gcd["signatures"][0]
+            self.assertEqual("GcdT", signature["parameters"][0]["type"]["expression"])
+            self.assertEqual("GcdT", signature["returnType"]["expression"])
+            self.assertEqual("GcdT", signature["typeParameters"][0]["name"])
+
     def test_finite_field_elliptic_factory_and_points_are_precise_and_idempotent(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -129,6 +129,16 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
 # generic overload machinery in the generated API index; the Kotlin plugin does
 # not recognize these class or member names.
 CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
+    "sage/arith/misc.pyi": {
+        None: {
+            # ``gcd`` coerces operands to a common parent and returns an
+            # element of that parent.  This TypeVar preserves the concrete
+            # operand class for calls such as ``gcd(f, f.derivative())``.
+            "gcd": (
+                "def gcd(a: GcdT, b: GcdT, **kwargs) -> GcdT: ...",
+            ),
+        },
+    },
     "sage/all.pyi": {
         None: {
             # An elliptic curve over a finite field has a materially more
@@ -156,6 +166,12 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             ),
         },
     },
+}
+
+# Module-level TypeVars used by the contracts above.  The declaration is kept
+# in the generated source stub so the extractor records it on each overload.
+CURATED_TYPE_VARIABLES: dict[str, tuple[str, ...]] = {
+    "sage/arith/misc.pyi": ("GcdT",),
 }
 
 # INSERT: declarations that model a real, dynamically inherited method whose
@@ -264,6 +280,32 @@ def annotate_replace(path: Path, members: dict[str, str], class_name: str | None
     return edited
 
 
+def _typing_import_insertion_index(text: str, lines: list[str]) -> int:
+    """Return a legal import position while preserving module docstrings."""
+    tree = ast.parse(text)
+    doc_end = 0
+    if tree.body and isinstance(tree.body[0], ast.Expr) and isinstance(getattr(tree.body[0], "value", None), ast.Constant) and isinstance(tree.body[0].value.value, str):
+        doc_end = tree.body[0].end_lineno or tree.body[0].lineno
+    future_end = max(
+        (
+            node.end_lineno or node.lineno
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom) and node.module == "__future__"
+        ),
+        default=0,
+    )
+    if future_end:
+        return future_end
+    return next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if index >= doc_end and (line.startswith("from ") or line.startswith("import "))
+        ),
+        doc_end,
+    )
+
+
 def annotate_overloads(path: Path, members: dict[str, tuple[str, ...]], class_name: str | None) -> list[str]:
     """Prepend typed overload declarations without discarding the documented implementation.
 
@@ -290,10 +332,40 @@ def annotate_overloads(path: Path, members: dict[str, tuple[str, ...]], class_na
     for index, block, _ in reversed(edits):
         lines[index:index] = block
     if edits and not any(line.strip() == "from typing import overload" for line in lines):
-        lines.insert(0, "from typing import overload\n")
+        lines.insert(_typing_import_insertion_index("".join(lines), lines), "from typing import overload\n")
     if edits:
         path.write_text("".join(lines), encoding="utf-8")
     return [member for _, _, member in edits]
+
+
+def ensure_type_variables(path: Path, names: tuple[str, ...]) -> bool:
+    """Ensure module-level TypeVar declarations required by contracts exist."""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    changed = False
+    if not any(re.match(r"^from typing import .*\bTypeVar\b", line) for line in lines):
+        lines.insert(_typing_import_insertion_index(text, lines), "from typing import TypeVar\n")
+        changed = True
+    existing = {
+        match.group(1)
+        for line in lines
+        if (match := re.match(r"^(?P<name>[A-Za-z_]\w*)\s*=\s*TypeVar\(", line))
+    }
+    insertion_index = next(
+        (index for index, line in enumerate(lines) if line.startswith("def ") or line.startswith("class ")),
+        len(lines),
+    )
+    # Keep a generated declaration ahead of decorators such as ``@overload``;
+    # placing it between a decorator and its function makes the stub invalid.
+    while insertion_index > 0 and lines[insertion_index - 1].lstrip().startswith("@"):
+        insertion_index -= 1
+    declarations = [f'{name} = TypeVar("{name}")\n' for name in names if name not in existing]
+    if declarations:
+        lines[insertion_index:insertion_index] = declarations
+        changed = True
+    if changed:
+        path.write_text("".join(lines), encoding="utf-8")
+    return changed
 
 
 def annotate_insertions(path: Path, classes: dict[str, tuple[str, ...]]) -> list[str]:
@@ -403,6 +475,15 @@ def main() -> int:
                 verify(path)
                 total += len(edited)
                 print(f"{relative} [{class_name or '<module>'}]: overloaded {", ".join(edited)}")
+    for relative, names in CURATED_TYPE_VARIABLES.items():
+        path = root / relative
+        if not path.is_file():
+            print(f"annotate-stubs: missing {path} (skipped)")
+            continue
+        if ensure_type_variables(path, names):
+            verify(path)
+            total += len(names)
+            print(f"{relative}: ensured TypeVar {', '.join(names)}")
     for relative, classes in CURATED_INSERTIONS.items():
         path = root / relative
         if not path.is_file():

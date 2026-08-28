@@ -194,6 +194,14 @@
          Python tree, suppress the parser-error squiggles on exactly that statement. -->
     <highlightErrorFilter implementation="com.starnotesxj.sageide.highlight.SageSugarErrorFilter"/>
 
+    <!-- Sage generator sugar is represented as a Python tuple assignment
+         (R, x) = PolynomialRing(F).  Keep the exact Sage target types from
+         SageTypeProvider, but suppress only the native checker diagnostic on
+         that shared RHS expression; ordinary Python assignments and call
+         argument diagnostics remain enabled. -->
+    <lang.inspectionSuppressor language="Sage"
+                               implementationClass="com.starnotesxj.sageide.type.SageTypeCheckerSuppressor"/>
+
     <!-- The one silently-breaking Sage/Python difference: in .sage, ^ is
          exponentiation and ^= is power assignment, so Python XOR must be
          written ^^ / ^^=.  The lexer remaps these to the preparse semantics;

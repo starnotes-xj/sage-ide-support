@@ -68,13 +68,14 @@ class AstExtractor:
         source = SourceRef(self.source_kind, locator, digest)
         imports = self.collect_imports(tree)
         imports.update({node.name: f"{module}.{node.name}" for node in tree.body if isinstance(node, ast.ClassDef)})
+        type_parameters = self.collect_type_parameters(tree, imports)
         roles = declaration_roles(tree.body, imports)
         symbols: list[RawSymbol] = [RawSymbol(module, "MODULE", source, confidence="HIGH")]
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                symbols.append(self.function_symbol(node, module, None, imports, source, "FUNCTION", roles.get(id(node))))
+                symbols.append(self.function_symbol(node, module, None, imports, source, "FUNCTION", roles.get(id(node)), type_parameters))
             else:
-                symbols.extend(self.extract_top_level(node, module, imports, source))
+                symbols.extend(self.extract_top_level(node, module, imports, source, type_parameters))
         return sorted(symbols, key=lambda item: (item.qualified_name, KIND_ORDER[item.kind], item.source.locator))
 
     def module_name(self, path: Path) -> str:
@@ -101,13 +102,13 @@ class AstExtractor:
                     imports[alias.asname or alias.name.split(".")[0]] = alias.name
         return imports
 
-    def extract_top_level(self, node: ast.AST, module: str, imports: dict[str, str], source: SourceRef) -> list[RawSymbol]:
+    def extract_top_level(self, node: ast.AST, module: str, imports: dict[str, str], source: SourceRef, type_parameters: dict[str, dict[str, Any]] | None = None) -> list[RawSymbol]:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             return self.extract_aliases(node, module, source)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             return [self.function_symbol(node, module, None, imports, source, "FUNCTION")]
         if isinstance(node, ast.ClassDef):
-            return self.class_symbols(node, module, imports, source)
+            return self.class_symbols(node, module, imports, source, type_parameters)
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             return [RawSymbol(f"{module}.{node.target.id}", "CONSTANT", source_at(source, node.lineno), value_type=type_ref(node.annotation, imports), documentation=doc(node), confidence="MEDIUM")]
         if isinstance(node, ast.Assign):
@@ -121,21 +122,49 @@ class AstExtractor:
             return []
         return [RawSymbol(f"{module}.{alias.asname or alias.name}", "ALIAS", source_at(source, node.lineno), aliases=[f"{node.module}.{alias.name}"], confidence="HIGH") for alias in node.names if alias.name != "*"]
 
-    def class_symbols(self, node: ast.ClassDef, module: str, imports: dict[str, str], source: SourceRef) -> list[RawSymbol]:
+    @staticmethod
+    def collect_type_parameters(tree: ast.Module, imports: dict[str, str]) -> dict[str, dict[str, Any]]:
+        declarations: dict[str, dict[str, Any]] = {}
+        for node in tree.body:
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                continue
+            value = node.value
+            if not isinstance(value, ast.Call):
+                continue
+            constructor = annotation_text(value.func, imports)
+            if constructor not in {"TypeVar", "typing.TypeVar", "typing_extensions.TypeVar"}:
+                continue
+            kind = "TYPE_VARIABLE"
+            declaration: dict[str, Any] = {"name": node.targets[0].id, "kind": kind}
+            named = {
+                keyword.arg: keyword.value
+                for keyword in value.keywords
+                if keyword.arg is not None
+            }
+            if "bound" in named:
+                bound = type_ref(named["bound"], imports)
+                if bound is not None:
+                    declaration["bound"] = bound
+            constraints = [type_ref(argument, imports) for argument in value.args[1:]]
+            declaration["constraints"] = [item for item in constraints if item is not None]
+            declarations[node.targets[0].id] = declaration
+        return declarations
+
+    def class_symbols(self, node: ast.ClassDef, module: str, imports: dict[str, str], source: SourceRef, type_parameters: dict[str, dict[str, Any]] | None = None) -> list[RawSymbol]:
         qualified = f"{module}.{node.name}"
         result = [RawSymbol(qualified, "CLASS", source_at(source, node.lineno), parents=[annotation_text(base, imports) for base in node.bases if annotation_text(base, imports)], documentation=doc(node), confidence="HIGH")]
         roles = declaration_roles(node.body, imports)
         for member in node.body:
             if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 kind = "PROPERTY" if any(isinstance(item, ast.Name) and item.id == "property" for item in member.decorator_list) else "METHOD"
-                result.append(self.function_symbol(member, module, node.name, imports, source, kind, roles.get(id(member))))
+                result.append(self.function_symbol(member, module, node.name, imports, source, kind, roles.get(id(member)), type_parameters or {}))
             elif isinstance(member, ast.AnnAssign) and isinstance(member.target, ast.Name):
                 result.append(RawSymbol(f"{qualified}.{member.target.id}", "PROPERTY", source_at(source, member.lineno), value_type=type_ref(member.annotation, imports), documentation=doc(member), confidence="MEDIUM"))
         return result
 
-    def function_symbol(self, node: ast.FunctionDef | ast.AsyncFunctionDef, module: str, owner: str | None, imports: dict[str, str], source: SourceRef, kind: str, role: str | None = None) -> RawSymbol:
+    def function_symbol(self, node: ast.FunctionDef | ast.AsyncFunctionDef, module: str, owner: str | None, imports: dict[str, str], source: SourceRef, kind: str, role: str | None = None, type_parameters: dict[str, dict[str, Any]] | None = None) -> RawSymbol:
         qualified = ".".join(part for part in (module, owner, node.name) if part)
-        signature = signature_for(node, imports, owner is not None)
+        signature = signature_for(node, imports, owner is not None, type_parameters or {})
         declaration_role_value = role or declaration_role(node, imports)
         return RawSymbol(qualified, kind, source_at(source, node.lineno), signatures=[signature], declaration_role=declaration_role_value, documentation=doc(node), confidence="HIGH")
 
@@ -222,7 +251,7 @@ def declaration_roles(nodes: list[ast.stmt], imports: dict[str, str]) -> dict[in
     return roles
 
 
-def signature_for(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], is_method: bool = False) -> dict[str, Any]:
+def signature_for(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], is_method: bool = False, module_type_parameters: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     args = node.args
     positional = list(args.posonlyargs) + list(args.args)
     defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
@@ -233,7 +262,7 @@ def signature_for(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[st
     parameters.extend(parameter_for(argument, default, imports, True, False) for argument, default in zip(args.kwonlyargs, args.kw_defaults))
     if args.kwarg:
         parameters.append(parameter_for(args.kwarg, None, imports, True, True))
-    type_parameters = explicit_type_parameters(node, imports)
+    type_parameters = explicit_type_parameters(node, imports, module_type_parameters or {})
     return {
         "parameters": parameters,
         "returnType": type_ref(node.returns, imports) or {"state": "UNKNOWN", "expression": None},
@@ -247,12 +276,25 @@ def parameter_for(argument: ast.arg, default: ast.AST | None, imports: dict[str,
     return parameter
 
 
-def explicit_type_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str]) -> list[dict[str, Any]]:
+def explicit_type_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], module_type_parameters: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Emit only declarations explicitly present in the function signature."""
     declarations: list[dict[str, Any]] = []
     annotation_nodes = [argument.annotation for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)]
     annotation_nodes.append(node.returns)
     explicit_names: set[str] = set()
+    declared = module_type_parameters or {}
+
+    def referenced_names(annotation: ast.AST | None) -> set[str]:
+        if annotation is None:
+            return set()
+        return {
+            item.id
+            for item in ast.walk(annotation)
+            if isinstance(item, ast.Name) and item.id in declared
+        }
+
+    for annotation in annotation_nodes:
+        explicit_names.update(referenced_names(annotation))
     for annotation in annotation_nodes:
         if isinstance(annotation, ast.Name) and annotation.id in {"Self", "typing_Self"}:
             explicit_names.add("Self")
@@ -260,6 +302,9 @@ def explicit_type_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef, impor
             explicit_names.add("Self")
     if "Self" in explicit_names:
         declarations.append({"name": "Self", "kind": "SELF"})
+    for name in declared:
+        if name in explicit_names:
+            declarations.append(declared[name])
     return declarations
 
 

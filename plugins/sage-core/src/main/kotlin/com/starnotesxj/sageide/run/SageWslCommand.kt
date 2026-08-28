@@ -80,11 +80,34 @@ internal fun wslConfiguredRunScript(
     arguments: List<String>,
     condaExecutable: String? = null,
 ): String = buildString {
-    appendLine(wslCondaPrelude(environment, condaExecutable))
-    appendLine("sage_executable=${shellQuote(configuredExecutable.trim())}")
-    appendLine("if [ -z \"${'$'}sage_executable\" ]; then sage_executable=\"${'$'}(command -v sage || true)\"; fi")
-    appendLine("[ -n \"${'$'}sage_executable\" ] || { echo \"Sage IDE Support: sage was not found in WSL\" >&2; exit 127; }")
-    append("exec \"${'$'}sage_executable\"")
+    // Keep the command shown in the run console readable.  The old fallback
+    // embedded the full multi-path Conda discovery script here, which made a
+    // normal Sage run look like a probe and obscured the actual script launch.
+    // An explicit executable still bypasses the shell entirely in
+    // SageCommandLineState; this branch is only for settings with no path.
+    val executable = configuredExecutable.trim()
+    if (executable.isNotEmpty()) {
+        append("exec ").append(shellQuote(executable))
+    }
+    else {
+        val configuredConda = condaExecutable?.trim()?.takeIf { it.isNotEmpty() }
+        if (configuredConda != null) {
+            append("eval \"${'$'}(")
+                .append(shellQuote(configuredConda))
+                .append(" shell.bash hook)\" && ")
+        }
+        else {
+            // The SageMath Conda layout is deterministic for the default
+            // WSL installation.  Source that one hook first; only fall back
+            // to the user's shell profile when it is absent.  This keeps the
+            // displayed command to one short launch expression and avoids the
+            // old multi-path discovery loop.
+            append("if [ -f \"${'$'}HOME/miniconda3/etc/profile.d/conda.sh\" ]; then . \"${'$'}HOME/miniconda3/etc/profile.d/conda.sh\"; elif [ -f \"${'$'}HOME/.bashrc\" ]; then . \"${'$'}HOME/.bashrc\" >/dev/null 2>&1 || true; fi; ")
+        }
+        append("conda activate ")
+            .append(shellQuote(environment.ifBlank { "sage" }))
+            .append(" >/dev/null 2>&1 && exec sage")
+    }
     arguments.forEach { append(' ').append(shellQuote(it)) }
 }
 

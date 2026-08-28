@@ -78,9 +78,26 @@ class SageDebugCommandLineStateTest {
             configuredExecutable = "",
             arguments = listOf("/mnt/c/test.sage"),
         )
-        assertTrue(command.contains("sage_executable=''"))
-        assertTrue(command.contains("command -v sage"))
-        assertTrue(command.contains("exec \"${'$'}sage_executable\" '/mnt/c/test.sage'"))
+        assertTrue(command.contains("conda activate 'sage'"))
+        assertTrue(command.contains("exec sage '/mnt/c/test.sage'"))
+        assertTrue(command.contains("${'$'}HOME/miniconda3/etc/profile.d/conda.sh"))
+        assertTrue(command.contains("${'$'}HOME/.bashrc"))
+        assertTrue(!command.contains("for conda_sh"))
+        assertTrue(!command.contains("command -v sage"))
+    }
+
+    @Test
+    fun `configured WSL run wrapper uses explicit conda without exposing discovery probes`() {
+        val command = wslConfiguredRunScript(
+            environment = "sage",
+            configuredExecutable = "",
+            arguments = listOf("/mnt/c/test.sage"),
+            condaExecutable = "/home/user/miniconda3/bin/conda",
+        )
+        assertTrue(command.contains("eval \"${'$'}('/home/user/miniconda3/bin/conda' shell.bash hook)\""))
+        assertTrue(command.contains("conda activate 'sage' >/dev/null 2>&1 && exec sage"))
+        assertTrue(!command.contains(".bashrc"))
+        assertTrue(!command.contains("for conda_sh"))
     }
 
     @Test

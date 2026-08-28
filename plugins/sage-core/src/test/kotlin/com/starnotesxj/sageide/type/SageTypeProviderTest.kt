@@ -138,7 +138,12 @@ class SageTypeProviderTest : SagePluginTestBase() {
                 "polynomial-chain.sage",
                 "F = GF(11)\nR.<x> = PolynomialRing(F)\nf = x^3 + F(2)*x + F(1)\nf.der<caret>ivative()\n",
             )
-            myFixture.doHighlighting()
+            myFixture.enableInspections(com.jetbrains.python.inspections.PyTypeCheckerInspection())
+            val highlights = myFixture.doHighlighting()
+            assertTrue(
+                highlights.none { it.description?.contains("Expected type 'Polynomial_dense_mod_p'") == true },
+                "Sage generator assignment was treated as Python tuple unpacking: ${highlights.mapNotNull { it.description }}",
+            )
             val targets = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
                 .associateBy { it.name }
             val context = defaultContext()
@@ -195,18 +200,154 @@ class SageTypeProviderTest : SagePluginTestBase() {
             myFixture.configureByText(
                 "numeric-reference.sage",
                 "p = 4368590184733545720227961182704359358435747188309319510520316493183539079703\n" +
-                    "F = GF(p)\n",
+                    "F = GF(p)\n" +
+                    "G = GF(4368590184733545720227961182704359358435747188309319510520316493183539079703)\n",
             )
             val context = defaultContext()
             val pReference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
                 .single { it.referencedName == "p" }
             val pType = context.getType(pReference) as? PyClassType
             assertEquals(integer, pType?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+            val pTarget = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .single { it.name == "p" }
+            val pTargetType = context.getType(pTarget) as? PyClassType
+            assertEquals(integer, pTargetType?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+            myFixture.enableInspections(com.jetbrains.python.inspections.PyTypeCheckerInspection())
             val highlights = myFixture.doHighlighting()
             assertTrue(
                 highlights.none { it.description?.contains("Literal[") == true },
                 "Sage numeric assignment still reports a Python literal: ${highlights.mapNotNull { it.description }}",
             )
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
+    fun testGenericGcdCallPropagatesConcretePolynomialReturn() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "arith-misc.pyi")
+        val finiteField = "sage.rings.finite_rings.finite_field_base.FiniteField"
+        val ring = "sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p"
+        val polynomial = "sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p"
+        val index = SageApiIndexQuery(SageApiIndex("10.9", "3.13", listOf(
+            SageApiEntry(finiteField, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(ring, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(polynomial, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(
+                "sage.all.GF",
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(finiteField))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "sage.all.PolynomialRing",
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(SageApiSignature(
+                    parameters = listOf(SageApiParameter("base_ring", SageTypeRef.known(finiteField))),
+                    returnType = SageTypeRef.known(ring),
+                )),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$ring.gen",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(polynomial))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$polynomial.__pow__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(polynomial))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$polynomial.__add__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(polynomial))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$polynomial.__mul__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(polynomial))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$polynomial.__rmul__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(polynomial))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "sage.arith.misc.gcd",
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(
+                            SageApiParameter("a", SageTypeRef.known("GcdT")),
+                            SageApiParameter("b", SageTypeRef.known("GcdT")),
+                        ),
+                        returnType = SageTypeRef.known("GcdT"),
+                        typeParameters = listOf(SageApiTypeParameter("GcdT", SageApiTypeParameterKind.TYPE_VARIABLE)),
+                    ),
+                ),
+                sources = listOf(source),
+            ),
+        )))
+        SageApiIndexService.getInstance().install(index)
+        try {
+            myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/arith/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/finite_rings/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/polynomial/__init__.pyi", "")
+            myFixture.addFileToProject(
+                "site-packages/sage/all.pyi",
+                "from sage.rings.finite_rings.finite_field_base import FiniteField\n" +
+                    "from sage.rings.polynomial.polynomial_ring import PolynomialRing_dense_mod_p\n" +
+                    "from sage.arith.misc import gcd\n" +
+                    "def GF(*args, **kwargs) -> FiniteField: ...\n" +
+                    "def PolynomialRing(base_ring, *args, **kwargs) -> PolynomialRing_dense_mod_p: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/arith/misc.pyi",
+                "from typing import TypeVar\n" +
+                    "GcdT = TypeVar(\"GcdT\")\n" +
+                    "def gcd(a: GcdT, b: GcdT, **kwargs) -> GcdT: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/finite_rings/finite_field_base.pyi",
+                "class FiniteField: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/polynomial/polynomial_ring.pyi",
+                "from sage.rings.polynomial.polynomial_modn_dense_ntl import Polynomial_dense_mod_p\n" +
+                    "class PolynomialRing_dense_mod_p:\n" +
+                    "    def gen(self, n=0) -> Polynomial_dense_mod_p: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/polynomial/polynomial_modn_dense_ntl.pyi",
+                "class Polynomial_dense_mod_p:\n" +
+                    "    def __pow__(self, other) -> Polynomial_dense_mod_p: ...\n" +
+                    "    def __add__(self, other) -> Polynomial_dense_mod_p: ...\n" +
+                    "    def __mul__(self, other) -> Polynomial_dense_mod_p: ...\n" +
+                    "    def __rmul__(self, other) -> Polynomial_dense_mod_p: ...\n" +
+                    "    def derivative(self, *args) -> Polynomial_dense_mod_p: ...\n",
+            )
+            myFixture.configureByText(
+                "generic-gcd.sage",
+                "F = GF(11)\nR.<x> = PolynomialRing(F)\nf = x^3 + F(2)*x + F(1)\ng = gcd(f, f.derivative())\ng.der<caret>ivative()\n",
+            )
+            val context = defaultContext()
+            val targets = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .associateBy { it.name }
+            val gType = context.getType(checkNotNull(targets["g"])) as? PyClassType
+            assertEquals(polynomial, gType?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+            val gcdCall = PsiTreeUtil.collectElementsOfType(myFixture.file, PyCallExpression::class.java)
+                .single { it.callee?.name == "gcd" }
+            val gcdType = context.getType(gcdCall) as? PyClassType
+            assertEquals(polynomial, gcdType?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+            val lookup = myFixture.completeBasic()?.map { it.lookupString }.orEmpty()
+            assertTrue("derivative" in lookup, "generic gcd completion=$lookup")
         } finally {
             SageApiIndexService.getInstance().install(null)
         }
