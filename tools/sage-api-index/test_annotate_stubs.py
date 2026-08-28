@@ -13,6 +13,37 @@ GENERATOR = ROOT / "generate.py"
 
 
 class AnnotateStubsTest(unittest.TestCase):
+    def test_language_protocol_returns_are_generic_multiline_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "protocols.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class Value:\n"
+                "    def __repr__(\n"
+                "        self,\n"
+                "    ): ...\n"
+                "    def __len__(self): ...\n"
+                "    def __eq__(self, other): ...\n"
+                "\n"
+                "def __repr__(self): ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            # The annotation must precede the header colon, not the body
+            # ellipsis.  Keep this assertion explicit so wrapped signatures
+            # cannot regress.
+            self.assertIn("    ) -> str: ...", patched)
+            self.assertIn("def __len__(self) -> int: ...", patched)
+            self.assertIn("def __eq__(self, other): ...", patched)
+            self.assertIn("def __repr__(self): ...", patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
     def test_gcd_typevar_contract_is_indexed_and_idempotent(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import re
+import tokenize
 from pathlib import Path
 
 # ADD: member name -> annotation expression for unannotated defs.
@@ -218,6 +220,24 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
+# Python's data-model methods have a language-level result contract that does
+# not depend on a Sage class.  These are intentionally handled separately from
+# CURATED_ANNOTATIONS: the pass applies to every Sage class with a missing
+# annotation, while leaving an existing Sage-specific annotation untouched.
+# Rich comparisons, __getitem__, arithmetic and __call__ are *not* included;
+# Sage is allowed to return NotImplemented, symbolic values, or a different
+# parent there, so inventing a return type would violate the fail-closed rule.
+PROTOCOL_RETURNS: dict[str, str] = {
+    "__str__": "str",
+    "__repr__": "str",
+    "__format__": "str",
+    "__bytes__": "bytes",
+    "__bool__": "bool",
+    "__len__": "int",
+    "__index__": "int",
+    "__hash__": "int",
+}
+
 _DEF_RE = re.compile(r"^(?P<indent>\s*)def\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
 _RETURN_RE = re.compile(r"\s*->\s*(.+):\s*$")
 
@@ -407,6 +427,82 @@ def annotate_insertions(path: Path, classes: dict[str, tuple[str, ...]]) -> list
     return inserted
 
 
+def _line_offsets(text: str) -> list[int]:
+    offsets = [0]
+    for line in text.splitlines(keepends=True):
+        offsets.append(offsets[-1] + len(line))
+    return offsets
+
+
+def _function_header_colon(text: str, line_offsets: list[int], node: ast.FunctionDef | ast.AsyncFunctionDef) -> int | None:
+    """Locate the colon ending a function header, including wrapped headers."""
+    tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+    seen_def = False
+    opened = False
+    depth = 0
+    for token in tokens:
+        row, column = token.start
+        if row < node.lineno:
+            continue
+        if not seen_def:
+            if token.type == tokenize.NAME and token.string == "def" and row == node.lineno:
+                seen_def = True
+            continue
+        if token.type == tokenize.OP and token.string == "(":
+            opened = True
+            depth += 1
+            continue
+        if not opened:
+            continue
+        if token.type == tokenize.OP and token.string == ")":
+            depth -= 1
+            continue
+        if token.type == tokenize.OP and token.string == ":" and depth == 0:
+            return line_offsets[row - 1] + column
+        # A second def before a header colon means the source was malformed;
+        # do not risk inserting text into an unrelated declaration.
+        if token.type == tokenize.NAME and token.string == "def" and depth == 0:
+            return None
+    return None
+
+
+def annotate_protocol_returns(path: Path) -> list[str]:
+    """Annotate missing returns for safe Python data-model methods.
+
+    AST traversal limits the pass to methods directly declared by a class, so
+    a nested local function named ``__repr__`` is never changed.  Text offsets
+    are used instead of line regexes because generated Sage stubs frequently
+    wrap long parameter lists over multiple lines.
+    """
+    text = path.read_text(encoding="utf-8")
+    try:
+        tree = ast.parse(text, filename=str(path), type_comments=True)
+    except SyntaxError:
+        return []
+    line_offsets = _line_offsets(text)
+    edits: list[tuple[int, str, str]] = []
+
+    def visit_class(node: ast.ClassDef) -> None:
+        for member in node.body:
+            if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                annotation = PROTOCOL_RETURNS.get(member.name)
+                if annotation is not None and member.returns is None:
+                    colon = _function_header_colon(text, line_offsets, member)
+                    if colon is not None:
+                        edits.append((colon, annotation, member.name))
+            elif isinstance(member, ast.ClassDef):
+                visit_class(member)
+
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            visit_class(node)
+    for offset, annotation, _ in sorted(edits, reverse=True):
+        text = text[:offset] + f" -> {annotation}" + text[offset:]
+    if edits:
+        path.write_text(text, encoding="utf-8")
+    return [name for _, _, name in sorted(edits)]
+
+
 def remove_inserted(path: Path, member: str) -> bool:
     # Remove an earlier stub-only forwarding declaration for member.
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -494,6 +590,15 @@ def main() -> int:
             verify(path)
             total += len(edited)
             print(f"{relative}: inserted {", ".join(edited)}")
+    protocol_total = 0
+    for path in sorted(root.rglob("*.pyi")):
+        edited = annotate_protocol_returns(path)
+        if edited:
+            verify(path)
+            protocol_total += len(edited)
+    if protocol_total:
+        total += protocol_total
+        print(f"protocol methods: annotated {protocol_total} missing return contract(s)")
     # Roll back the earlier base-class forwarding hack (matrix0 solve_right).
     matrix0 = root / "sage/matrix/matrix0.pyi"
     if matrix0.is_file() and remove_inserted(matrix0, "solve_right"):

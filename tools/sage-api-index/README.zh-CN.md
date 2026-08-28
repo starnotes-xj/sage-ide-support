@@ -88,3 +88,17 @@ Run it with `--source-manifest manifest.json` instead of `--source-root`. Every 
 - malformed source, invalid manifest, unsupported schema fields, or empty roots return exit code 2.
 
 Unknown and Dynamic are preserved. The generator never fabricates a precise type from an unannotated return or `Any`.
+
+## 合同质量审计
+
+`audit_contracts.py` 对生成后的索引做只读质量审计，把“符号已进入索引”和“调用返回值有可证明的类型合同”分开统计。它不会把公共基类、Python 宽泛内建类型、`Any`、未知返回或动态返回伪装成具体 Sage 类型：
+
+```powershell
+python tools/sage-api-index/audit_contracts.py `
+  --index build/sage-api-real/sage-api-index.json `
+  --source-root build/sage-api-real/stubs `
+  --output build/sage-api-real/contract-audit.json `
+  --markdown build/sage-api-real/contract-audit.md
+```
+
+报告中的 `CONCRETE` 只表示源合同给出了限定名；`TYPE_VARIABLE` 表示返回值随调用参数绑定（例如 `gcd(a: T, b: T) -> T`），而 `UNKNOWN`/`DYNAMIC` 保持 fail-closed。`source.missingReturnCount` 是 stubgen 源文件仍未声明返回值的真实数量，不能用空 expected set 的 `coverageRatio=1.0` 替代。

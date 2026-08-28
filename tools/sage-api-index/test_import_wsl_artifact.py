@@ -654,6 +654,20 @@ class ImportWslArtifactTest(unittest.TestCase):
                     "generatorVersion": "test-generator/1", "sourceDigests": {}, "entries": [],
                 }), encoding="utf-8")
                 Path(command[command.index("--raw-output") + 1]).write_text("{}", encoding="utf-8")
+                manifest = json.loads(Path(command[command.index("--source-manifest") + 1]).read_text(encoding="utf-8"))
+                source = manifest["sources"][0]
+                source_digests = {
+                    source["locator"] + "/" + path: digest
+                    for path, digest in source["fileDigests"].items()
+                }
+                Path(command[command.index("--inventory-output") + 1]).write_text(json.dumps({
+                    "schemaVersion": 1, "basis": "RAW_AST_DECLARATIONS",
+                    "sageVersion": "10.9", "pythonVersion": "3.13",
+                    "generatorVersion": "test-generator/1",
+                    "rawDeclarationCount": 0, "identityCount": 0, "identities": [],
+                    "identityDigest": importer.inventory_identity_digest([]),
+                    "sourceFileCount": len(source_digests), "sourceDigests": source_digests,
+                }), encoding="utf-8")
                 return mock.Mock(returncode=0, stdout='{"entries": 0, "diagnostics": 0, "coverage": 1.0, "missing": 0}\n', stderr="")
             base = dict(
                 distro="Ubuntu", conda="/opt/conda/bin/conda", conda_env="sage",
