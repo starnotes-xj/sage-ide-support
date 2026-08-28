@@ -117,6 +117,31 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
         "Matrix": {
             # solve_left has the same result family as solve_right in Sage 10.9.
             "solve_left": "FreeModuleElement | Matrix",
+            # These contracts are stable across matrix implementations.  The
+            # source implementation constructs a Factorization for fcp(), a
+            # dense ZZ matrix for LLL_gram(), and the dedicated MatrixWindow
+            # wrapper for matrix_window().  subdivision() slices through the
+            # receiver's own implementation and therefore preserves Self.
+            "fcp": "'sage.structure.factorization.Factorization'",
+            "LLL_gram": "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'",
+            "matrix_window": "'sage.matrix.matrix_window.MatrixWindow'",
+            "subdivision": "Self",
+            "decomposition_of_subspace": "'sage.structure.sequence.Sequence_generic'",
+        },
+    },
+    "sage/matrix/matrix0.pyi": {
+        "Matrix": {
+            # matrix0 implements these operations by allocating through the
+            # receiver's own ``new_matrix``/``__copy__`` path.  Runtime
+            # checks over ZZ, QQ and GF(p) therefore preserve the concrete
+            # implementation rather than the abstract Matrix base.
+            "_add_": "Self",
+            "_sub_": "Self",
+            "__neg__": "Self",
+            "__pos__": "Self",
+            "__mod__": "Self",
+            "with_swapped_columns": "Self",
+            "with_swapped_rows": "Self",
         },
     },
     "sage/rings/finite_rings/finite_field_base.pyi": {
@@ -129,15 +154,63 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
         "FiniteField_prime_modn": {
             "order": "'sage.rings.integer.Integer'",
             "gen": "'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp'",
+            "__iter__": "Iterator['sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp']",
         },
     },
-    "sage/rings/finite_rings/element_base.pyi": {
-        "FiniteRingElement": {
+    "sage/rings/finite_rings/finite_field_givaro.pyi": {
+        "FiniteField_givaro": {
+            "gen": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
+            "__iter__": "Iterator['sage.rings.finite_rings.element_givaro.FiniteField_givaroElement']",
+        },
+    },
+    "sage/rings/finite_rings/finite_field_ntl_gf2e.pyi": {
+        "FiniteField_ntl_gf2e": {
+            "gen": "'sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement'",
+            "__iter__": "Iterator['sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement']",
+        },
+    },
+    "sage/rings/finite_rings/finite_field_pari_ffelt.pyi": {
+        "FiniteField_pari_ffelt": {
+            "gen": "'sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt'",
+            "__iter__": "Iterator['sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt']",
         },
     },
     "sage/rings/polynomial/polynomial_ring.pyi": {
         "PolynomialRing_generic": {
             "gen": "'sage.rings.polynomial.polynomial_element.Polynomial'",
+        },
+        "PolynomialRing_dense_mod_p": {
+            # Ordinary GF(p)[x] uses FLINT in Sage 10.9; this replaces the
+            # historical NTL-only declaration when the generated stub has
+            # already been curated once.
+            "gen": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+        },
+    },
+    "sage/rings/integer_ring.pyi": {
+        "IntegerRing_class": {
+            # ZZ.range() and ZZ.__iter__ both yield Sage Integer values; the
+            # outer range result is a Python list and iteration is a generator.
+            "range": "list['sage.rings.integer.Integer']",
+            "__iter__": "Iterator['sage.rings.integer.Integer']",
+            "__call__": "'sage.rings.integer.Integer'",
+            "gen": "'sage.rings.integer.Integer'",
+        },
+    },
+    "sage/rings/rational_field.pyi": {
+        "RationalField": {
+            "__iter__": "Iterator['sage.rings.rational.Rational']",
+            "range_by_height": "Iterator['sage.rings.rational.Rational']",
+            "gen": "'sage.rings.rational.Rational'",
+        },
+    },
+    "sage/rings/finite_rings/element_base.pyi": {
+        "FinitePolyExtElement": {
+            # Finite extension elements expose coefficients in their prime
+            # field.  Sage's concrete IntegerMod implementation varies with
+            # the modulus size, so retain the complete implementation union
+            # rather than collapsing to a parent class.
+            "__getitem__": "'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp'",
+            "__iter__": "Iterator['sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp']",
         },
     },
     "sage/rings/polynomial/polynomial_integer_dense_flint.pyi": {
@@ -191,6 +264,20 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "gcd": "Self",
             "xgcd": "tuple[Self, Self, Self]",
             "quo_rem": "tuple[Self, Self]",
+        },
+    },
+    "sage/rings/polynomial/polynomial_ring.pyi": {
+        "PolynomialRing_dense_mod_p": {
+            "gen": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+        },
+    },
+    "sage/matrix/matrix0.pyi": {
+        "Matrix": {
+            # These two methods always copy and swap in-place matrix storage;
+            # unlike scalar-rescaling helpers they never need to coerce into
+            # a different base ring, so the concrete receiver is preserved.
+            "with_swapped_columns": "Self",
+            "with_swapped_rows": "Self",
         },
     },
     # .sage resolves unqualified factories through sage.all, so its aliases
@@ -287,6 +374,40 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
                 "def solve_right(self, B: FreeModuleElement, check: bool = True, *, extend: bool = True) -> FreeModuleElement: ...",
                 "def solve_right(self, B: Matrix, check: bool = True, *, extend: bool = True) -> Matrix: ...",
             ),
+            # dual=False returns one Sequence; dual=True returns the paired
+            # primal/dual decomposition.  The literal flag makes this
+            # conditional source contract selectable at the call site.
+            "decomposition": (
+                "def decomposition(self, algorithm='spin', is_diagonalizable=False, dual: Literal[False] = False) -> 'sage.structure.sequence.Sequence_generic': ...",
+                "def decomposition(self, algorithm='spin', is_diagonalizable=False, dual: Literal[True] = True) -> tuple['sage.structure.sequence.Sequence_generic', 'sage.structure.sequence.Sequence_generic']: ...",
+            ),
+        },
+    },
+    "sage/matrix/matrix0.pyi": {
+        "Matrix": {
+            # Matrix slicing always constructs a matrix; scalar (int, int)
+            # indexing remains parent-dependent.  These overloads preserve
+            # the concrete receiver for A[:, :], A[0, :], and related forms.
+            "__getitem__": (
+                "def __getitem__(self, key: slice) -> Self: ...",
+                "def __getitem__(self, key: tuple[slice, slice]) -> Self: ...",
+                "def __getitem__(self, key: tuple[int, slice]) -> Self: ...",
+                "def __getitem__(self, key: tuple[slice, int]) -> Self: ...",
+            ),
+            "commutator": (
+                "def commutator(self, other: Self) -> Self: ...",
+            ),
+            "anticommutator": (
+                "def anticommutator(self, other: Self) -> Self: ...",
+            ),
+            "is_symmetrizable": (
+                "def is_symmetrizable(self, return_diag: Literal[False] = False, positive: bool = True) -> bool: ...",
+                "def is_symmetrizable(self, return_diag: Literal[True], positive: bool = True) -> list | Literal[False]: ...",
+            ),
+            "is_skew_symmetrizable": (
+                "def is_skew_symmetrizable(self, return_diag: Literal[False] = False, positive: bool = True) -> bool: ...",
+                "def is_skew_symmetrizable(self, return_diag: Literal[True], positive: bool = True) -> list | Literal[False]: ...",
+            ),
         },
     },
 }
@@ -315,10 +436,39 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "def _acted_upon_(self, other, side) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
         ),
     },
-    "sage/rings/polynomial/polynomial_ring.pyi": {
-        "PolynomialRing_dense_mod_p": (
-            "def gen(self, n=0) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
+    "sage/rings/integer_ring.pyi": {
+        "IntegerRing_class": (
+            "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.integer.Integer': ...",
         ),
+    },
+    "sage/rings/rational_field.pyi": {
+        "RationalField": (
+            "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.rational.Rational': ...",
+        ),
+    },
+    "sage/rings/finite_rings/finite_field_prime_modn.pyi": {
+        "FiniteField_prime_modn": (
+            "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp': ...",
+        ),
+    },
+    "sage/rings/finite_rings/finite_field_givaro.pyi": {
+        "FiniteField_givaro": (
+            "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement': ...",
+        ),
+    },
+    "sage/rings/finite_rings/finite_field_ntl_gf2e.pyi": {
+        "FiniteField_ntl_gf2e": (
+            "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement': ...",
+            "def __iter__(self) -> Iterator['sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement']: ...",
+        ),
+    },
+    "sage/rings/finite_rings/finite_field_pari_ffelt.pyi": {
+        "FiniteField_pari_ffelt": (
+            "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt': ...",
+            "def __iter__(self) -> Iterator['sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt']: ...",
+        ),
+    },
+    "sage/rings/polynomial/polynomial_ring.pyi": {
         "PolynomialRing_dense_finite_field": (
             "def gen(self, n=0) -> 'sage.rings.polynomial.polynomial_element_generic.Polynomial_generic_dense_field': ...",
         ),
@@ -778,6 +928,44 @@ def annotate_overloads(path: Path, members: dict[str, tuple[str, ...]], class_na
     that do not use the generated index.
     """
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    # Rebuild generated one-line overloads instead of stacking a corrected
+    # contract on top of an older one.  A stale pass can leave several
+    # ``@overload`` decorators immediately before a generated declaration;
+    # remove that whole run while retaining the documented implementation,
+    # whose header ends with ``:`` rather than ``...``.
+    cleaned: list[str] = []
+    current_class: str | None = None
+    index = 0
+    changed = False
+    while index < len(lines):
+        line = lines[index]
+        detected_class = _class_name(line)
+        if detected_class is not None:
+            current_class = detected_class
+        if current_class == class_name and line.strip() == "@overload":
+            cursor = index
+            while cursor < len(lines) and lines[cursor].strip() == "@overload":
+                cursor += 1
+            declaration = lines[cursor].strip() if cursor < len(lines) else ""
+            generated_member = next(
+                (
+                    member
+                    for member in members
+                    if declaration.startswith(f"def {member}(") and declaration.endswith("...")
+                ),
+                None,
+            )
+            if generated_member is not None:
+                index = cursor + 1
+                changed = True
+                continue
+        cleaned.append(line)
+        index += 1
+    if changed:
+        path.write_text("".join(cleaned), encoding="utf-8")
+        lines = cleaned
+
     edits: list[tuple[int, list[str], str]] = []
     for index, line, member, current in _walk(path):
         declarations = members.get(member) if current == class_name else None
@@ -794,7 +982,10 @@ def annotate_overloads(path: Path, members: dict[str, tuple[str, ...]], class_na
         edits.append((index, block, member))
     for index, block, _ in reversed(edits):
         lines[index:index] = block
-    if edits and not any(line.strip() == "from typing import overload" for line in lines):
+    if edits and not any(
+        re.match(r"^from typing import .*\boverload\b", line)
+        for line in lines
+    ):
         lines.insert(_typing_import_insertion_index("".join(lines), lines), "from typing import overload\n")
     if edits:
         path.write_text("".join(lines), encoding="utf-8")
@@ -1791,10 +1982,12 @@ def main() -> int:
         path = root / relative
         if not path.is_file():
             continue
-        if any("Self" in annotation for members in classes.values() for annotation in members.values()):
-            if ensure_typing_name(path, "Self"):
-                verify(path)
-                print(f"{relative}: ensured typing import Self")
+        annotations = [annotation for members in classes.values() for annotation in members.values()]
+        for typing_name, marker in (("Self", "Self"), ("Iterator", "Iterator[")):
+            if any(marker in annotation for annotation in annotations):
+                if ensure_typing_name(path, typing_name):
+                    verify(path)
+                    print(f"{relative}: ensured typing import {typing_name}")
     for relative, classes in CURATED_REPLACE_ANNOTATIONS.items():
         path = root / relative
         if not path.is_file():
@@ -1834,6 +2027,15 @@ def main() -> int:
             if ensure_typing_name(path, "Literal"):
                 verify(path)
                 print(f"{relative}: ensured typing import Literal")
+        if any(
+            "Self" in declaration
+            for members in classes.values()
+            for declarations in members.values()
+            for declaration in declarations
+        ):
+            if ensure_typing_name(path, "Self"):
+                verify(path)
+                print(f"{relative}: ensured typing import Self")
     for relative, names in CURATED_TYPE_VARIABLES.items():
         path = root / relative
         if not path.is_file():

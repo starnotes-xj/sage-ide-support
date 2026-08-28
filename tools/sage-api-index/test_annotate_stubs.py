@@ -1098,6 +1098,133 @@ def generic_matroid():
             self.assertEqual(matrix_text, matrix_stub.read_text(encoding="utf-8"))
             self.assertEqual(factory_text, factory_stub.read_text(encoding="utf-8"))
 
+    def test_parent_dependent_matrix_ring_and_conditional_contracts_are_precise(self):
+        """Runtime-proven parent/element contracts remain narrow and idempotent."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixtures = {
+                "sage/matrix/matrix0.pyi": (
+                    "class Matrix:\n"
+                    "    def _add_(self, other):\n        pass\n"
+                    "    def _sub_(self, other):\n        pass\n"
+                    "    def __neg__(self):\n        pass\n"
+                    "    def __pos__(self):\n        pass\n"
+                    "    def __mod__(self, p):\n        pass\n"
+                    "    def anticommutator(self, other):\n        pass\n"
+                    "    def with_swapped_columns(self, c1, c2):\n        pass\n"
+                    "    def with_swapped_rows(self, r1, r2):\n        pass\n"
+                    "    def with_added_multiple_of_column(self, i, j, s):\n        pass\n"
+                    "    def with_col_set_to_multiple_of_col(self, i, j, s):\n        pass\n"
+                    "    def with_rescaled_col(self, i, s):\n        pass\n"
+                    "    def commutator(self, other):\n        pass\n"
+                    "    def __getitem__(self, key):\n        pass\n"
+                    "    def is_symmetrizable(self, return_diag=False, positive=True):\n        pass\n"
+                    "    def is_skew_symmetrizable(self, return_diag=False, positive=True):\n        pass\n"
+                ),
+                "sage/matrix/matrix2.pyi": (
+                    "class Matrix:\n"
+                    "    def fcp(self):\n        pass\n"
+                    "    def LLL_gram(self):\n        pass\n"
+                    "    def matrix_window(self):\n        pass\n"
+                    "    def subdivision(self, i, j):\n        pass\n"
+                    "    def decomposition(self, algorithm='spin', is_diagonalizable=False, dual=False):\n        pass\n"
+                    "    def decomposition_of_subspace(self, M, check_restrict=True, **kwds):\n        pass\n"
+                ),
+                "sage/rings/integer_ring.pyi": "class IntegerRing_class:\n    def range(self, stop):\n        pass\n    def __iter__(self):\n        pass\n",
+                "sage/rings/rational_field.pyi": "class RationalField:\n    def __iter__(self):\n        pass\n    def range_by_height(self, start, end=None):\n        pass\n    def gen(self, n=0):\n        pass\n",
+                "sage/rings/finite_rings/element_base.pyi": "class FinitePolyExtElement:\n    def __getitem__(self, n):\n        pass\n    def __iter__(self):\n        pass\n",
+                "sage/rings/finite_rings/finite_field_prime_modn.pyi": "class FiniteField_prime_modn:\n    def __iter__(self):\n        pass\n",
+                "sage/rings/finite_rings/finite_field_givaro.pyi": "class FiniteField_givaro:\n    def __iter__(self):\n        pass\n",
+                "sage/rings/finite_rings/finite_field_ntl_gf2e.pyi": "class FiniteField_ntl_gf2e:\n    pass\n",
+                "sage/rings/finite_rings/finite_field_pari_ffelt.pyi": "class FiniteField_pari_ffelt:\n    pass\n",
+                "sage/rings/polynomial/polynomial_ring.pyi": (
+                    "class PolynomialRing_dense_mod_p:\n"
+                    "    def gen(self, n=0) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p':\n"
+                    "        pass\n"
+                ),
+            }
+            for relative, content in fixtures.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = {relative: (root / relative).read_text(encoding="utf-8") for relative in fixtures}
+            for content in patched.values():
+                ast.parse(content)
+            matrix0 = patched["sage/matrix/matrix0.pyi"]
+            self.assertIn("from typing import overload, Literal", matrix0)
+            self.assertIn("from typing import Self", matrix0)
+            self.assertIn("def __neg__(self) -> Self:", matrix0)
+            self.assertIn(
+                "def __getitem__(self, key: tuple[slice, slice]) -> Self: ...",
+                matrix0,
+            )
+            self.assertIn(
+                "def is_symmetrizable(self, return_diag: Literal[True], positive: bool = True) -> list | Literal[False]: ...",
+                matrix0,
+            )
+            self.assertIn("def commutator(self, other: Self) -> Self: ...", matrix0)
+            matrix2 = patched["sage/matrix/matrix2.pyi"]
+            self.assertIn("def fcp(self) -> 'sage.structure.factorization.Factorization':", matrix2)
+            self.assertIn("def decomposition_of_subspace(self, M, check_restrict=True, **kwds) -> 'sage.structure.sequence.Sequence_generic':", matrix2)
+            self.assertIn("def decomposition(self, algorithm='spin', is_diagonalizable=False, dual: Literal[True] = True) -> tuple['sage.structure.sequence.Sequence_generic', 'sage.structure.sequence.Sequence_generic']: ...", matrix2)
+            self.assertIn("def __call__(self, x=0, *args, **kwds) -> 'sage.rings.integer.Integer': ...", patched["sage/rings/integer_ring.pyi"])
+            self.assertIn("def __iter__(self) -> Iterator['sage.rings.rational.Rational']:", patched["sage/rings/rational_field.pyi"])
+            self.assertIn("from typing import Iterator", patched["sage/rings/finite_rings/element_base.pyi"])
+            self.assertIn("def __iter__(self) -> Iterator['sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp']:", patched["sage/rings/finite_rings/finite_field_prime_modn.pyi"])
+            polynomial = patched["sage/rings/polynomial/polynomial_ring.pyi"]
+            self.assertEqual(1, polynomial.count("class PolynomialRing_dense_mod_p"))
+            self.assertIn("def gen(self, n=0) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint':", polynomial)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, {relative: (root / relative).read_text(encoding="utf-8") for relative in fixtures})
+
+            index_path = root / "index.json"
+            indexed = subprocess.run(
+                [
+                    sys.executable,
+                    str(GENERATOR),
+                    "--source-root",
+                    str(root),
+                    "--source-locator",
+                    "fixture",
+                    "--sage-version",
+                    "10.9",
+                    "--python-version",
+                    "3.13",
+                    "--output",
+                    str(index_path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, indexed.returncode, indexed.stderr)
+            entries = {entry["qualifiedName"]: entry for entry in json.loads(index_path.read_text(encoding="utf-8"))["entries"]}
+            self.assertEqual(
+                "typing.Self",
+                next(
+                    signature["returnType"]["expression"]
+                    for signature in entries["sage.matrix.matrix0.Matrix.__neg__"]["signatures"]
+                ),
+            )
+            self.assertEqual(
+                "sage.rings.integer.Integer",
+                next(
+                    signature["returnType"]["expression"]
+                    for signature in entries["sage.rings.integer_ring.IntegerRing_class.__call__"]["signatures"]
+                ),
+            )
+            self.assertEqual(
+                "sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint",
+                next(
+                    signature["returnType"]["expression"]
+                    for signature in entries["sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p.gen"]["signatures"]
+                ),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,300 +1,70 @@
-# SageMath CTF IDE 交接说明（精简版）
+# SageMath CTF IDE 交接说明
 
-> 工作区：G:\Projects\sage-math-ctf-ide  
-> 目标：只完成 SageMath 代码智能；CTF 功能暂不推进。  
-> 当前阶段：已完成大量代码与索引工作，但最终插件安装兼容性和 PyCharm 实际补全尚未验收。
-
-## 一、必须遵守的边界
+> 工作区：`G:\Projects\sage-math-ctf-ide`
+> 目标：先完成 SageMath 编辑器智能（类型、补全、文档、语法糖和运行入口），CTF/Notebook 产品功能暂不扩展。
+> 更新：2026-08-28
 
-- 只修改当前工作区；不要修改 G:\Projects\sage-ide-support 或 G:\Projects\intellij-community-sage-pr。
-- 官方基线仅为 G:\Projects\intellij-community-sage-ide，要求 SHA：b0001cd6c53979b384cf7a1e3febe061e2ef687。
-- 不要维护 Sage 类/方法白名单，必须通用实现。
-- native Sage .pyi PSI 是权威；external index 只能 additive、fail-closed。UNKNOWN、DYNAMIC、歧义 overload、无法确认的类型不能强行变成确定类型。
-- 当前 JDK：D:\Java\jdk-25。当前 PyCharm：D:\JetBrains\PyCharm\bin\pycharm64.exe。
-- 当前真实 smoke 文件：C:\Users\星记\Downloads\test2.sage。
+## 1. 不可违反的边界
 
-## 二、核心目标与验收标准
+- 只修改本工作区和 `G:\sage-build\staging-build6`；不得修改 `G:\Projects\sage-ide-support`、`G:\Projects\intellij-community-sage-pr`。
+- 官方基线是 `G:\Projects\intellij-community-sage-ide`，规则要求 SHA `b0001cd6c53979b384cf7a1e3febe061e2ef687`。
+- 不维护 Sage 类名/方法名白名单。类型必须由具体函数契约、调用参数和 active Sage stub 推导；公共基类只用于继承成员查找，不能作为最终返回类型。
+- 对 `UNKNOWN`、`DYNAMIC`、歧义 overload、无法确认的父对象实现必须 fail-closed，不能猜成 `Any`、公共基类或单一具体类。
+- 构建使用 JDK `D:\Java\jdk-25`。官方 checkout 中既有的 `hashcat_sessions.db`、`jupyter/.gitignore`、`notebooks/.gitignore` 不得删除或修改。
 
-真实 PyCharm 打开 test2.sage 后，至少确认：
+## 2. 目标与验收
 
-    def smart_attack(P, Q, p):
-        E = P.curve()
-        return P.order()
+在 PyCharm 2026.2 中打开 `C:\Users\星记\Downloads\test2.sage`，应能实际看到：
 
-- P 不能错误推断成 HyperellipticJacobianHomset。
-- E = P.curve() 不能继续是 Any，应得到可信的具体 Sage 曲线类型。
-- E.a_invariants() 能完成。
-- 同时回归确认：A.solve_right(A).det、R = RealField()、大整数 ct.nth_root、有效 Sage sugar F.<x> = GF(2^8)、F.gen()/F.gens()、Ctrl+Q native .pyi 文档。
+- `P`、`E = P.curve()`、`F = GF(...)`、`R.<x> = PolynomialRing(F)`、`f`、`g = gcd(f, f.derivative())` 的具体可用类型；
+- `P.log(G)`、`E.a_invariants()`、`f.derivative()`、矩阵 `solve_right`/切片等成员补全和 Quick Documentation；
+- Sage 文档的签名、参数/返回分栏、代码块和语义颜色正常；普通 Python 文档不再因 WSL SDK 显示“需要本地 Python SDK”；
+- 输入不完整的 `R.<`/`F.<` 不冻结编辑器，补全尖括号后分析指示器最终停止；运行 Sage 文件不显示多路径 Conda 探测脚本。
 
-用户最新反馈：通过 PyCharm“安装插件”时显示“未找到兼容的插件”，且之前没有交付最新可安装压缩包。下一轮必须优先解决 ZIP 兼容性与交付，不要先继续写测试。
+Gradle、索引和 ZIP 静态证据不能替代上述 fresh PyCharm GUI smoke。
 
-## 三、当前实现状态
+## 3. 当前实现位置
 
-- core/sage-api：index schema/domain/query；namespace、canonical lookup、C3 inherited members、signatures、documentation、保守 return lowering。
-- plugins/sage-core：.sage 文件支持、隐式 sage.all root、external index completion/documentation、indexed member provider、factory return propagation、Sage sugar、运行/调试入口。
-- 关键类型代码：
-  - plugins/sage-core/src/main/kotlin/com/starnotesxj/sageide/type/SageTypeProvider.kt
-  - plugins/sage-core/src/main/kotlin/com/starnotesxj/sageide/type/SageTypeLowering.kt
-  - plugins/sage-core/src/main/kotlin/com/starnotesxj/sageide/sugar/SageStubIndex.kt
-  - core/sage-api/src/main/kotlin/com/starnotesxj/sagemath/sageapi/SageApiIndexQuery.kt
-- real Sage 10.9 curated index：约 84,159 normalized entries；开发索引文件：G:\sage-build\sage-api-curated.json。
-- 最近改动：direct member assignment 通过 receiver 实际 PyClassType 做 C3 member lookup，再用 lowerKnownReturn 降低返回类型；临时 System.err.println 诊断已移除。
-- focused regression 曾因 synthetic fixture 缺少 active Curve.pyi 失败；不要为通过 synthetic fixture 放宽生产 fail-closed 规则。
+- `core/sage-api`：索引 schema、qualified-name 查询、C3 继承成员、签名/文档和保守返回类型降低。
+- `plugins/sage-core`：`.sage` parser、Sage sugar、类型 provider/lowering、completion、documentation provider、运行/调试入口、WSL SDK 边界。
+- `tools/sage-api-index/annotate_stubs.py`：从 Sage stub 源码补充可证明的返回合同；`generate.py` 生成索引；`audit_contracts.py` 审计未知返回；对应测试位于同目录。
+- 关键类型文件：`plugins/sage-core/src/main/kotlin/com/starnotesxj/sageide/type/SageTypeProvider.kt`、`SageTypeLowering.kt`、`sugar/SageStubIndex.kt`。
 
-## 四、当前主要问题
+## 4. 已完成的通用修复
 
-### 1. ZIP 交付与兼容性
+- 具体 receiver 的成员查询、普通函数调用、运算符和赋值边界会传播唯一可证明的 concrete return；结构化成员集合、`Any`、未知/动态返回不会抢答。
+- 矩阵：同 receiver 运算和交换行列返回 `Self`；切片 `__getitem__` 返回 `Self`；整数坐标索引保留父对象相关类型；条件方法使用 `Literal` overload；`decomposition(dual=...)` 保留单序列/二元组分支。
+- 环与元素：`ZZ`/`QQ`/有限域的 `__call__`、`gen`、`__iter__`，有限扩域元素系数索引/迭代器均有具体实现联合；多项式默认 `GF(p)[x].gen()` 为 `Polynomial_zmod_flint`。显式 NTL 实现因父类型未编码实现选择，仍 fail-closed。
+- `gcd(a: GcdT, b: GcdT) -> GcdT` 使用 TypeVar 按实参具体化，不依赖公共基类。
+- SDK 内 Sage `.py`/`.pyi` 不注入 synthetic PSI，避免 `parent is null`；Sage 文档 provider 直接渲染远程索引/PSI 文档和语义高亮；WSL 运行命令不在 EDT 同步探测；不完整 Sage sugar 回退原生 Python parser；生成器赋值误报由 Sage 专用 suppressor 限定抑制。
 
-- 之前执行 buildPlugin -Psage.bundle.fullIndex=G:\sage-build\sage-api-curated.json，构建成功，产物曾位于 plugins/sage-core/build/distributions/sage-core-0.1.0-dev.zip。
-- 该 ZIP 曾被错误直接解压到 PyCharm plugins\sage-core，造成 sage-core\sage-core\lib 二次嵌套；不能把这种目录当作正确安装结果。
-- plugin.xml 当前 id=com.starnotesxj.sagemath.ctf.sage-core，version=0.1.0-dev，依赖 PythonCore，typeProvider 为 order=first。必须核实 since-build/until-build 是否覆盖 PyCharm 2026.2（build 262.9437.214）。
-- 历史日志曾出现旧 Sage IDE Support 1.7.8 与新插件注册 SageMathPostfix 冲突；旧插件目录已尝试删除/禁用，但要用新启动日志确认。
-- 下一轮必须验证：
-  1. ZIP 顶层是否为 sage-core/，且其下直接有 lib/ 与 META-INF/plugin.xml，不能二次嵌套。
-  2. plugin.xml 兼容范围是否覆盖当前 PyCharm；不兼容就做最小修复并重新打包。
-  3. ZIP 是本轮新生成的最新文件，给出明确路径、大小和 SHA-256。
-  4. 从 PyCharm GUI“从磁盘安装插件”实际选择该 ZIP，不能只手动复制解压。
+## 5. 当前合同索引与验证证据
 
-### 2. 真实 PyCharm 验证
+- Sage 10.9/Python 3.13：`2,843` 源文件、`84,367` raw symbols、`84,304` entries、`48` diagnostics；inventory digest `b394d93c7adaefeb7ad4f00f62d624369a25bbf961b885dfc1d6a889506af0dc`。
+- 审计：`52,723` callable entries、`52,283` signatures；`UNKNOWN=32,536`、`DYNAMIC=16`、`TYPE_VARIABLE=236`、`CONCRETE=3,681`、`BROAD_BUILTIN=10,923`、`UNION_OR_OPTIONAL=111`、`GENERIC=342`、`STRUCTURAL_BASE=39`。相对历史 `45,126` UNKNOWN，已减少 `12,590`（`27.89%`）。
+- Python 索引/生成/导入/审计测试：`92` 项通过；`compileall`、AST 解析、`git diff --check` 通过。
+- Gradle：默认 `:plugins:sage-core:test -PrunSageCoreTests=true`、`:core:sage-api:test -PrunSageApiTests=true --rerun-tasks` 和带外部索引的代表性 harness/coverage 测试均 `BUILD SUCCESSFUL`。外部索引混合全套仍有一个旧 `FSMState` fixture 断言失败，不作为本轮合同失败证据。
+- WSL Sage 10.9 实际运行：矩阵/环/有限域/多项式实现 class 与条件返回已逐项检查；`test1.sage`、`test2.sage` 均退出码 `0` 并得到既有 CTF 结果。
 
-- 重启后确认只加载 SageMath Core，没有 Sage IDE Support 和 ImplementationConflict。
-- 必须在 test2.sage 编辑器中真实触发类型/补全；不能只凭 Gradle BUILD SUCCESSFUL、JAR 内容或启动日志宣称成功。
-- 旧日志出现过 SageTypeProvider.generatorType 递归/Invalid PSI；新包运行时需观察，但不要无关扩大范围。
-- 旧日志出现过 Sage WSL 运行配置 EDT 同步探测；若本轮只做插件兼容，不扩大到运行功能。
+## 6. 最新安装包
 
-## 五、下一轮执行顺序
+- 路径：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-parent-dependent-contracts-20260828.zip`
+- 大小：`16,173,030` bytes；SHA-256：`1131DCAC32E33223663B5500692B415F2B48B92370F00733D435F136C362D884`
+- 内嵌 JAR：`14,020,498` bytes；SHA-256：`8E867FB9779A996B5F0A0EAED5D8F8A14A2535C113408B7CF360D31C22C17230`
+- ZIP 顶层为 `sage-core/`，包含 `META-INF/plugin.xml`、完整 `sage-api-index.json`（`84,304` entries）以及 documentation/type-checker/angle-bracket providers。安装必须使用 PyCharm“从磁盘安装插件”，不能二次解压成 `plugins\\sage-core\\sage-core`。
 
-1. 读取本文件、plugins/sage-core/build.gradle.kts、plugin.xml、当前 PyCharm 日志；用 pwd 确认工作区。
-2. 核对 PyCharm 版本、plugin.xml since/until、ZIP 条目结构；必要时读取官方/本地构建配置后做最小修改。
-3. 用 full index 重新 buildPlugin，产出正确可安装 ZIP；验证 ZIP 条目、plugin.xml、版本、兼容范围、full-index、SHA-256、文件大小。
-4. 通过 PyCharm GUI“从磁盘安装插件”安装该 ZIP并重启。
-5. 在 test2.sage 中实际触发 P.curve() 与 E.a_invariants() completion；记录可见结果。失败时再按真实日志/symbol 修复。
-6. 最后再做必要的 plugin structure、semantic、x64、release audit、FinalCheck；FinalCheck 只有官方 checkout HEAD 为要求 SHA 时才可能通过。
+## 7. 当前未完成项与风险
 
-## 六、已有产物线索（必须重新核实）
+- 最新 ZIP 尚未在本轮从磁盘安装并重启 PyCharm；真实 completion、Ctrl+Q 富文档、分析指示器和编辑器冻结修复仍未 fresh 验收。
+- `verify-upstream-staging.ps1 -FinalCheck` 按规则安全失败：官方 checkout 当前 SHA `3b652e714c12009bb69f0a2d2416dad02259fe5d`，不是要求的 `b0001cd6c53979b384cf7a1e3febe061e2ef687`。未修改官方 checkout。
+- 当前没有可用 Windows installer，因此未宣称 x64 installer smoke、release audit 或产品分发 provenance 完成。
+- 若 PyCharm 仍报告 `DirectoryLock`，先在 PyCharm 完全退出后处理单一 stale `.port` 锁，再确认实际加载的 JAR SHA 与上方一致。
 
-- 工作区：G:\Projects\sage-math-ctf-ide
-- 真实索引：G:\sage-build\sage-api-curated.json
-- 构建 ZIP：G:\Projects\sage-math-ctf-ide\plugins\sage-core\build\distributions\sage-core-0.1.0-dev.zip
-- 先前 installable/full-index ZIP：G:\Projects\sage-math-ctf-ide\build\installable\sage-core-full-index-0.1.0-dev.zip
-- PyCharm 用户插件目录：C:\Users\星记\AppData\Roaming\JetBrains\PyCharm2026.2\plugins\sage-core
-- PyCharm 日志：C:\Users\星记\AppData\Local\JetBrains\PyCharm2026.2\log\idea.log
+## 8. 下一步（接手者直接执行）
 
+1. 校验工作树，仅 stage 当前任务文件；不要加入 `.agent-teams/` 或 `hashcat_sessions.db`。
+2. 从磁盘安装第 6 节 ZIP，重启 PyCharm，打开 `test2.sage`，验证 `P.log(G)`、`f.derivative()`、矩阵切片和 `gcd` 的类型/补全，以及 Ctrl+Q 和 `R.<` 编辑体验。
+3. 读取 fresh `idea.log`；若失败，只按新堆栈指向的最小源码和回归测试修复。
+4. 重新运行当前阶段所需 build/test、ZIP 静态核验和 `verify-upstream-staging.ps1 -FinalCheck`，报告真实 exit code；没有 GUI/installer 证据就明确写未完成。
 
-## 八、最新真实 IDE 反馈（2026-08-27）
-
-- 用户在当前安装插件中实际输入 `E.` 仍没有代码提示，说明 `E = P.curve()` 没有得到可用于成员补全的具体 PyClassType。
-- PyCharm 当前显示的 `P` 类型是结构化的 `{curve, order}`，不是具体 Sage 类；这证明当前参数推断只合成了“成员集合/协议形状”，没有落到真实 canonical Sage stub class。
-- 因此下一轮的首要问题不是继续包装 ZIP，而是修复真实类型链：unannotated parameter `P` → canonical active Sage class → direct member call `P.curve()` → assignment target `E` 的具体返回类 → `E.` completion。
-- 不得把 `{curve, order}` 当作最终类型，也不得用 `curve`/`order` 或任何 Sage 类名建立白名单。必须解释为什么 provider 返回结构化类型、为什么 direct assignment provider 没有覆盖/被 Python provider 后续覆盖，并在真实 PyCharm 中重新触发 `E.` 验收。
-- 真实验收仍是：`P` 不能是 `HyperellipticJacobianHomset`；`E` 不能是 `Any` 或仅成员集合；`E.a_invariants()` 必须有补全。
-
-## 七、可信度要求
-
-- 只报告本轮实际执行且读到输出的结果。
-- 明确区分：代码编译、ZIP 结构、插件安装、插件加载、实际 completion smoke。
-- 未完成就写“未完成”，不要用旧证据覆盖新问题。
-- 不要修改官方 checkout，不要提交 commit。
-
-## 八、本轮增量（2026-08-26）
-
-- 已编辑 plugins/sage-core/src/main/kotlin/com/starnotesxj/sageide/type/SageTypeProvider.kt：补强未注解参数的 PSI 回退解析，并让普通赋值目标走已验证的成员调用返回类型传播，避免 P 被结构化 {curve, order} 抢答后使 E 丢失具体类型。
-- 已编辑 plugins/sage-core/src/test/kotlin/com/starnotesxj/sageide/type/SageTypeProviderTest.kt 及 Sage 测试 stub，覆盖 P.curve() -> E 的具体类型链。
-- 本轮通过：compileKotlin、compileTestKotlin、完整 SageTypeProviderTest（29/29），以及 trusted-return 两项回归。
-- 全量 sage-core:test 仍受测试环境外部文件/SDK 配置缺失影响（sage-api-index-envelope.json、full-index 元数据、Python SDK regular-file 配置）；这不是本轮类型链失败，但不能据此宣称全量通过。
-- 新 ZIP：G:\sage-build\staging-build6\sage-core-0.1.0-dev-inference-fix.zip；SHA-256 F091E170B31086B3D16D48D5219723B15C0AE896489D2E2C4730310D27EEE045；尚未取得本轮 PyCharm 重启后的实际编辑器 completion smoke 证据。
-
-## 九、本轮增量（2026-08-27）
-
-- 已继续编辑 SageTypeProviderTest.kt：修复 containingFile 类型断言、补充继承成员 completion 断言；为避免无关 fixture 伪造类型，owner_a.pyi 保持无注解 OwnerA 方法并由索引提供已知返回。
-- 强化测试第一次把 synthetic fixture 的 `a_invariants` 负断言误作为回归条件，导致测试在第 83 行失败；该断言已删除，随后 focused inherited test 重新通过。
-- 当前仍需修复并验证真正的 canonical elliptic chain、tuple/generic 原子 fail-closed、DYNAMIC/UNKNOWN completion fail-closed，以及真实 PyCharm 中 P 不再显示结构化 `{curve, order}`。
-
-## 十、本轮最新阻塞（2026-08-27）
-
-- 本轮尝试修复 strict active-Sage-stub materialization，但两个 focused regression 仍失败：`testInheritedDirectMemberWitnessInfersUniqueOwnerParameter` 实际为 `expected OwnerA, got null`，`testRealEllipticPointReturnPropagatesToCanonicalCurveCompletion` 实际为 `expected sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint, got null`。因此不能宣称类型链已修复。
-- fresh 日志证明 `findClassByCanonicalName` 能命中 `DerivedOwner`、`OwnerA`、`EllipticCurvePoint` 与 `EllipticCurve_generic`；`Integer` fixture 曾因错误文件名无法按 canonical identity 命中，已将 focused fixtures 的目标路径改为 `site-packages/sage/rings/integer.pyi`。剩余 null 位于 witness/type-provider 运行路径，尚未完成根因修复。
-- 本轮还把 witness 收集范围限制到函数 statement list、尝试调用感知签名检查，并移除了直接 assignment 的 structural receiver fallback；这些改动均未获得 focused regression 通过证据，后续接手者应审阅并回归，而不是假设它们正确。
-- 最后一次命令中的 nullable assertion 编译错误已修正为对 `PyClass?` 使用安全调用；但修正后的 focused regression 尚未复跑，不能视为通过。
-- 当前尚未生成本轮新 ZIP，也尚未重启 PyCharm 取得 `test2.sage` 的真实编辑器 completion 证据。
-
-## 十一、交接给下一位执行者的直接提示词
-
-你接手的是 `G:\Projects\sage-math-ctf-ide`，目标是完成并验收 SageMath 类型推断链，不是写状态报告。严格遵守：只改当前工作区；不要修改 `G:\Projects\sage-ide-support`、`G:\Projects\intellij-community-sage-pr` 或官方基线；不要提交 commit；禁止任何类名/方法名白名单；native active Sage `.pyi` PSI 是权威，external index 只能 additive、fail-closed。
-
-先运行 `pwd`，然后只读本 HANDOFF 最新两节和与错误直接相关的源码。当前最后状态：`SageTypeProvider.kt` 已尝试加入 unannotated parameter witness 推断、active canonical Sage stub materialization、direct member assignment 返回传播；`SageTypeProviderTest.kt` 新增 inherited OwnerA 和 EllipticCurvePoint→EllipticCurve_generic→a_invariants 回归。
-
-最近真实结果仍是 2 tests failed：`expected OwnerA but was null`（约第 106/107 行）和 `expected sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint but was null`（约第 62/63 行）。日志已证明 `findClassByCanonicalName` 命中 `DerivedOwner`、`OwnerA`、`EllipticCurvePoint`、`EllipticCurve_generic`；因此不要再先放宽 canonical lookup。focused fixture 的 Integer 目标路径已改为 `site-packages/sage/rings/integer.pyi`，但 focused 命令应重新执行确认。最近一次失败后已修复 nullable assertion 编译错误，但修复后的测试尚未复跑。
-
-下一步必须真正定位并编辑修复 witness/type-provider 运行路径：检查 `inferredParameterType()` 的 witness PSI 形状、`call.callee`/qualifier、`hasUnsafeParameterBinding()`、`query.members()` 的 inherited C3 结果、`hasSafeReturnContract()` 和 provider EP 实际调用；可用短期日志或 focused test assertions，但调试完成后清理噪声。不要把 structural `{curve, order}`、`Any`、UNKNOWN、DYNAMIC、歧义 overload、未解析类当成具体类型。
-
-通过 focused regressions 后再按顺序执行：
-1. compile Kotlin/test Kotlin；
-2. `SageTypeProviderTest` 全类、选定 `SageCompletionTest`/`SageIntelligenceHarnessTest`、`:core:sage-api:test`；
-3. 用 `G:\sage-build\sage-api-curated.json` 重新构建 fresh plugin ZIP 到 `G:\sage-build\staging-build6`；核对 ZIP 顶层 `sage-core/`、`META-INF/plugin.xml`、兼容 build、sidecar/index、大小和 SHA-256；
-4. 通过 PyCharm GUI 从磁盘安装并重启，验证 `C:\Users\星记\Downloads\test2.sage` 中 `P` 是具体 canonical Sage class、`E = P.curve()` 不是 Any/结构化成员集合、`E.` 和 `E.a_invariants()` 有提示；
-5. 运行 x64 smoke、release audit、`verify-upstream-staging.ps1 -FinalCheck`，读取全部真实输出；
-6. 最后更新 HANDOFF 最新增量，明确区分编译、测试、ZIP、安装、加载和真实 completion 证据。没有 PyCharm smoke 证据就不能宣称完成。
-
-## 十二、本轮增量（2026-08-27，类型合同）
-
-- 已移除 `SageTypeProvider` 在多个未注解参数候选间按继承深度猜选的逻辑；现在只有唯一 canonical active Sage stub owner 才会发布类型，并添加“不等继承深度仍歧义”的回归。
-- `tools/sage-api-index/annotate_stubs.py` 新增幂等 OVERLOAD 数据合同：Sage 10.9 文档明确 `Matrix.solve_left/solve_right` 随右端项保持 Vector/Matrix 结果族。该信息经存根→全量索引→通用 `SageTypeLowering` 重载选择传播，Kotlin provider 未按类名/方法名特判。
-- 已在 `G:\sage-build\staging-build6\type-contract-stubs` 建立源存根副本（未修改 `G:\sage-build\sage-typings-10.9`），生成 `sage-api-curated-type-contracts.json`：84,184 entries；`solve_right(Matrix)` 的返回为具体 `sage.matrix.matrix2.Matrix`；二次补丁/生成无差异。
-- 已通过 `test_annotate_stubs.py`、CTF `solve_right` 直接 PyCharm call-type 回归、矩阵 factory 回归及歧义 fail-closed 回归。尚未完成真实 GUI completion smoke。
-- 打包首次未进入构建：PowerShell 将未引用的 `-Psage.bundle.fullIndex=G:\...` 中的 `G:` 解析成 Gradle project path（`Cannot locate tasks ... .bundle.fullIndex=G`）。这不是代码失败；下一次必须以引用的 Gradle property 传入该绝对路径，再核对 ZIP。
-- 该属性的第二次相对路径尝试也失败：`file(fullIndexPath)` 按 `plugins/sage-core` 模块目录解析，`..\..\sage-build` 被归到工作区内不存在的位置。应使用当前 G: 盘根目录的 `\sage-build\...` 形式传递，避免盘符冒号和子项目相对路径两种歧义。
-- 盘根目录形式也被 Gradle 属性规范化为子项目相对路径，`processResources` 尚未执行成功。应改用 `--project-prop` 选项和值分离的传参方式，把 Windows 绝对路径作为独立参数。
-- 以新的 139 MB 外部索引运行整个 `sage-core:test` 时，36 tests 有 3 项失败（两个旧 matrix factory fixture 断言和一个 real call-chain harness）；这些测试本来依赖内置 fixture 索引，外部索引切换后数据源不再一致，需在无 `sage.bundle.fullIndex` 的隔离模式复跑后再判断。并行 `:core:sage-api:test --rerun-tasks` 同时因 Windows JAR ZIP lock 失败；必须先停止 daemon，再串行重跑，不可把此 lock 归因于类型实现。
-
-## 十三、收尾验证（2026-08-27）
-
-- 已用 `--project-prop sage.bundle.fullIndex=G:\sage-build\staging-build6\sage-api-curated-type-contracts.json` 成功执行 `:plugins:sage-core:buildPlugin`，并交付 `G:\sage-build\staging-build6\sage-core-0.1.0-dev-type-contracts-20260827.zip`（16,113,471 bytes，SHA-256 `C056D1913168BE94A870C55201DF13A75EFB33C2488B5DEFD15427888D297431`）。内嵌 JAR 具备全量 139,240,276-byte index、`solve_right` 的 Vector/Matrix 两个重载、plugin id `com.starnotesxj.sagemath.ctf.sage-core`、build 范围 261–263.*。
-- 通过：`test_annotate_stubs.py`；`SageTypeProviderTest` 33/33；包含两个 call-chain harness 的 `SageCompletionTest` 回归；`:core:sage-api:test --rerun-tasks` 中 `SageApiIndexTest` 38/38。全量索引打包配置不应用于依赖内置 fixture 的单元测试；已恢复默认资源后串行通过。
-- `verify-upstream-staging.ps1 -FinalCheck` 已实际运行但安全失败于官方 checkout SHA：当前 `3b652e714c12009bb69f0a2d2416dad02259fe5d`，规则要求 `b0001cd6c53979b384def7a1e3febe061e2ef687`。官方树的 `hashcat_sessions.db`、`jupyter/.gitignore`、`notebooks/.gitignore` 均为预存未跟踪项，未修改。
-- 未做真实 PyCharm GUI 安装/编辑器 smoke，也未做安装器 x64 smoke/release audit：本轮没有生成 installer，且用户允许以直接调用 PyCharm 推断代码完成测试；不得把这些未运行项称为已验收。
-
-## 十四、本轮增量（2026-08-27，通用具体返回合同）
-
-- `SageTypeProvider.getCallType()` 与 `getReferenceType()` 现在统一先走索引签名：按实际调用参数筛选唯一可行 overload，再 materialize 返回注解指向的 canonical active Sage stub class；该路径不按类名/方法名分支，公共基类仅由 `SageApiIndexQuery.members()` 用于继承成员查找。
-- `receiverSpecificMemberReturn()` 对任意具体 Sage receiver 优先使用该 receiver 自己声明的成员合同；`Self`/泛型/union/UNKNOWN/DYNAMIC/歧义签名继续由 `SageTypeLowering` 原子化处理，无法证明时返回 null，不把基类或结构化成员集合冒充最终返回类型。
-- CTF 回归已覆盖 `EllipticCurve(GF(...)) -> EllipticCurve_finite_field`、`E(...) / E.gen(0) -> EllipticCurvePoint_finite_field`、`P.curve() -> EllipticCurve_finite_field`、`P.log(G) -> Integer`，并保留矩阵 `solve_left/solve_right` 的参数相关返回合同。完整 Sage 索引仍由 84,188 个源条目驱动；椭圆曲线/矩阵合同只是对现有 Sage `.pyi` 缺失或过宽声明的源数据修正，不是运行时白名单。
-- 本轮新增测试 stub 的有限域点 `curve()` 覆盖和 `P.log(G)` 返回类型断言；定向与完整 `SageTypeProviderTest` 均通过。真实 PyCharm 安装、编辑器 completion、installer x64 smoke 与 release audit 仍未验证。
-
-## 十五、本轮增量（2026-08-27，嵌套工厂参数推断）
-
-- 真实 IDE 现象为 Sage 运行时类型正确，但 `P.log` 仍被解析为 `sage.all.log`。索引已确认包含 `EllipticCurvePoint_finite_field.log`；根因是外层 `EllipticCurve(GF(11), ...)` 的参数 `GF(11)` 未被降低器识别，导致外层有限域 overload 无法选中。
-- `SageTypeLowering` 已将嵌套 Sage 工厂推断从“仅零参数调用”推广为“任意唯一可匹配签名”，并用递归保护避免循环推断。这样 `GF(11) -> FiniteField` 可参与 `EllipticCurve` overload，随后 `E -> EllipticCurve_finite_field`、`P/G -> EllipticCurvePoint_finite_field`，成员 `log` 才能被 PyCharm 接管。
-- 定向 `SageTypeProviderTest.testCtfFiniteFieldEllipticFactoryProducesFinitePoints` 通过；已重新打包并复制最新 ZIP：`G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-contract-all-20260827.zip`，16117988 bytes，SHA-256 `455771A0E5A4BA99B0A66A5B635203DF89372684F2F9AE21AE6A98EC9EC71361`。
-- 需要在 PyCharm 中重新“从磁盘安装”此新 ZIP 并重启后再验证 `P.log`；此前已安装实例不包含本轮嵌套工厂修复。真实 GUI completion 尚未由本轮自动执行确认。
-
-## 十六、本轮增量（2026-08-27，真实日志 PSI 崩溃）
-
-- 读取真实 `C:\\Users\\星记\\AppData\\Local\\JetBrains\\PyCharm2026.2\\log\\idea.log` 发现 `PythonCore` 在成员/文档解析期间报 `Invalid PSI Element: PyCustomMemberProviderImpl$MyInstanceElement ... parent is null`。日志同时确认 SageMath Core 已加载、canonical `EllipticCurvePoint_finite_field` 与 `EllipticCurve_finite_field` 均命中 WSL `.pyi`。
-- 根因是 `SageApiClassMembersProvider.resolveMember()` 对所有索引成员调用 `alwaysResolveToCustomElement()`，强制使用无父节点的合成 PSI；该异常会破坏 `P.log` 的成员解析并使光标退回全局 `sage.all.log`。
-- 已改为原生 `PyClass.findMethodByName()` 优先；只有原生 `.pyi` 没有成员时才返回索引合成成员。`SageApiIndexServiceTest` 与 CTF 有限域回归均通过。
-- 已重新打包最新 ZIP：`G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-contract-all-20260827.zip`，16118151 bytes，SHA-256 `5B128BEDA7EC6BC216D4411DEAC8DB78BB3BB5ABC17F5D46094457E8D0A3AAC5`。需再次从磁盘安装并重启后观察日志；真实 GUI completion 尚未由本轮自动确认。
-
-## 十七、本轮增量（2026-08-27，基类返回优先级修复）
-
-- 用户重新安装后仍看到 `P: EllipticCurvePoint = E(0, 1)`。经审查确认此前 `genericFactoryAssignedType()` 只有在 native resolve 为空时才查询 callable instance 的 `__call__`；真实 WSL `.pyi` 会把 `E(...)` resolve 到 `EllipticCurve_generic.__call__`，因此其基类返回在赋值阶段抢占了有限域 receiver 的具体合同。
-- 已改为所有实例调用都先由 canonical concrete receiver 查询索引成员，优先该 receiver 自己声明的合同（`__call__`、普通方法均适用）；只有没有具体 receiver 合同时才读取 native/base 或隐式 `sage.all`。同时单签名也优先经参数绑定降低，不能绑定时才做保守已知返回回退。
-- 回归 fixture 已去掉有限域类的原生 `__call__/gen/curve` 覆盖，使之模拟真实 WSL stub 仅在基类声明方法的形态；仍验证 `E -> EllipticCurve_finite_field`、`P/G -> EllipticCurvePoint_finite_field`、`P.curve() -> EllipticCurve_finite_field`、`P.log(G) -> Integer`。focused 及完整 `SageTypeProviderTest` 通过。
-- 最新 ZIP：`G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-contract-all-20260827.zip`，16118427 bytes，SHA-256 `B25C027D93B938AA6DF984E393ACD3D8FA252EC7C362EB2EA8A8ED9C43E6FA3E`。此前所有 ZIP 均不包含此优先级修复；真实 GUI completion 仍需重新安装这一包后确认。
-
-## 十八、本轮增量（2026-08-27，Sage stub 解析循环）
-
-- 用户安装第十七节 ZIP 后确认 `P.log` 已能补全；但读取真实 `idea.log` 发现，在空 `P.log()` 与参数输入完成后，PythonCore 会反复报告 `PyCustomMemberProviderImpl$MyInstanceElement parent is null`，InspectionRunner 因此持续重跑并使右上角保持“正在分析”。这不是 `log` 的返回合同或某个特定函数的类型映射错误。
-- 根因是 `SageApiModuleMembersProvider` 将外部索引生成的 synthetic members 也注入 Sage SDK 自己的 `.pyi` 文件；Python 的 `from ... import ...` 解析随即拿到无父节点 synthetic PSI。现已通用地跳过所有 active Sage stub 文件，保留 native `.pyi` 作为权威来源；外部索引只补充用户代码显式导入的 Sage 模块。该边界不含任何类名或方法名分支。
-- `SageStubIndex` 的正常命中、未命中和 canonical lookup 日志已从 `warn` 降为 `debug`，避免每次类型查询写入成千上万条 warning 并进一步拖慢分析。
-- 通过：`SageTypeProviderTest` 与 `SageApiIndexServiceTest` 的定向 Gradle 回归；full-index `buildPlugin`。最新 ZIP 已覆盖为 `G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-contract-all-20260827.zip`，16,118,482 bytes，SHA-256 `6E5614EACE50E43C8D76E657B83302C56DB2DAC7991D03640AA6CB6BA2B20117`；内嵌完整 `sage-api-index.json`（139,245,255 bytes）。尚未取得安装此新 ZIP 后的真实 PyCharm 编辑器停止分析 smoke 证据。
-
-## 十九、本轮增量（2026-08-27，保存与文档收口）
-
-- 已提交上一轮 Sage 智能实现，提交号为 `acb30ec`（“让 SageMath 智能链路以严格具体合同驱动”）。本轮未修改官方 upstream、旧插件仓库或 staging 之外的 Sage 源存根。
-- 已阅读 `docs/FEATURE-STATUS.zh-CN.md`、`docs/IDE-PLAN.zh-CN.md`、`docs/MIGRATION-MAP.zh-CN.md`、`docs/SAGE-INTELLIGENCE-SPEC.zh-CN.md`、`docs/SAGE-SEMANTIC-COVERAGE-MATRIX.zh-CN.md`、`docs/STATUS.zh-CN.md` 和 `tools/sage-api-index/README.zh-CN.md`。当前执行边界收窄为 Sage 原生编辑器智能：索引、具体类型、补全、参数信息、Quick Documentation、跳转/source-map；CTF/Notebook/发行扩展暂不作为本轮完成条件。
-- 当前 staged Sage 10.9/Python 3.13 contract index 的真实计数为 `84,188` normalized identities、`84,221` raw AST declarations、`2,843` source files；`sage-api-curated-type-contracts.coverage.json` 的 expected set 为空，不能把 `coverageRatio=1.0` 当成全量语义覆盖证明。当前 staging 目录也没有 `sage-api-index-envelope.json`/`artifact-receipt.json`，所以 product-sidecar provenance 尚未验收。
-- 已将 `SageApiIndexServiceTest`/`SageIntelligenceHarnessTest` 中的历史固定计数和旧单一 `solve_right` 返回断言改为当前合同的不变量：根命名空间唯一且规模合理，`solve_right` 保留 Vector/Matrix 两个已知返回族，`nth_root` 使用当前已验证的 Integer 返回；sidecar 测试在开发目录缺少 envelope/receipt 时明确跳过，而不是制造假失败。
-- 已同步更新 `docs/STATUS.zh-CN.md`、`docs/FEATURE-STATUS.zh-CN.md`、`docs/MIGRATION-MAP.zh-CN.md` 与 `docs/SAGE-SEMANTIC-COVERAGE-MATRIX.zh-CN.md` 的计数和验证边界，避免继续使用过期的 `84,159/84,187/2,839/FULL envelope` 结论。
-- 本轮新增测试/文档改动已提交为第二个 Lore commit（当前短 SHA 以 `git log` 为准）；真实 PyCharm 安装、编辑器补全、停止分析 smoke 仍必须单独记录，不能用 Gradle 或 ZIP 证据替代。
-
-## 二十、本轮增量（2026-08-28，SDK 模块 PSI 边界修复）
-
-- 读取 `C:\\Users\\星记\\AppData\\Local\\JetBrains\\PyCharm2026.2\\log\\idea.log` 的最新堆栈：`PyDeprecationInspection` → `PyiUtil.findSimilarElement` → `PyModuleType.resolveMemberInPackageOrModule`，仍在解析 `PyCustomMemberProviderImpl$MyInstanceElement` 时触发 `parent is null`。这证明只排除 `.pyi` 仍不够，WSL Sage SDK 的运行时 `.py` 包模块也会进入同一解析路径。
-- `SageApiModuleMembersProvider` 现统一跳过所有 `SageStubIndex.isSageSdkFile(module)`（包括 `site-packages/sage/*.py`、`.pyi` 和包模块），同时保留用户代码显式 `sage.*` 模块的索引补全。该修复仍是文件来源边界，不含任何 Sage 类名/方法名白名单。
-- 生产回归通过：`SageApiDocumentationProviderTest`/`SageIntelligenceHarnessTest` 定向回归、插件全量 `:plugins:sage-core:test`（配置 Python 3.13 SDK）和外部 Sage 10.9 `SageApiIndexServiceTest` + `SageIntelligenceHarnessTest` 均 `BUILD SUCCESSFUL`。
-- 正常隐式 Sage 名称命中日志也已从 `WARN` 降为 `DEBUG`（`SageReferenceResolveProvider`），避免 `GF`/`EllipticCurve` 的成功解析刷屏；真正的索引加载失败仍保持 `WARN`。
-- 已用同一份全量合同重新打包：`G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-contract-all-20260828.zip`，16,118,487 bytes，SHA-256 `EF29EDF7D37166D6F2F62E56225F23288A487FB5048B44635651B6A8B69B9689`；ZIP 顶层为 `sage-core/`，内嵌 index 为 Sage 10.9/Python 3.13、84,188 entries、139,245,255 bytes，`Matrix.solve_right` 保留 `FreeModuleElement | matrix2.Matrix` 两个返回族。
-- 直接运行用户样例的 Sage 10.9 WSL 结果正常：`EllipticCurve_finite_field_with_category`、`EllipticCurvePoint_finite_field`、`EllipticCurvePoint_finite_field`，`P.log(G)=12`，`P.curve()` 返回有限域椭圆曲线，`E.a_invariants()` 为 `(0, 0, 0, 1, 1)`。这只证明运行时契约，不等于 PyCharm 编辑器验收。
-- 最新日志仍属于修复前/同一启动会话的已有记录；尚未重启并重新安装 `20260828` ZIP，因此“停止分析”和 `parent is null` 是否在 fresh 会话消失仍未验证。下一步必须从磁盘安装该 ZIP、重启 PyCharm，再用 `test2.sage` 做真实 completion/Quick Documentation/analysis-spinner smoke。
-
-## 二十一、本轮增量（2026-08-28，00:05 安装结果与 DirectoryLock）
-
-- 用户提供的启动错误是 PyCharm `DirectoryLock` 失败，不是 Sage 类型合同异常：`C:\Users\星记\AppData\Local\JetBrains\PyCharm2026.2\.port` 是 0 字节 `ReparsePoint`，创建于 `00:05:57`，Windows 当前无法访问或删除；同一堆栈还报告 Unix socket `bind/connect` 的 `Invalid argument`，并未找到有效 `.lock`。只读检查时没有运行中的 `pycharm64.exe`，所以该文件目前表现为上次启动/重启留下的 stale lock；尚未删除或声称已修复。
-- `idea.log` 的 `00:05:58` 启动记录随后在 `00:06:10`、`00:06:18`、`00:06:22` 继续出现 `PyCustomMemberProviderImpl$MyInstanceElement parent is null`；同一会话的 `SageReferenceResolveProvider` 成功命中仍以 `WARN` 记录。最新源码已将成功命中降为 `DEBUG`，因此这组日志证明 00:05 会话实际加载的不是最新 `3cc8443` 代码行为。
-- 当前有效插件目录 `C:\Users\星记\AppData\Roaming\JetBrains\PyCharm2026.2\plugins\sage-core` 的核心 JAR 创建/修改时间仍为 `2026-08-27 23:29:15`，SHA-256 为 `6ED06694C64048B62E04A99657912913E3E7AAFC03921B16B5A332E08EF8F908`，与 `sage-core-0.1.0-dev-contract-all-20260827.zip` 内嵌 JAR 完全一致；它不等于 00:05 生成的 `20260828` ZIP 内嵌 JAR SHA `274579EE3C00545C878B1B08D5804B105415505393FF4F13328C3624C51277CD`。因此“00:05 执行了安装”不能证明 20260828 包已经成为有效运行时包，可能被 Settings Sync 保留/回滚为旧包。
-- 00:22:22 的 `SettingsSyncPluginManager` 又记录了一次 `Installed plugin com.starnotesxj.sagemath.ctf.sage-core`，并在 `00:22:24` 生成 `.updated_plugins_list`；当前仍未取得新包重新安装后的 fresh completion/Quick Documentation/analysis-spinner 证据。下一步应先在 PyCharm 完全退出后处理这个单一 `.port` 锁，再确认插件 JAR SHA 等于 20260828 包，最后重启做真实 `test2.sage` smoke。
-
-## 二十二、本轮增量（2026-08-28，Sage Quick Documentation 与 Minimap）
-
-- 用户反馈在 Sage 文件中按 `Ctrl+Q` 只显示“需要已配置的本地 Python 3 SDK 来呈现 docstring”。根因是 `SageApiDocumentationProvider.findEntry()` 对已解析到真实 `.pyi` 声明的目标主动返回 `null`，把 Sage 文档交还给 Python 原生 provider；远程 WSL Sage SDK 没有本地 Python SDK 时，原生 provider 无法呈现 docstring。
-- 已移除该 Sage 边界内的 native-target 让渡：对 `.sage` 文件和 Sage SDK stub，索引按精确 qualified name 直接提供 Quick Documentation；普通 `.py` 文件仍由 provider context gate 隔离，不消费 Sage 索引。`SageApiDocumentationProviderTest.testSageIndexedDocumentationWinsWithoutLocalPythonSdk` 与 `SageIntelligenceHarnessTest.testPsiDocumentationProviderRendersIndexedSignatureAndDocumentation` 已通过。
-- 用户所见右上角代码缩略图来自 PyCharm 用户配置 `C:\Users\星记\AppData\Roaming\JetBrains\PyCharm2026.2\options\Minimap.xml` 的 `enabled=true`，不是 Sage 插件。PyCharm 当前未运行时已将该单项改为 `enabled=false`；没有删除缓存或其他 IDE 配置，重启后应不再显示缩略图。
-- 本轮仅修改 Sage 文档优先级、对应回归测试、plugin.xml 注释和上述 Minimap 单项配置；定向文档回归及带 Python 3.13 SDK 参数的完整 `:plugins:sage-core:test`（109 tests）均通过。已重新打包为 `G:\sage-build\staging-build6\sage-core-0.1.0-dev-docfix-20260828.zip`，16,117,418 bytes，SHA-256 `C2335711113E5DF50DD401C7AD8C5A14694CBA370F2F83F40FC37A1D58A4B710`；内嵌 core JAR 为 13,964,397 bytes、SHA-256 `BA785E390C1E6CC30F53A3007C4205C621F829CD0791BBD7A57A9E00A4C4E166`，全量索引 139,245,255 bytes。该新包尚未安装，因此 fresh Ctrl+Q 结果仍需在实际加载新 JAR 后确认。
-
-## 二十三、本轮增量（2026-08-28，Quick Documentation 富文本渲染）
-
-- 用户反馈 Sage 文档的 `Parameters`/`Returns` 等字段失去此前的蓝色分栏效果，三反引号代码围栏在 Ctrl+Q 中被原样显示。根因是 Sage provider 为接管远程 WSL 文档后，把整个 body 作为 XML 普通文本转义，未使用 IntelliJ `DocumentationMarkup` 的 sections 结构，也没有解析 Markdown/reStructuredText 代码标记。
-- `SageApiDocumentationProvider` 现对索引文档统一执行轻量、无外部依赖的富文本渲染：标准字段（中英文参数、返回、示例、测试、输入/输出、注意、参考、作者、算法等）使用 `DocumentationMarkup.SECTIONS_START`/`SECTION_HEADER_START`/`SECTION_SEPARATOR`，恢复 PyCharm 的 section header 样式；` ``inline`` `、`` `inline` ``、粗体、项目列表和 ` ```lang ... ``` ` 代码围栏分别转换为 HTML code/list/pre 区域；Sage 文档常用 `示例::`/`TESTS::` 缩进代码也转为 `<pre><code>`。代码块使用 XML 转义但保留真实换行，摘要不会因 stub body 重复提取而显示两次。
-- 新增 `SageApiDocumentationProviderTest.testIndexedDocumentationPreservesSectionsAndRendersFencedCode`，直接反射调用最终 renderer 验证 sections、蓝色 section class、inline code、保留多行 fenced code 及三反引号不泄漏。该测试与完整 `:plugins:sage-core:test`（配置 Python 3.13 SDK，109 tests）均 `BUILD SUCCESSFUL`；输出仅有既有 Kotlin unchecked/deprecation/safe-call warnings。
-- 已用完整 Sage 10.9/Python 3.13 contract index 重新打包：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-docformat-20260828.zip`，16,127,356 bytes，SHA-256 `49E426B17DD06FCFEF8ECD40196807ED0A40042F5B84AB5FC2E7F61801DC8116`；内嵌 core JAR SHA-256 `E90A47861EB879586B9F31FB46EC9730F29DBC99C13459C7D3ED69E2A018B94A`，`sage-api-index.json` 为 139,245,255 bytes。该包已完成构建和静态 ZIP/JAR/index 核验，但尚未在本轮从磁盘重新安装并重启 PyCharm 做真实 Ctrl+Q/编辑器渲染 smoke。
-
-## 二十四、本轮增量（2026-08-28，WSL 原生 Python 文档与语义高亮）
-
-- 用户截图中的红色提示来自 Python 原生 `PyRuntimeDocstringFormatter`：其外部格式化器只调用 `PythonSdkType.findLocalCPython(module)`，WSL Sage 解释器不满足“本地 SDK”条件。`SageApiDocumentationProvider` 现在在 `.sage`/Sage stub 上保留精确索引优先；索引未覆盖的原生 Python 目标改为直接读取 `PyDocStringOwner` 的 PSI docstring，并只复用 `PythonDocumentationProvider.getQuickNavigateInfo()` 的本地 PSI 路径，不再调用会产生该红色错误的 `generateDoc()` formatter。
-- 原生 fallback 先选已解析的函数/类，再才回退到父级 `PyDocStringOwner`，避免把整个 `.sage` 文件显示成 `File "native.sage"`。当无本地 SDK 导致 Python provider 的签名退化为 `Any` 时，改从 PSI 注解生成具体 `def ... -> ...`；参数、返回、代码围栏和标准 section 继续通过现有 `DocumentationMarkup` 渲染。
-- Sage 索引签名的 `def`/`class`、函数名、参数、自参数、注解、操作符和默认值统一调用 PythonCore 的 `PythonDocumentationHighlightingService` 与 `PyHighlighter` 语义键；代码块以 `data-language` 交给同一高亮服务。颜色由 PyCharm 当前主题决定，不硬编码颜色值，因此可保持截图中不同语义的颜色区分。
-- 新增 `SageApiDocumentationProviderTest.testNativePythonDocumentationAvoidsRemoteSdkFormatter`，覆盖跨文件 `.sage`→`.py` 函数解析、具体注解签名、语义 `<span>`、Parameters/Returns section 和无 `QDOC.python.3.sdk.needed.to.render.docstrings`；更新 harness 断言先去 HTML 标签再比较文本，兼容真实高亮输出。`compileKotlin`/`compileTestKotlin` 与完整 `:plugins:sage-core:test`（配置 Python 3.13 SDK）均 `BUILD SUCCESSFUL`。
-- 使用完整 Sage 10.9/Python 3.13 contract index 重新打包并静态核验：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-native-docs-20260828-r3.zip`，16,133,017 bytes，SHA-256 `86228957F5F99847F1316148E2FF1C522F1BD222D7A0EA872401C011A0E44F8C`；ZIP 顶层为 `sage-core/`，内嵌 `lib/sage-core-0.1.0-dev.jar` 为 13,979,928 bytes、SHA-256 `DBD5C3EC5951DE00886CCC37439E20B67AA0B6CBE638395B4F217728975D3E5A`，其中确认存在 `META-INF/plugin.xml` 与 `sage-api-index.json`；plugin id `com.starnotesxj.sagemath.ctf.sage-core`、版本 `0.1.0-dev`、build 范围 `261–263.*`，内嵌索引 139,245,255 bytes。
-- 仍未从磁盘安装此最新 ZIP 并重启 PyCharm 做 fresh GUI smoke；因此尚不能声称截图中的真实 `random.Random`、`P.log(G)` Ctrl+Q 结果和“正在分析”是否最终停止已经验收。安装时必须选择该 ZIP 的“从磁盘安装插件”，不要把 ZIP 手动二次解压到 `plugins\\sage-core\\sage-core`。
-
-## 二十五、本轮增量（2026-08-28，多项式运算与 derivative 具体返回合同）
-
-- 用户在 `test1.sage` 中输入 `f.derivative()` 无补全的根因不是 `derivative` 单个方法缺失，而是多项式链的中间赋值 `f = x^3 + F(2)*x + F(1)` 被 Python 原生运算推断为 `Polynomial_dense_mod_p | Any/NotImplemented`，从而丢失了 `f` 的具体 Sage 类；另外 dunder 函数的 `qualifiedName` 在 PSI 中为空时，旧代码只得到模块级名称，无法查询 `Polynomial_dense_mod_p.__pow__`/`__add__` 等合同。
-- `SageTypeProvider` 与 `SageTypeLowering` 现从 containing class 组合 Sage dunder 的 canonical qualified name；为任意具体 Sage receiver 的 call-site/operator 先查询 active stub 与外部索引的精确成员合同，并在赋值边界递归解析 `PyBinaryExpression`、反射运算、实例 `__call__` 和普通函数调用。仅在唯一具体合同可证明时发布返回类；`Any`、`Unknown`、`NotImplemented`、union、歧义 overload 和公共基类不会被提升为最终类型。该路径没有类名/方法名白名单，公共基类只参与索引继承成员查找。
-- `annotate_stubs.py` 为 Sage 10.9 多项式合同补充了 `PolynomialRing` 有限域重载、具体 ring `gen` 返回、`Polynomial_dense_mod_p`/`Polynomial_zmod_flint` 的 `__pow__`、加法、乘法、反射乘法和 `derivative` 具体返回；脚本二次运行幂等，`test_annotate_stubs.py` 的 2 个测试通过。重新生成的索引包含 2,843 个源文件、84,234 个 raw symbols、84,198 个 entries，索引文件 139,170,649 bytes。
-- 新增回归覆盖 `F = GF(11)`、`R.<x> = PolynomialRing(F)`、`f = x^3 + F(2)*x + F(1)` 到 `f.derivative()`：`x`、`f` 与 derivative 调用均 materialize 为 `sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p`，且 completion 包含 `derivative`。该 focused Gradle 测试本轮复跑结果为 `BUILD SUCCESSFUL`；此前完整 `:plugins:sage-core:test`、外部 full-index 的 31 项 harness/index 回归、`:core:sage-api:test`（38+6）也均通过。
-- 当前可安装包为 `G:\\sage-build\\staging-build6\\sage-core-0.1.0-dev-polynomial-contracts-20260828.zip`，大小 16,139,381 bytes，SHA-256 `3631FA4FC9FEA6464344C9591CFF297AA507345D02695906A8D0A8C9F7EAA512`；工作区 `build\\distributions` ZIP 与 staging 包哈希一致，包内含完整索引与 Python/Sage 两个 documentation provider 注册。
-- `verify-upstream-staging.ps1 -FinalCheck` 仍因官方 checkout 当前 SHA `3b652e714c12009bb69f0a2d2416dad02259fe5d` 不等于规则要求的 `b0001cd6c53979b384def7a1e3febe061e2ef687` 而安全失败；未修改官方 checkout。windows release audit/installer smoke 本轮没有可用 installer，未宣称通过。
-- 本轮没有从磁盘重新安装并重启 PyCharm，因此 `test1.sage`/`test2.sage` 的真实编辑器 completion、Ctrl+Q 富文档和“正在分析”停止状态仍未完成 fresh GUI 验收。必须安装上述 ZIP 后重启，在 `f.derivative()` 光标处确认具体 `Polynomial_dense_mod_p` 成员和文档；不能用 Gradle 或 ZIP 静态检查替代这一项。
-
-## 二十六、本轮增量（2026-08-28，运行 EDT 异常与数字引用）
-
-- 用户附带的完整堆栈已确认：运行 Sage 文件时的异常是 OSProcessHandler.checkEdtAndReadAction() 报告的 “Synchronous execution on EDT: wsl.exe ...”，调用链为 SageAutoDetect.exec → detectWslRuntime → SageRuntimeService.resolveWslExecutables → SageRunConfiguration.resolveSageExecutables → SageCommandLineState.startProcess。这是宿主线程阻塞等待 WSL 探测，不是 Sage 脚本或类型索引失败。
-- SageRunConfiguration.usesConfiguredWslRuntime() 现在对“设置为 WSL 且未选择托管 Sage Runtime SDK”的运行配置统一短路 host probe，即使 wslSageExecutable 为空也不调用 resolveWslExecutables()。SageCommandLineState 在有绝对 Sage 路径时仍使用简洁的 wsl.exe -d ... -- <sage> <script>；没有路径时改用目标 /bin/bash -lc 子进程激活 Conda 并在子进程内 command -v sage，不在 EDT 上等待。调试状态沿用同一短路并使用已有 WSL debug wrapper。
-- SageTypeProvider.getReferenceExpressionType() 新增用户 .sage 赋值目标回溯：对 p = <integer literal> 的后续引用复用 assignment-boundary literalAssignedType()，因此 GF(p) 参数检查看到的是 sage.rings.integer.Integer，不再显示/报告 Python Literal[<number>]。该逻辑不含 Sage 类名/方法名白名单。
-- 完成 Sage 专用 SageAngleBracketTypedHandler 注册：在 R.、F. 等简单目标后输入 < 自动插入 <> 并将光标放在中间；比较表达式不触发，手动输入已有 > 时跳过重复字符。修正 raw Regex 中的转义，并将测试改为 write-action 内直接调用 delegate，避免测试平台对 < 键的事件吞字造成假失败。
-- 通过验证：./gradlew :plugins:sage-core:test -PrunSageCoreTests=true --project-prop sage.python.testSdk=D:/Python314/python.exe --no-daemon --console=plain 为 BUILD SUCCESSFUL；定向运行/调试、数字引用、尖括号 handler 测试也为 BUILD SUCCESSFUL。直接执行用户脚本 wsl.exe -d Ubuntu -- /home/starnotes/miniconda3/envs/sage/bin/sage /mnt/c/Users/星记/Downloads/test1.sage 退出码为 0，输出曲线参数及 crypto{s1ngul4r_s1mplif1c4t1on}。
-- 已重新构建并静态核验安装包：G:\sage-build\staging-build6\sage-core-0.1.0-dev-edt-literal-20260828.zip，16,142,754 bytes，SHA-256 202DBD64648575EE97E8E23EB38D409C2B3CDE046BEB66586D5158CEB6D289AD；顶层 sage-core/，内嵌 lib/sage-core-0.1.0-dev.jar 13,989,997 bytes（SHA-256 3B208DA128D28A60FBBC5421B8431EE3A9F9A58488D762B55A557F3DF080D266），JAR 内确认 META-INF/plugin.xml、sage-api-index.json（139,170,649 bytes）、SageAngleBracketTypedHandler、运行态和类型 provider 新类。该 ZIP 尚未在 PyCharm 中从磁盘安装并重启，因此仍需 fresh GUI 验证实际运行命令、p 类型提示、f.derivative() completion、Ctrl+Q 和分析指示器。
-- 另以插件子 shell 的等价路径执行了 WSL Conda 激活后 command -v sage，再运行 test1.sage；退出码为 0，输出同一 flag，证明运行时 wrapper 本身可用。
-
-## 二十七、本轮增量（2026-08-28，Sage 语法糖解析死循环）
-
-- 用户安装插件后报告 PyCharm 无法编辑、鼠标消失并最终卡死。读取真实 `C:\Users\星记\AppData\Local\JetBrains\PyCharm2026.2\log\threadDumps-freeze-20260828-135221-PY-262.9437.214` 确认 EDT 连续 41 秒停在 `DocumentCommitThread -> SageParser.parseRoot -> SageParser.parseSugarStatement`；`report.txt` 给出 `parseSugarStatement 24300ms`，所有采样均在 `SageParser.kt:81`。
-- 根因是编辑器输入不完整的 `R.<`/`F.<` 时，`parseSugarStatement()` 正确回滚并返回 `false`，但 `parseRoot()` 忽略返回值，没有交回 Python parser，外层 `while (!builder.eof())` 因当前位置未前进而无限重试。该 EDT 死循环解释了编辑、鼠标和窗口冻结；不是 WSL 运行或 Sage 类型索引问题。
-- `SageParser.parseRoot()` 现检查 sugar 分支的 Boolean 结果；不完整/不匹配时立即调用原生 `statementParser.parseStatement()`，保证解析位置继续前进。新增 `testIncompleteSugarFallsBackToPythonParser` 回归，覆盖逐键输入的 `R.<` 状态；没有类名/方法名白名单或运行时特判。
-- 通过验证：`SageParserParsingTest` 定向测试 BUILD SUCCESSFUL；完整 `:plugins:sage-core:test`（Python 3.13 测试 SDK）BUILD SUCCESSFUL。冻结会话的 `pycharm64` 进程随后已不存在，未对用户文件执行删除操作。
-- 已重新构建并复制修复包：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-parser-freeze-fix-20260828.zip`，16,142,769 bytes，SHA-256 `3AFF725F32527418AC634D7C461F74CA2D49240721F69A417E978F85D95A1BB4`；由最新 `sage-api-curated-type-contracts.json` 构建，包含修复后的 `SageParser`、语法糖 handler 及完整索引。此前安装的 ZIP 不包含本次回退修复，必须从磁盘安装此新包并重启 PyCharm。
-- 尚未完成安装新包后的 fresh GUI 编辑 smoke；下一步应先确认 PyCharm 完全退出，再安装上述 ZIP，打开 `test2.sage`，逐字输入 `R.<`、补全为 `R.<x> = PolynomialRing(F)`，确认编辑器不冻结、鼠标恢复、`f.derivative()`/`P.log(G)` 补全与 Ctrl+Q 正常，并检查新 `idea.log` 不再出现 `SageParser.parseSugarStatement` 长时间堆栈。
-- 本轮检查发现 `C:\Users\星记\AppData\Local\JetBrains\PyCharm2026.2\.port` 仍是 0 字节、不可访问的 `ReparsePoint`；无 PyCharm 进程时尝试普通删除、重命名、`fsutil reparsepoint delete` 均返回系统错误 1920。未扩大处理范围；若重启仍报 `DirectoryLock`，需在 Windows 重启后由系统清理该 Unix-socket 锁，或由用户手动处理该单一路径。
-
-## 二十八、本轮增量（2026-08-28，gcd 合同、语法糖误报与 WSL 命令收口）
-
-- 用户在 `test2.sage` 中的 `g = gcd(f, f.derivative())` 仍没有具体类型。根因是全局 `gcd` 只有宽泛/无参数关联的声明，通用降低器无法把两个相同多项式实参绑定到返回值。`tools/sage-api-index/annotate_stubs.py` 现在为 `sage.arith.misc.gcd` 添加 `GcdT` TypeVar 合同：`gcd(a: GcdT, b: GcdT, **kwargs) -> GcdT`；`tools/sage-api-index/generate.py` 会从模块级 `TypeVar(...)` 声明生成 `typeParameters`，因此返回类型由真实调用实参具体化，而不是公共基类或 `Any`。该合同同时覆盖 `sage.all.gcd`/`GCD` 的索引别名。
-- `R.<x> = PolynomialRing(F)` 的黄色 “Expected type Polynomial_dense_mod_p, got PolynomialRing_dense_mod_p” 不是 Sage 返回合同错误，而是 Python 原生检查器把 Sage 生成器语法看成普通元组解包。新增 Sage 专用 `SageTypeCheckerSuppressor`，仅在 `SageSugarAnalyzer` 确认的生成器赋值共享 RHS 上抑制这一条原生误报；`R`、`x` 的具体目标类型仍由 `SageTypeProvider` 提供，普通 Python 赋值和其它参数检查不受影响。
-- 未配置绝对 `wslSageExecutable` 时，`SageCommandLineState` 原先把完整 Conda 多路径探测循环作为 `bash -lc` 参数展示。`wslConfiguredRunScript` 现改为单行启动表达式：显式 Conda 路径只执行其 `shell.bash hook`，默认先加载 `$HOME/miniconda3` hook、再回退 `.bashrc`，最后 `conda activate <env> && exec sage <script>`；不再显示 `for conda_sh`、多候选 `command -v` 探测脚本。显式 Sage 路径仍使用最短的 `wsl.exe -d Ubuntu -- /path/to/sage ...`。
-- 真实 WSL 运行验证：以生成的单行 fallback 执行 `/mnt/c/Users/星记/Downloads/test1.sage`，退出码 0，输出 `crypto{s1ngul4r_s1mplif1c4t1on}`；直接运行 `/mnt/c/Users/星记/Downloads/test2.sage` 也退出码 0 并输出同一结果。WSL 本身仍会向宿主输出其已有的启动提示，但插件不再打印 Conda 探测脚本正文。
-- 通过验证：`python -m unittest tools.sage-api-index.test_annotate_stubs -v`（3/3）；`python -m compileall -q tools/sage-api-index`；定向 Sage 运行/类型/解析回归 BUILD SUCCESSFUL；完整 `:plugins:sage-core:test`（119 tests，0 failures/errors，配置 `D:/Python314/python.exe`）BUILD SUCCESSFUL；`:core:sage-api:test -PrunSageApiTests=true --rerun-tasks`（44 tests，0 failures/errors）BUILD SUCCESSFUL；`git diff --check` 通过。
-- 最新安装包：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-gcd-runfix-20260828.zip`，16,145,132 bytes，SHA-256 `E357DFFDD73C84AABDBB04650C12D7D02DDCC28AADF6402855DF3F3BA3F780CB`。ZIP 顶层为 `sage-core/`；内嵌 `lib/sage-core-0.1.0-dev.jar` 为 13,992,265 bytes，SHA-256 `5C2EC39487060DF461944E1CC5819711EE6773E2728C802E57FE39DD14AED6F1`；JAR 含 `SageTypeCheckerSuppressor`、运行命令实现和 `sage-api-index.json`（139,172,969 bytes），索引含 `sage.arith.misc.gcd` 与 `GcdT`。
-- `verify-upstream-staging.ps1 -FinalCheck` 本轮按规定路径执行，仍安全失败于官方 checkout SHA 当前为 `3b652e714c12009bb69f0a2d2416dad02259fe5d`，规则要求 `b0001cd6c53979b384def7a1e3febe061e2ef687`；未修改官方 checkout。没有可用 Windows installer，因此 x64 installer smoke/release audit 未宣称通过。
-- 仍需用户在 PyCharm 完全退出后从磁盘安装上述新 ZIP 并重启，重新打开 `test2.sage` 验证：命令行只显示简洁启动命令、`p`/`F`/`R`/`x`/`f`/`g` 的具体类型、`g.derivative()` 补全，以及 Ctrl+Q 文档和分析指示器停止。当前 Gradle/静态/WSL 证据不能替代这次 fresh GUI 验收；`.port` stale reparse point 仍待系统/用户环境清理。
-
-## 二十九、本轮增量（2026-08-28，全量合同审计与通用协议返回）
-
-- 新增 `tools/sage-api-index/audit_contracts.py` 只读审计器及 `test_contract_audit.py`。它把索引 inventory 与可证明的语义合同分开统计：对 UNKNOWN、DYNAMIC、TypeVar、宽泛 Python 内建、结构化/公共基类、union/generic 和限定名分别计数，并可同时扫描 `.pyi` 源文件的返回注解比例；不会以空 expected set 的 `coverageRatio=1.0` 冒充全量精确覆盖。使用方式已写入 `tools/sage-api-index/README.zh-CN.md`。
-- `annotate_stubs.py` 新增无类名/方法白名单的 Python 数据模型协议补齐：对所有 Sage class 中缺失返回注解的 `__str__`、`__repr__`、`__format__`、`__bytes__`、`__bool__`、`__len__`、`__index__`、`__hash__` 统一使用语言协议保证；已有 Sage 具体注解保持不变，比较、算术、`__getitem__`、`__call__` 等可能返回动态父对象的协议继续 fail-closed。本轮真实 staging stub 补齐 1,045 个合同，重复运行幂等。
-- 用更新后的 `G:\sage-build\staging-build6\type-contract-stubs` 重新生成全量索引：84,201 normalized identities、84,238 raw AST declarations、2,843 source files、conflicts=0；52,715 callable entries/52,266 signatures 中，return audit 为 UNKNOWN 45,126、DYNAMIC 16、TYPE_VARIABLE 43、CONCRETE 997，source stub 55,385 个函数定义中 7,365 个有显式返回注解（13.30%）。这些剩余 UNKNOWN 是源 stubgen 没有给出具体合同的真实缺口，未被猜测填充。
-- 通过验证：Python 索引/导入/生成/审计测试共 69 项、0 failures/errors；`python -m compileall -q tools/sage-api-index`；默认 `:plugins:sage-core:test -PrunSageCoreTests=true`；`:core:sage-api:test -PrunSageApiTests=true --rerun-tasks`；配置 full index 后的 4 个代表性 coverage/safe-return/query 测试；`git diff --check`。配置 full index 运行全部 119 个插件测试会有 9 个旧 fixture 断言失败（它们硬编码 Sage 10.6/45 条目或 bundled fixture PSI，非本轮实现失败），因此不把该混合模式称为全量绿门。
-- 最新安装包：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-contract-audit-20260828.zip`，16,149,407 bytes，SHA-256 `A24FF685C3414886411B8EA1AD4E01BBAAB099FA7874376F3BF176C8832442FC`；内嵌 `sage-core/lib/sage-core-0.1.0-dev.jar` 13,997,270 bytes，SHA-256 `58B0F99BE6CBD89AEA4FFB5635D7345953B00C9D1D3315FD114C08210B7769BF`，索引 139,172,057 bytes/84,201 entries，plugin id/build `com.starnotesxj.sagemath.ctf.sage-core`/`261–263.*`，确认包含 Sage 文档 provider、`SageTypeCheckerSuppressor` 和 `SageAngleBracketTypedHandler`。
-- `verify-upstream-staging.ps1 -FinalCheck` 已按规定执行，安全失败于官方 checkout 当前 SHA `3b652e714c12009bb69f0a2d2416dad02259fe5d` 不等规则要求 `b0001cd6c53979b384def7a1e3febe061e2ef687`；staging SHA 为要求值，官方 `hashcat_sessions.db`、`jupyter/.gitignore`、`notebooks/.gitignore` 仍为原有未跟踪项，未被修改。没有可用 installer，未宣称 x64/release audit；最新 ZIP 也尚未在 PyCharm 中 fresh 安装并取得 completion、Ctrl+Q、停止分析的 GUI 证据。
-
-## 三十、本轮增量（2026-08-28，UNKNOWN 源合同继续收敛）
-
-- 按“具体函数契约 + 调用参数”原则继续检查剩余 UNKNOWN，未使用公共基类作为最终返回类型，也没有把矩阵/向量/环元素、数值父环、迭代器或条件联合返回强行改成单一类型。
-- `annotate_stubs.py` 新增稳定外层容器规则：在 union/conditional guard 之后识别 `a sorted/increasing/new/duplicate-free list|tuple|pair|set|dict` 等文档合同；先尝试唯一多词类名，避免 `a set partition` 被误判为 Python `set`。单一 Sphinx `:class:`tuple/list/...`` 可带普通限定词而仍物化为外层容器。另将同质数值分支（例如 `nonnegative integer or -1`）统一为 Sage `Integer`，但 `integer or rational` 仍 fail-closed。
-- 结合 Sage 10.9 WSL 运行时源码/实际调用结果，补齐有限域椭圆曲线和点的稳定合同：`EllipticCurve_finite_field.cardinality_pari()`、`frobenius_discriminant()` 返回 `sage.rings.integer.Integer`，`frobenius_polynomial()` 返回 `Polynomial_integer_dense_flint`，`plot()` 返回 `Graphics`；`EllipticCurvePoint_finite_field._compute_order()` 返回 `Integer`；`EllipticCurvePoint_field.__tuple__()` 返回 Python `tuple`。运行时验证使用 `EllipticCurve(GF(11), [1,1])`，并确认 `P.log(G)`、`P.curve()` 既有合同不回退。
-- 新鲜全量索引重新生成：`2,843` 源文件、`84,333` raw symbols、`84,285` entries、`39` diagnostics、conflicts=0，inventory digest `5ca32612c41a4a215081980c4a59a9a03f3ab95d2b18aa096f5ac9075f2e155a`。审计结果为 `52,715` callable entries、`52,269` signatures：`UNKNOWN=32,563`、`DYNAMIC=16`、`TYPE_VARIABLE=222`、`CONCRETE=3,672`、`BROAD_BUILTIN=10,921`、`UNION_OR_OPTIONAL=105`；相对历史起点 `45,126`，UNKNOWN 减少 `12,563`（`27.84%`）。源 `.pyi` 统计为 `55,396` 函数、`20,343` 显式返回注解（`36.72%`），无语法错误；剩余 UNKNOWN 与 stubgen 缺少稳定合同相符。
-- Python 索引/生成/导入/审计测试共 `91` 项，0 failures/errors；`compileall` 与 `git diff --check` 通过。`:plugins:sage-core:test -PrunSageCoreTests=true --project-prop sage.python.testSdk=D:/Python314/python.exe` 与 `:core:sage-api:test -PrunSageApiTests=true --rerun-tasks` 均 `BUILD SUCCESSFUL`。
-- 已用最新索引构建并复制安装包：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-contract-unknown-reduction-20260828-r2.zip`，`16,171,901` bytes，SHA-256 `48CCDA85953D088F4B6AC55EA79F5F4EDC40CC2A3338E219F93F2BE2E3F4BB09`。ZIP 顶层为 `sage-core/`；内嵌 `lib/sage-core-0.1.0-dev.jar` 为 `14,019,366` bytes，SHA-256 `F23805C8384585CC91729B0A87D100A0D59680AF997FB6B4B352FFEB4DA03379`；JAR 含 `META-INF/plugin.xml`、`sage-api-index.json`（`84,285` entries、`137,868,442` bytes）、`SageApiDocumentationProvider`、`SageTypeCheckerSuppressor` 与 `SageAngleBracketTypedHandler`。
-- 本轮重新执行 `verify-upstream-staging.ps1 -OfficialCheckout G:\Projects\intellij-community-sage-ide -StagingTree G:\sage-build\staging-build6 -FinalCheck`，仍安全失败于官方 checkout SHA `3b652e714c12009bb69f0a2d2416dad02259fe5d` 不等规则要求 `b0001cd6c53979b384def7a1e3febe061e2ef687`；未修改官方 checkout，`hashcat_sessions.db`、`jupyter/.gitignore`、`notebooks/.gitignore` 保持原有状态。无 installer，未宣称 x64/release audit。
-- 最新 ZIP 仍未从磁盘安装并重启 PyCharm，故真实 GUI completion、`f.derivative()`/`P.log(G)` 成员提示、Ctrl+Q 富文档和“正在分析”停止状态仍未验收；安装时必须使用该 `r2` ZIP，不能以旧包或 Gradle/静态证据替代 fresh GUI smoke。
+本文件已压缩为当前边界、可复用决策、最新证据和下一步；旧轮次的重复 ZIP、重复计数和已解决堆栈不再逐轮保留。
