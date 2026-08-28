@@ -30,7 +30,20 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    def __float__(self): ...\n"
                 "    def __complex__(self): ...\n"
                 "    def __dir__(self): ...\n"
+                "    def __copy__(self): ...\n"
+                "    def __deepcopy__(self, memo): ...\n"
+                "    def __dealloc__(self): ...\n"
+                "    def __setstate__(self, state): ...\n"
+                "    def __reduce__(self): ...\n"
+                "    def _repr_(self): ...\n"
+                "    def _latex_(self): ...\n"
+                "    def __iter__(self):\n"
+                "        " + '"""Return self, as per the iterator protocol."""' + "\n"
                 "    def __eq__(self, other): ...\n"
+                "\n"
+                "class IteratorValue:\n"
+                "    def __iter__(self):\n"
+                "        " + '"""Return this iterator object itself."""' + "\n"
                 "\n"
                 "def __repr__(self): ...\n",
                 encoding="utf-8",
@@ -50,6 +63,15 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def __float__(self) -> float: ...", patched)
             self.assertIn("def __complex__(self) -> complex: ...", patched)
             self.assertIn("def __dir__(self) -> list[str]: ...", patched)
+            self.assertIn("def __copy__(self) -> Self: ...", patched)
+            self.assertIn("def __deepcopy__(self, memo) -> Self: ...", patched)
+            self.assertIn("def __dealloc__(self) -> None: ...", patched)
+            self.assertIn("def __setstate__(self, state) -> None: ...", patched)
+            self.assertIn("def __reduce__(self) -> tuple | str: ...", patched)
+            self.assertIn("def _repr_(self) -> str: ...", patched)
+            self.assertIn("def _latex_(self) -> str: ...", patched)
+            self.assertIn("def __iter__(self) -> Self:", patched)
+            self.assertIn("class IteratorValue:\n    def __iter__(self) -> Self:", patched)
             self.assertIn("def __eq__(self, other): ...", patched)
             self.assertIn("def __repr__(self): ...", patched)
             second = subprocess.run(command, capture_output=True, text=True)
@@ -70,6 +92,70 @@ class AnnotateStubsTest(unittest.TestCase):
                 "def exact_bool(n):\n"
                 "    \"\"\"OUTPUT: boolean\"\"\"\n"
                 "\n"
+                "def block_length():\n"
+                "    \"\"\"Return the block length of this cryptosystem.\"\"\"\n"
+                "\n"
+                "def output_size():\n"
+                "    \"\"\"OUTPUT: the output size of this S-box\"\"\"\n"
+                "\n"
+                "def convert_to_vector(value, length):\n"
+                "    \"\"\"OUTPUT: the ``L``-bit vector representation of ``I``\"\"\"\n"
+                "\n"
+                "def bit_layer(state):\n"
+                "    \"\"\"Apply the substitution to the bit vector ``state`` and return the result.\"\"\"\n"
+                "\n"
+                "def round(state, key):\n"
+                "    \"\"\"Apply one round of a block cipher to ``state`` and return the result.\"\"\"\n"
+                "\n"
+                "def list_to_string(bits):\n"
+                "    \"\"\"OUTPUT: the binary string representation of ``bits``\"\"\"\n"
+                "\n"
+                "def binary_cipher(block, key):\n"
+                "    \"\"\"Apply Mini-AES encryption or decryption on the binary string ``block``.\"\"\"\n"
+                "\n"
+                "def integer_to_binary(value):\n"
+                "    \"\"\"Return the binary representation of ``value``. If ``value`` is a list, concatenate it.\"\"\"\n"
+                "\n"
+                "def eight_bit_cipher(value, key):\n"
+                "    \"\"\"Return an 8-bit ciphertext corresponding to ``value``.\"\"\"\n"
+                "\n"
+                "def nth_subkey(value, n=1):\n"
+                "    \"\"\"Return the `n`-th subkey based on ``value``.\"\"\"\n"
+                "\n"
+                "def random_key():\n"
+                "    \"\"\"Return a random 10-bit key.\"\"\"\n"
+                "\n"
+                "def permutation(bits):\n"
+                "    \"\"\"Return a permutation of a 10-bit string.\"\"\"\n"
+                "\n"
+                "def shift(bits):\n"
+                "    \"\"\"Return a circular left shift of ``bits`` by one position.\n"
+                "    The input is a vector of 10 bits.\"\"\"\n"
+                "\n"
+                "def permuted_choice_one(key):\n"
+                "    \"\"\"Return permuted choice 1 of ``key``.\"\"\"\n"
+                "\n"
+                "def permuted_choice_two(key):\n"
+                "    \"\"\"Return permuted choice 2 of ``key``.\"\"\"\n"
+                "\n"
+                "def expand(right):\n"
+                "    \"\"\"Apply the expansion function to ``right``.\"\"\"\n"
+                "\n"
+                "def sboxes():\n"
+                "    \"\"\"Return the S-boxes of simplified DES.\"\"\"\n"
+                "\n"
+                "def subkey(r):\n"
+                "    \"\"\"Compute the sub key for round ``r`` derived from the initial key.\"\"\"\n"
+                "\n"
+                "def cipher_function(right, subkey):\n"
+                "    \"\"\"Apply the cipher function to ``right`` and ``subkey``.\"\"\"\n"
+                "\n"
+                "def permute_substitute(block, key):\n"
+                "    \"\"\"Apply the function on the block ``block`` using subkey ``key``.\"\"\"\n"
+                "\n"
+                "def variable_count():\n"
+                "    \"\"\"The number of variables of this function.\"\"\"\n"
+                "\n"
                 "def ambiguous(n):\n"
                 "    \"\"\"OUTPUT: an element of the base ring\"\"\"\n",
                 encoding="utf-8",
@@ -80,7 +166,202 @@ class AnnotateStubsTest(unittest.TestCase):
             patched = stub.read_text(encoding="utf-8")
             self.assertIn("def exact_integer(n) -> 'sage.rings.integer.Integer':", patched)
             self.assertIn("def exact_bool(n) -> bool:", patched)
+            self.assertIn("def block_length() -> int:", patched)
+            self.assertIn("def output_size() -> int:", patched)
+            self.assertIn(
+                "def convert_to_vector(value, length) -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense':",
+                patched,
+            )
+            self.assertIn(
+                "def bit_layer(state) -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense':",
+                patched,
+            )
+            self.assertIn(
+                "def round(state, key) -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense':",
+                patched,
+            )
+            self.assertIn(
+                "def list_to_string(bits) -> 'sage.monoids.string_monoid_element.StringMonoidElement':",
+                patched,
+            )
+            self.assertIn(
+                "def binary_cipher(block, key) -> 'sage.monoids.string_monoid_element.StringMonoidElement':",
+                patched,
+            )
+            self.assertIn(
+                "def integer_to_binary(value) -> 'sage.monoids.string_monoid_element.StringMonoidElement':",
+                patched,
+            )
+            self.assertIn("def eight_bit_cipher(value, key) -> list:", patched)
+            self.assertIn("def nth_subkey(value, n=1) -> list:", patched)
+            self.assertIn("def random_key() -> list:", patched)
+            self.assertIn("def permutation(bits) -> list:", patched)
+            self.assertIn("def shift(bits) -> list:", patched)
+            self.assertIn("def permuted_choice_one(key) -> tuple:", patched)
+            self.assertIn(
+                "def permuted_choice_two(key) -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense':",
+                patched,
+            )
+            self.assertIn(
+                "def expand(right) -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense':",
+                patched,
+            )
+            self.assertIn("def sboxes() -> list:", patched)
+            self.assertIn("def subkey(r) -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn(
+                "def cipher_function(right, subkey) -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense':",
+                patched,
+            )
+            self.assertIn("def permute_substitute(block, key) -> list:", patched)
+            self.assertIn("def variable_count() -> 'sage.rings.integer.Integer':", patched)
             self.assertIn("def ambiguous(n):", patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_conditional_output_overloads_follow_explicit_sage_docs_and_are_idempotent(self):
+        """Documented integer/list-like branches expose concrete Sage results."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "cipher.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class Cipher:\n"
+                "    def encrypt(self, plaintext, key):\n"
+                "        \"\"\"\n"
+                "        OUTPUT:\n"
+                "        - If ``plaintext`` is an integer the output will be too.\n"
+                "        - If ``plaintext`` is list-like the output will be a bit vector.\n"
+                "        \"\"\"\n"
+                "\n"
+                "    def __call__(self, block, key, algorithm='encrypt'):\n"
+                "        \"\"\"If ``block`` is an integer the output will be too.\n"
+                "        If ``block`` is list-like the output will be a bit vector.\"\"\"\n"
+                "\n"
+                "    def schedule(self, key) -> list:\n"
+                "        \"\"\"If ``key`` is an integer the elements of the output list will be too.\n"
+                "        If ``key`` is list-like the element of the output list will be bit vectors.\"\"\"\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn(
+                "def encrypt(self, plaintext: int, key) -> 'sage.rings.integer.Integer': ... # sage-generated-conditional-output",
+                patched,
+            )
+            self.assertIn(
+                "def encrypt(self, plaintext: list, key) -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense': ... # sage-generated-conditional-output",
+                patched,
+            )
+            self.assertIn(
+                "def __call__(self, block: int, key, algorithm = 'encrypt') -> 'sage.rings.integer.Integer': ... # sage-generated-conditional-output",
+                patched,
+            )
+            self.assertIn(
+                "def __call__(self, block: list, key, algorithm = 'encrypt') -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense': ... # sage-generated-conditional-output",
+                patched,
+            )
+            self.assertIn(
+                "def schedule(self, key: int) -> list['sage.rings.integer.Integer']: ... # sage-generated-conditional-output",
+                patched,
+            )
+            self.assertIn(
+                "def schedule(self, key: list) -> list['sage.modules.vector_mod2_dense.Vector_mod2_dense']: ... # sage-generated-conditional-output",
+                patched,
+            )
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_miniaes_matrix_contracts_bind_concrete_argument_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "block_cipher" / "miniaes.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class MiniAES:\n"
+                "    def add_key(self, block, rkey): ...\n"
+                "    def decrypt(self, C, key): ...\n"
+                "    def encrypt(self, P, key): ...\n"
+                "    def mix_column(self, block): ...\n"
+                "    def nibble_sub(self, block, algorithm='encrypt'): ...\n"
+                "    def round_key(self, key, n): ...\n"
+                "    def shift_row(self, block): ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("from typing import TypeVar", patched)
+            self.assertIn("from typing import overload", patched)
+            self.assertIn('MiniAEST = TypeVar("MiniAEST")', patched)
+            for declaration in (
+                "def add_key(self, block: MiniAEST, rkey: MiniAEST) -> MiniAEST: ...",
+                "def decrypt(self, C: MiniAEST, key: MiniAEST) -> MiniAEST: ...",
+                "def encrypt(self, P: MiniAEST, key: MiniAEST) -> MiniAEST: ...",
+                "def mix_column(self, block: MiniAEST) -> MiniAEST: ...",
+                "def nibble_sub(self, block: MiniAEST, algorithm='encrypt') -> MiniAEST: ...",
+                "def round_key(self, key: MiniAEST, n) -> MiniAEST: ...",
+                "def shift_row(self, block: MiniAEST) -> MiniAEST: ...",
+            ):
+                self.assertIn(declaration, patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_boolean_function_contracts_cover_ctf_operations_and_format_branch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "crypto" / "boolean_function.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class BooleanFunction:\n"
+                "    def __invert__(self):\n        ...\n"
+                "    def __add__(self, other):\n        ...\n"
+                "    def derivative(self, u):\n        ...\n"
+                "    def __call__(self, x):\n        ...\n"
+                "    def __getitem__(self, x):\n        ...\n"
+                "    def __iter__(self):\n        ...\n"
+                "    def truth_table(self, format='bin'):\n        ...\n"
+                "    def absolute_walsh_spectrum(self):\n        ...\n"
+                "    def algebraic_normal_form(self):\n        ...\n"
+                "class BooleanFunctionIterator:\n"
+                "    def __iter__(self):\n        ...\n"
+                "    def __next__(self):\n        ...\n"
+                "def random_boolean_function(n):\n    ...\n"
+                "def unpickle_BooleanFunction(bool_list):\n    ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("from typing import Self", patched)
+            self.assertIn("from typing import overload", patched)
+            self.assertIn("from typing import overload, Literal", patched)
+            self.assertIn("def __invert__(self) -> Self:", patched)
+            self.assertIn("def derivative(self, u) -> Self:", patched)
+            self.assertIn("def __call__(self, x) -> bool:", patched)
+            self.assertIn("def __getitem__(self, x) -> bool:", patched)
+            self.assertIn(
+                "def __iter__(self) -> 'sage.crypto.boolean_function.BooleanFunctionIterator':",
+                patched,
+            )
+            self.assertIn("def __next__(self) -> bool:", patched)
+            self.assertIn("def absolute_walsh_spectrum(self) -> dict:", patched)
+            self.assertIn(
+                "def algebraic_normal_form(self) -> 'sage.rings.polynomial.pbori.pbori.BooleanPolynomial':",
+                patched,
+            )
+            self.assertIn("def random_boolean_function(n) -> 'sage.crypto.boolean_function.BooleanFunction':", patched)
+            self.assertIn("def truth_table(self, format: Literal['hex']) -> str: ...", patched)
+            self.assertIn("def truth_table(self, format: Literal['bin', 'int'] = 'bin') -> tuple: ...", patched)
+            ast.parse(patched)
             second = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, second.returncode, second.stderr)
             self.assertEqual(patched, stub.read_text(encoding="utf-8"))

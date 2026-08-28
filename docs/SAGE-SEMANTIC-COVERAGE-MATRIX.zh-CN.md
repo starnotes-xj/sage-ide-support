@@ -14,7 +14,7 @@
 
 | 能力 | .sage | 普通 .py | 当前结论 | 主要实现/证据 |
 | --- | --- | --- | --- | --- |
-| Sage 10.9 全量 API 索引读取 | 外部索引 | 外部索引 | **已验证（开发索引/query）**：84,304 normalized identities、84,367 raw AST declarations、2,843 source files、conflicts=0；当前 staging 目录未提供 envelope/receipt，因此 product-sidecar 验证仍未完成 | core/sage-api query；SageIntelligenceHarnessTest.testConfiguredFullIndexCoverageMatrix |
+| Sage 10.9 全量 API 索引读取 | 外部索引 | 外部索引 | **已验证（开发索引/query）**：84,375 normalized identities、84,463 raw AST declarations、2,843 source files、conflicts=0；当前 staging 目录未提供 envelope/receipt，因此 product-sidecar 验证仍未完成 | core/sage-api query；SageIntelligenceHarnessTest.testConfiguredFullIndexCoverageMatrix |
 | sage.all 隐式根补全 | 隐式可用 | 不注入 | **已验证**：根命名空间、external-only symbol、alias、constant | SageImplicitCompletionContributor；testConfiguredFullIndexExposesEveryRootCompletionIdentity |
 | 显式 Sage 模块导入/模块成员 | 支持显式导入 | 支持显式导入 | **已验证**；只向 sage.* 模块提供索引成员，native PSI 优先 | SageApiModuleMembersProvider；testExplicitPythonModuleUsesIndexedDirectExports |
 | 普通非 Sage Python 隔离 | 不适用 | 不注入 Sage 索引 | **已验证** | SageApiDocumentationProviderTest.testPlainPythonFileDoesNotConsumeSageIndex；provider context gate |
@@ -34,7 +34,7 @@
 | TypeVar / ParamSpec 元数据解析 | 支持索引解析 | 支持索引解析 | **部分已验证**：scope、bound、constraint、Callable[P, R]、P.args/P.kwargs 解析；variance/default 未建模 | SageStubExtractor、SageTypeRefExpression tests |
 | ParamSpec 运行时调用拼接 | 不承诺 | 不承诺 | **故意 fail-closed**：不生成合成参数列表或确定平台类型 | SageTypeLowering ParamSpec branch |
 | UNKNOWN / DYNAMIC / union / ambiguous overload | 支持文档/补全元数据 | Sage 显式上下文同样 | **故意 fail-closed**：不传播为确定 receiver/return type | SageApiIndexQuery.uniqueKnownReturnType；full-index unsafe-return assertions |
-| 全量返回合同质量审计 | 外部索引 | 外部索引 | **已验证（只读审计）**：52,723 callable entries、52,283 signatures；UNKNOWN 32,536、DYNAMIC 16、TYPE_VARIABLE 236、CONCRETE 3,681。相对历史 45,126 UNKNOWN 累计减少 12,590（27.89%）；本轮相对 32,563 再减少 27。审计另列出宽泛内建/结构化基类，绝不把它们计作具体 Sage 返回；本轮追加矩阵同父/切片/条件分支、有限域父对象元素、环迭代器与多项式 FLINT 默认合同 | `tools/sage-api-index/audit_contracts.py`；`sage-api-contract-audit.json` |
+| 全量返回合同质量审计 | 外部索引 | 外部索引 | **已验证（只读审计）**：52,723 callable entries、52,292 signatures；UNKNOWN 31,036、DYNAMIC 16、TYPE_VARIABLE 353、CONCRETE 3,723。相对历史 45,126 UNKNOWN 累计减少 14,090（31.22%）；本轮相对 32,536 再减少 1,500。审计另列出宽泛内建/结构化基类，绝不把它们计作具体 Sage 返回；本轮追加 Python 协议、自描述条件输出重载、CTF 位向量/二进制串/排列、尺寸、S-box 列表、sub-key、Mini-AES 矩阵父对象 TypeVar 和 BooleanFunction 合同 | `tools/sage-api-index/audit_contracts.py`；`sage-api-curated-type-contracts.audit.next.json` |
 | arbitrary dynamic metaprogramming、runtime injection 完整等价 | 未验证 | 未验证 | **未验证/非目标**：不承诺绝对精确 | 规格中的 dynamic non-goal |
 | real Sage runtime 与产品 bundled full index | 未验证 | 未验证 | **未验证**：full 10.9 index 目前是 external/staged artifact，不是已证明的产品分发 | 当前 HANDOFF.md packaging/provenance blockers |
 | x64 product、installer、smoke、release audit | 未验证 | 未验证 | **未验证**：没有 fresh distribution/archive/installer 证据 | 当前 staging logs；FinalCheck 仍受官方 checkout SHA 阻塞 |

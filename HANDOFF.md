@@ -2,7 +2,7 @@
 
 > 工作区：`G:\Projects\sage-math-ctf-ide`
 > 目标：先完成 SageMath 编辑器智能（类型、补全、文档、语法糖和运行入口），CTF/Notebook 产品功能暂不扩展。
-> 更新：2026-08-28
+> 更新：2026-08-29
 
 ## 1. 不可违反的边界
 
@@ -40,18 +40,18 @@ Gradle、索引和 ZIP 静态证据不能替代上述 fresh PyCharm GUI smoke。
 
 ## 5. 当前合同索引与验证证据
 
-- Sage 10.9/Python 3.13：`2,843` 源文件、`84,367` raw symbols、`84,304` entries、`48` diagnostics；inventory digest `b394d93c7adaefeb7ad4f00f62d624369a25bbf961b885dfc1d6a889506af0dc`。
-- 审计：`52,723` callable entries、`52,283` signatures；`UNKNOWN=32,536`、`DYNAMIC=16`、`TYPE_VARIABLE=236`、`CONCRETE=3,681`、`BROAD_BUILTIN=10,923`、`UNION_OR_OPTIONAL=111`、`GENERIC=342`、`STRUCTURAL_BASE=39`。相对历史 `45,126` UNKNOWN，已减少 `12,590`（`27.89%`）。
-- Python 索引/生成/导入/审计测试：`92` 项通过；`compileall`、AST 解析、`git diff --check` 通过。
+- Sage 10.9/Python 3.13：`2,843` 源文件、`84,463` raw symbols、`84,375` entries、`64` diagnostics；inventory digest `3de620eeb567a0f4a2f190e9b9def36d2f9d5801567b8957ecacf63e00fa85d1`。
+- 审计：`52,723` callable entries、`52,292` signatures；`UNKNOWN=31,036`、`DYNAMIC=16`、`TYPE_VARIABLE=353`、`CONCRETE=3,723`、`BROAD_BUILTIN=11,717`、`UNION_OR_OPTIONAL=441`、`GENERIC=346`、`STRUCTURAL_BASE=39`。相对本轮起点 `32,536` 减少 `1,500`；相对历史 `45,126` UNKNOWN，累计减少 `14,090`（`31.22%`）。
+- Python 索引/生成/导入/审计测试：`95` 项通过；`compileall`、AST 解析、`git diff --check` 通过。新增条件输出重载、协议合同、Mini-AES TypeVar 和 BooleanFunction 合同测试保持幂等。
 - Gradle：默认 `:plugins:sage-core:test -PrunSageCoreTests=true`、`:core:sage-api:test -PrunSageApiTests=true --rerun-tasks` 和带外部索引的代表性 harness/coverage 测试均 `BUILD SUCCESSFUL`。外部索引混合全套仍有一个旧 `FSMState` fixture 断言失败，不作为本轮合同失败证据。
-- WSL Sage 10.9 实际运行：矩阵/环/有限域/多项式实现 class 与条件返回已逐项检查；`test1.sage`、`test2.sage` 均退出码 `0` 并得到既有 CTF 结果。
+- WSL Sage 10.9 实际运行：矩阵/环/有限域/多项式实现 class 与条件返回已逐项检查；DES/PRESENT 整数→`Integer`、list-like→`Vector_mod2_dense`，密钥调度列表元素、位向量转换、S-DES 二进制串/排列/尺寸结果均已运行核对；`test1.sage`、`test2.sage` 均退出码 `0` 并得到既有 CTF 结果。
 
 ## 6. 最新安装包
 
-- 路径：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-parent-dependent-contracts-20260828.zip`
-- 大小：`16,173,030` bytes；SHA-256：`1131DCAC32E33223663B5500692B415F2B48B92370F00733D435F136C362D884`
-- 内嵌 JAR：`14,020,498` bytes；SHA-256：`8E867FB9779A996B5F0A0EAED5D8F8A14A2535C113408B7CF360D31C22C17230`
-- ZIP 顶层为 `sage-core/`，包含 `META-INF/plugin.xml`、完整 `sage-api-index.json`（`84,304` entries）以及 documentation/type-checker/angle-bracket providers。安装必须使用 PyCharm“从磁盘安装插件”，不能二次解压成 `plugins\\sage-core\\sage-core`。
+- 路径：`G:\sage-build\staging-build6\sage-core-0.1.0-dev-ctf-output-contracts-20260829-r4.zip`
+- 大小：`16,205,196` bytes；SHA-256：`A22AA5DAD4DDA4F015EB2B356CD9AA2D6C5348A92B455509E88EFB04BC36597D`
+- 内嵌 JAR：`14,052,522` bytes；SHA-256：`BD79BF8D55CEA09052085FB0C94F2C5E28AF5F70B7D54DB8BD250D0B64C67D98`
+- ZIP 顶层为 `sage-core/`，内嵌 JAR 含 `META-INF/plugin.xml` 和完整 `sage-api-index.json`（`84,375` entries），并保留 documentation/type-checker/angle-bracket providers。安装必须使用 PyCharm“从磁盘安装插件”，不能二次解压成 `plugins\\sage-core\\sage-core`。
 
 ## 7. 当前未完成项与风险
 
@@ -66,5 +66,12 @@ Gradle、索引和 ZIP 静态证据不能替代上述 fresh PyCharm GUI smoke。
 2. 从磁盘安装第 6 节 ZIP，重启 PyCharm，打开 `test2.sage`，验证 `P.log(G)`、`f.derivative()`、矩阵切片和 `gcd` 的类型/补全，以及 Ctrl+Q 和 `R.<` 编辑体验。
 3. 读取 fresh `idea.log`；若失败，只按新堆栈指向的最小源码和回归测试修复。
 4. 重新运行当前阶段所需 build/test、ZIP 静态核验和 `verify-upstream-staging.ps1 -FinalCheck`，报告真实 exit code；没有 GUI/installer 证据就明确写未完成。
+
+## 9. 本轮增量（2026-08-29）
+
+- `annotate_stubs.py` 新增全树 Python 协议合同：`__dealloc__`/`__setstate__`→`None`、`__reduce__`→`tuple | str`、`_repr_`/`_latex_`→`str`、`__copy__`/`__deepcopy__`→`Self`；文档明确返回自身的迭代器也保留 `Self`，不猜测 `__next__` 元素。
+- 新增文档驱动参数条件重载：仅当同一参数同时明确“integer→Integer”和“list-like→GF(2) bit vector”时生成 overload；DES/PRESENT 的 `__call__`/`encrypt`/`decrypt` 以及 DES/PRESENT 密钥调度的列表元素合同已进入索引。CTF 位向量转换、S-DES 二进制串/排列和尺寸合同均由 Sage 文档语义触发，不使用函数白名单；新增 S-box 列表、按轮 sub-key 的 `Integer` 合同、Mini-AES 矩阵父对象 TypeVar，以及 BooleanFunction 代数/谱/格式分支合同。
+- WSL Sage 10.9 运行核对与索引结果：`84,375` entries、`52,292` signatures、`UNKNOWN=31,036`；相对本轮 `32,536` 减少 `1,500`。Python 索引测试 `95/95`，两次注解幂等；Gradle `:plugins:sage-core:test`、`:core:sage-api:test` 和 `buildPlugin` 均 `BUILD SUCCESSFUL`。
+- 新包为第 6 节 `-r4` ZIP；fresh PyCharm 安装/GUI smoke、installer 和 FinalCheck 的官方 SHA 阻塞仍未改变。
 
 本文件已压缩为当前边界、可复用决策、最新证据和下一步；旧轮次的重复 ZIP、重复计数和已解决堆栈不再逐轮保留。

@@ -52,6 +52,42 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "plot": "'sage.plot.graphics.Graphics'",
         },
     },
+    "sage/crypto/boolean_function.pyi": {
+        None: {
+            "random_boolean_function": "'sage.crypto.boolean_function.BooleanFunction'",
+            "unpickle_BooleanFunction": "'sage.crypto.boolean_function.BooleanFunction'",
+        },
+        "BooleanFunction": {
+            # Boolean-function algebra stays in the concrete BooleanFunction
+            # implementation; these operations do not widen to a generic
+            # Sage element.
+            "__invert__": "Self",
+            "__add__": "Self",
+            "__mul__": "Self",
+            "__or__": "Self",
+            "derivative": "Self",
+            "__call__": "bool",
+            "__getitem__": "bool",
+            "__iter__": "'sage.crypto.boolean_function.BooleanFunctionIterator'",
+            "absolute_walsh_spectrum": "dict",
+            "autocorrelation": "tuple",
+            "absolute_autocorrelation": "dict",
+            "nonlinearity": "int",
+            "absolute_indicator": "int",
+            "sum_of_square_indicator": "int",
+            "algebraic_immunity": "int",
+            "algebraic_degree": "int",
+            "correlation_immunity": "'sage.rings.integer.Integer'",
+            "resiliency_order": "'sage.rings.integer.Integer'",
+            "annihilator": "'sage.rings.polynomial.pbori.pbori.BooleanPolynomial'",
+            "algebraic_normal_form": "'sage.rings.polynomial.pbori.pbori.BooleanPolynomial'",
+            "linear_structures": "'sage.modules.free_module.FreeModule_submodule_field_with_category'",
+        },
+        "BooleanFunctionIterator": {
+            "__iter__": "Self",
+            "__next__": "bool",
+        },
+    },
     "sage/schemes/elliptic_curves/ell_point.pyi": {
         "EllipticCurvePoint": {
             "curve": "'sage.schemes.elliptic_curves.ell_generic.EllipticCurve_generic'",
@@ -349,6 +385,45 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             ),
         },
     },
+    "sage/crypto/boolean_function.pyi": {
+        "BooleanFunction": {
+            # ``truth_table`` has a real format-dependent contract: the
+            # default/bin/int branches are tuples, while hex is a string.
+            "truth_table": (
+                "def truth_table(self, format: Literal['hex']) -> str: ...",
+                "def truth_table(self, format: Literal['bin', 'int'] = 'bin') -> tuple: ...",
+            ),
+        },
+    },
+    "sage/crypto/block_cipher/miniaes.pyi": {
+        "MiniAES": {
+            # Mini-AES matrix transforms preserve the concrete matrix parent
+            # supplied by the caller.  Bind that argument to the result so
+            # PyCharm sees the actual MatrixSpace implementation instead of a
+            # public Matrix base class.
+            "add_key": (
+                "def add_key(self, block: MiniAEST, rkey: MiniAEST) -> MiniAEST: ...",
+            ),
+            "decrypt": (
+                "def decrypt(self, C: MiniAEST, key: MiniAEST) -> MiniAEST: ...",
+            ),
+            "encrypt": (
+                "def encrypt(self, P: MiniAEST, key: MiniAEST) -> MiniAEST: ...",
+            ),
+            "mix_column": (
+                "def mix_column(self, block: MiniAEST) -> MiniAEST: ...",
+            ),
+            "nibble_sub": (
+                "def nibble_sub(self, block: MiniAEST, algorithm='encrypt') -> MiniAEST: ...",
+            ),
+            "round_key": (
+                "def round_key(self, key: MiniAEST, n) -> MiniAEST: ...",
+            ),
+            "shift_row": (
+                "def shift_row(self, block: MiniAEST) -> MiniAEST: ...",
+            ),
+        },
+    },
     "sage/all.pyi": {
         None: {
             # An elliptic curve over a finite field has a materially more
@@ -417,6 +492,7 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
 CURATED_TYPE_VARIABLES: dict[str, tuple[str, ...]] = {
     "sage/arith/misc.pyi": ("GcdT", "BinomialT", "FallingFactorialT", "RisingFactorialT"),
     "sage/arith/functions.pyi": ("LcmT",),
+    "sage/crypto/block_cipher/miniaes.pyi": ("MiniAEST",),
 }
 
 # INSERT: declarations that model a real, dynamically inherited method whose
@@ -525,6 +601,20 @@ PROTOCOL_RETURNS: dict[str, str] = {
     "__len__": "int",
     "__index__": "int",
     "__hash__": "int",
+    # Cython's deallocator and pickle state hook follow the same no-result
+    # protocol as Python's ``__del__``/``__setstate__`` methods.
+    "__dealloc__": "None",
+    "__setstate__": "None",
+    "__reduce__": "tuple | str",
+    # Sage's display hooks are stable protocol methods: every implementation
+    # returns textual output, independent of the receiver's concrete class.
+    "_repr_": "str",
+    "_latex_": "str",
+    # ``copy.copy`` and ``copy.deepcopy`` are required to produce a copy of
+    # the receiver.  Self keeps the concrete Sage implementation visible to
+    # PyCharm without collapsing it to a public base class.
+    "__copy__": "Self",
+    "__deepcopy__": "Self",
 }
 
 # A small, source-derived subset of Sage's structured docstrings.  Only an
@@ -768,6 +858,13 @@ DOC_SUMMARY_SCALAR_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"^return the degree\b", "'sage.rings.integer.Integer'"),
     (r"^return the number of (?:nonzero )?terms\b", "'sage.rings.integer.Integer'"),
     (r"^return the number of variables\b", "'sage.rings.integer.Integer'"),
+    # Cryptosystem/S-box size accessors document Python dimensions explicitly
+    # as lengths or sizes.  These are ordinary Cython/Python ints (unlike
+    # Sage's mathematical ``number of ...`` counters below).
+    (r"^return (?:the )?(?:block(?:\s+\(or\s+key\))?|input|output|key)\s+(?:length|size)\b", "int"),
+    (r"^(?:the )?(?:block(?:\s+\(or\s+key\))?|input|output|key)\s+(?:length|size)\b", "int"),
+    (r"^the number of variables\b", "'sage.rings.integer.Integer'"),
+    (r"^apply .* to the bit vector .*\breturn(?:\s+the)?\s+result\b", "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"),
     (r"^return .*\bas a rational number\b", "'sage.rings.rational.Rational'"),
     (r"^return .*\bas symbolic expression\b", "'sage.symbolic.expression.Expression'"),
     (r"^return mathml representation\b", "str"),
@@ -779,6 +876,16 @@ DOC_SUMMARY_SCALAR_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"^the odd part of the integer\b", "'sage.rings.integer.Integer'"),
     (r"^a random blum prime\b", "'sage.rings.integer.Integer'"),
     (r"^return the `{0,2}k`{0,2} least significant bits\b", "list"),
+    (r"^return (?:the )?binary string representation\b", "'sage.monoids.string_monoid_element.StringMonoidElement'"),
+    (r"^return the binary representation of\b", "'sage.monoids.string_monoid_element.StringMonoidElement'"),
+    (r"^apply .* on the binary string\b", "'sage.monoids.string_monoid_element.StringMonoidElement'"),
+    (r"^return an? \d+-bit (?:plain|cipher)text\b", "list"),
+    (r"^return the [`\"]?n[`\"]?-th subkey\b", "list"),
+    (r"^apply one round of .*\bto .* and return the result\b", "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"),
+    (r"^return a random \d+-bit key\b", "list"),
+    (r"^return (?:the )?(?:initial )?permutation .*\b(?:\d+-bit|vector of \d+ bits)\b", "list"),
+    (r"^return a circular left shift .*\bvector of \d+ bits\b", "list"),
+    (r"^return a permutation of a \d+-bit string\b", "list"),
     (r"^return .*squarefree positive integer\b", "'sage.rings.integer.Integer'"),
     (r"^return the number .*\bas an integer\b", "'sage.rings.integer.Integer'"),
     # The public Sage wrapper returns a Rational value; the docstring's
@@ -793,6 +900,17 @@ DOC_SUMMARY_COLLECTION_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"^return the coefficients\b", "list"),
     (r"^return the exponents\b", "list"),
     (r"^extended lcm function:.*\breturns\s+(?:a\s+)?triple\b", "tuple"),
+    # DES's internal helpers expose GF(2) vectors; PC1 is the sole helper
+    # whose documented permutation is returned as a pair/tuple.
+    (r"^apply the (?:expansion|permutation) function to\b", "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"),
+    (r"^apply the cipher function to\b", "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"),
+    (r"^apply the inverse permutation function to\b", "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"),
+    (r"^apply the sboxes to\b", "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"),
+    (r"^apply the function .*using subkey\b", "list"),
+    (r"^return permuted choice 1\b", "tuple"),
+    (r"^return permuted choice 2\b", "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"),
+    (r"^return the s-boxes\b", "list"),
+    (r"^compute the sub key for round\b", "'sage.rings.integer.Integer'"),
 )
 
 _DEF_RE = re.compile(r"^(?P<indent>\s*)def\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
@@ -992,6 +1110,169 @@ def annotate_overloads(path: Path, members: dict[str, tuple[str, ...]], class_na
     return [member for _, _, member in edits]
 
 
+CONDITIONAL_OUTPUT_MARKER = "# sage-generated-conditional-output"
+
+
+def _stub_argument_parts(node: ast.FunctionDef | ast.AsyncFunctionDef, typed_name: str, annotation: str) -> list[str]:
+    """Render one function argument list for a generated conditional overload."""
+    positional = list(node.args.posonlyargs) + list(node.args.args)
+    positional_defaults = [None] * (len(positional) - len(node.args.defaults)) + list(node.args.defaults)
+    parts: list[str] = []
+    for argument, default in zip(positional, positional_defaults):
+        value = argument.arg
+        if argument.arg == typed_name:
+            value += f": {annotation}"
+        if default is not None:
+            value += f" = {ast.unparse(default)}"
+        parts.append(value)
+    if node.args.posonlyargs:
+        parts.insert(len(node.args.posonlyargs), "/")
+    if node.args.vararg is not None:
+        value = "*" + node.args.vararg.arg
+        if node.args.vararg.arg == typed_name:
+            value += f": {annotation}"
+        parts.append(value)
+    elif node.args.kwonlyargs:
+        parts.append("*")
+    for argument, default in zip(node.args.kwonlyargs, node.args.kw_defaults):
+        value = argument.arg
+        if argument.arg == typed_name:
+            value += f": {annotation}"
+        if default is not None:
+            value += f" = {ast.unparse(default)}"
+        parts.append(value)
+    if node.args.kwarg is not None:
+        value = "**" + node.args.kwarg.arg
+        if node.args.kwarg.arg == typed_name:
+            value += f": {annotation}"
+        parts.append(value)
+    return parts
+
+
+def _conditional_output_declarations(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[str, tuple[str, ...]] | None:
+    """Extract a conservative integer/list-like output contract from docs.
+
+    The Sage crypto block-cipher APIs document a stable relation: an integer
+    input produces a Sage Integer, while a list-like bit input produces a
+    dense GF(2) vector.  Only that explicit paired wording is accepted; a
+    generic union or an unqualified ``input`` clause remains unresolved.
+    """
+    declared_return = ast.unparse(node.returns) if node.returns is not None else None
+    # Key-schedule APIs declare a broad ``list`` while their docs make the
+    # element type depend on the key representation.  Keep the implementation
+    # declaration intact and expose precise list-element overloads alongside
+    # it.  Other pre-annotated returns are left untouched.
+    if declared_return is not None and declared_return not in {"list", "List"}:
+        return None
+    doc = ast.get_docstring(node, clean=False) or ""
+    if not doc:
+        return None
+    compact = " ".join(doc.split())
+    token = r"[`\"]{0,2}(?P<name>[A-Za-z_]\w*)[`\"]{0,2}"
+    integer = re.search(
+        rf"\bIf\s+{token}\s+is\s+an?\s+integer\b(?P<body>.{{0,180}}?)\boutput(?:\s+list)?\s+will\s+be\s+(?:too|an?\s+integer)\b",
+        compact,
+        re.IGNORECASE,
+    )
+    if integer is None:
+        return None
+    parameter = integer.group("name")
+    quoted_parameter = rf"[`\"]{{0,2}}{re.escape(parameter)}[`\"]{{0,2}}"
+    list_like = re.search(
+        rf"\bIf\s+{quoted_parameter}\s+is\s+list-like\b.{{0,180}}?"
+        rf"(?:\boutput\s+will\s+be\s+(?:a\s+)?bit\s+vectors?\b|"
+        rf"\b(?:element|elements)\s+of\s+(?:the\s+)?output\s+list\s+will\s+be\s+(?:a\s+)?bit\s+vectors?\b)",
+        compact,
+        re.IGNORECASE,
+    )
+    if list_like is None:
+        return None
+    argument_names = {
+        argument.arg
+        for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+    }
+    if parameter not in argument_names:
+        return None
+    list_result = bool(
+        re.search(
+            r"\b(?:element|elements)\s+of\s+(?:the\s+)?output\s+list\b|"
+            r"\boutput\s+list\s+will\s+contain\b",
+            compact,
+            re.IGNORECASE,
+        )
+    )
+    integer_result = (
+        "list['sage.rings.integer.Integer']"
+        if list_result
+        else "'sage.rings.integer.Integer'"
+    )
+    vector_result = (
+        "list['sage.modules.vector_mod2_dense.Vector_mod2_dense']"
+        if list_result
+        else "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"
+    )
+    integer_parts = ", ".join(
+        _stub_argument_parts(node, parameter, "int")
+    )
+    list_parts = ", ".join(
+        _stub_argument_parts(node, parameter, "list")
+    )
+    return parameter, (
+        f"def {node.name}({integer_parts}) -> {integer_result}: ... {CONDITIONAL_OUTPUT_MARKER}",
+        f"def {node.name}({list_parts}) -> {vector_result}: ... {CONDITIONAL_OUTPUT_MARKER}",
+    )
+
+
+def annotate_conditional_output_overloads(path: Path) -> list[str]:
+    """Add generated overloads for explicit, parameter-dependent outputs."""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    cleaned: list[str] = []
+    index = 0
+    removed = False
+    while index < len(lines):
+        if (
+            lines[index].strip() == "@overload"
+            and index + 1 < len(lines)
+            and CONDITIONAL_OUTPUT_MARKER in lines[index + 1]
+        ):
+            index += 2
+            removed = True
+            continue
+        cleaned.append(lines[index])
+        index += 1
+    if removed:
+        text = "".join(cleaned)
+        lines = cleaned
+    try:
+        tree = ast.parse(text, filename=str(path), type_comments=True)
+    except SyntaxError:
+        return []
+    edits: list[tuple[int, list[str], str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        contract = _conditional_output_declarations(node)
+        if contract is None:
+            continue
+        _, declarations = contract
+        line_index = node.lineno - 1
+        if line_index < 0 or line_index >= len(lines):
+            continue
+        indent = re.match(r"^\s*", lines[line_index]).group(0)
+        block = [item for declaration in declarations for item in (f"{indent}@overload\n", f"{indent}{declaration}\n")]
+        edits.append((line_index, block, node.name))
+    for line_index, block, name in sorted(edits, reverse=True):
+        lines[line_index:line_index] = block
+    if edits or removed:
+        path.write_text("".join(lines), encoding="utf-8")
+    if edits:
+        ensure_typing_name(path, "overload")
+    return [name for _, _, name in edits]
+
+
 def ensure_type_variables(path: Path, names: tuple[str, ...]) -> bool:
     """Ensure module-level TypeVar declarations required by contracts exist."""
     text = path.read_text(encoding="utf-8")
@@ -1162,6 +1443,8 @@ def annotate_protocol_returns(path: Path) -> list[str]:
         text = text[:offset] + f" -> {annotation}" + text[offset:]
     if edits:
         path.write_text(text, encoding="utf-8")
+        if any(annotation == "Self" for _, annotation, _ in edits):
+            ensure_typing_name(path, "Self")
     return [name for _, _, name in sorted(edits)]
 
 
@@ -1302,6 +1585,20 @@ def _doc_summary_annotation(
         rest = summary.strip()
     else:
         rest = match.group("rest").strip()
+        # Some cryptographic transformation descriptions continue with
+        # conditional/formula prose (for example S-DES left-shift's ``if
+        # n=1`` case).  These anchored output nouns are already complete
+        # contracts, so resolve them before the general conditional guard.
+        for pattern, annotation in (
+            (r"^return a circular left shift\b", "list"),
+            (r"^return (?:the )?(?:initial )?permutation .*\b(?:\d+-bit|vector of \d+ bits)\b", "list"),
+            (r"^return a permutation of a \d+-bit string\b", "list"),
+            # Mini-AES/S-DES accept several binary-string shapes in their
+            # prose, but every branch returns a BinaryStrings element.
+            (r"^return the binary representation of\b", "'sage.monoids.string_monoid_element.StringMonoidElement'"),
+        ):
+            if re.search(pattern, summary, re.IGNORECASE):
+                return annotation
     normalized_rest = re.sub(r"`{1,2}(true|false|none|nothing)`{1,2}", r"\1", rest, flags=re.IGNORECASE)
     normalized_rest = normalized_rest.replace("`", "").replace('"', "").replace("'", "")
     if owner_name and re.fullmatch(r"Integer", owner_name, re.IGNORECASE) and re.match(
@@ -1314,6 +1611,26 @@ def _doc_summary_annotation(
     if owner_name and re.fullmatch(r"Integer", owner_name, re.IGNORECASE) and re.match(
         r"^返回 self 的 .*多重阶乘", normalized_rest
     ):
+        return "Self"
+    # Iterator implementations that explicitly return themselves satisfy the
+    # Python iterator protocol.  This is a source-level invariant and does
+    # not guess the element type yielded by ``__next__``.
+    if node.name == "__iter__" and re.match(
+        r"^self(?:\s*,?\s+as\s+per\s+the\s+iterator\s+protocol)?[.!]?$",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "Self"
+    if node.name == "__iter__" and re.match(
+        r"^(?:this\s+iterator(?:\s+object\s+itself)?|"
+        r"the\s+iterable\s+instance\s+of\s+the\s+class|"
+        r"the\s+iterator\s*\(\s*i\.e\.\s*self\s*\)|"
+        r"self\s+as\s+an?\s+iterator)\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        # These phrases explicitly identify the receiver as the iterator;
+        # unlike ``an iterator over ...`` they do not guess the yielded item.
         return "Self"
     if re.search(r"\b(?:or|either|depending)\b", normalized_rest):
         # A representation can depend on display options while its runtime
@@ -1637,6 +1954,20 @@ def _doc_output_annotation(
             return "str"
         if type_head in {"float", "double"}:
             return "float"
+        if re.match(
+            r"^(?:the\s+)?(?:block(?:\s+\(or\s+key\))?|input|output|key)\s+(?:length|size)\b",
+            output,
+            re.IGNORECASE,
+        ):
+            return "int"
+        if re.match(
+            r"^(?:the\s+)?`{0,2}[a-z_]\w*`{0,2}-bit\s+vector\s+representation\b",
+            output,
+            re.IGNORECASE,
+        ):
+            # DES/PRESENT conversion helpers explicitly promise a dense
+            # GF(2) bit vector, not an arbitrary parent-dependent vector.
+            return "'sage.modules.vector_mod2_dense.Vector_mod2_dense'"
         if type_head in {"list", "python list"}:
             return "list"
         if type_head in {"dict", "dictionary", "python dictionary"}:
@@ -1644,6 +1975,16 @@ def _doc_output_annotation(
         if type_head in {"tuple", "pair"} or type_head.startswith(("tuple[", "list[")):
             if type_head in {"tuple", "pair"} or type_head.startswith("tuple["):
                 return "tuple"
+            return "list"
+        if output.startswith(("the binary string representation", "a binary string representation")):
+            return "'sage.monoids.string_monoid_element.StringMonoidElement'"
+        if re.match(
+            r"^(?:the\s+)?(?:initial\s+)?permutation .*\b(?:\d+-bit|vector of \d+ bits)\b|"
+            r"^a circular left shift .*\bvector of \d+ bits\b|"
+            r"^a permutation of a \d+-bit string\b",
+            output,
+            re.IGNORECASE,
+        ):
             return "list"
         exact = DOC_OUTPUT_RETURNS.get(output)
         if exact is not None:
@@ -2064,6 +2405,15 @@ def main() -> int:
     if protocol_total:
         total += protocol_total
         print(f"protocol methods: annotated {protocol_total} missing return contract(s)")
+    conditional_total = 0
+    for path in sorted(root.rglob("*.pyi")):
+        edited = annotate_conditional_output_overloads(path)
+        if edited:
+            verify(path)
+            conditional_total += len(edited)
+    if conditional_total:
+        total += conditional_total
+        print(f"conditional output overloads: annotated {conditional_total} member(s)")
     doc_output_total = 0
     class_index = _build_class_index(root)
     for path in sorted(root.rglob("*.pyi")):
