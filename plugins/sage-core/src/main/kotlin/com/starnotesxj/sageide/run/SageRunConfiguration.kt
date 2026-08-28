@@ -96,17 +96,16 @@ class SageRunConfiguration(
     }
 
     /**
-     * The settings-backed WSL mode is intentionally launchable without a host probe.
+     * Settings-backed WSL runs must not probe the host before launch.
      *
-     * A run state can be constructed on the EDT, where waiting for `wsl.exe` is
-     * forbidden. When no managed Sage SDK is selected, the WSL shell can activate
-     * The configured absolute Sage path is passed directly to `wsl.exe`, so the
-     * command shown by IntelliJ remains concise and contains no shell bootstrap.
+     * IntelliJ can construct a command state on the EDT.  Runtime discovery
+     * starts `wsl.exe` and waits for its output, which is forbidden there.  The
+     * child shell therefore activates the configured Conda environment and
+     * resolves Sage when no managed Sage SDK was selected.
      */
     internal fun usesConfiguredWslRuntime(settings: SageRunSettings.State): Boolean =
         settings.executionMode == ExecutionMode.WSL.name &&
-            sageSdkName.isNullOrBlank() &&
-            configuredWslSageExecutable(settings) != null
+            sageSdkName.isNullOrBlank()
 
     fun resolveSageExecutables(): RuntimeOperationResult<ResolvedRuntimeExecutables> {
         val configured = sageSdkName?.trim().orEmpty()

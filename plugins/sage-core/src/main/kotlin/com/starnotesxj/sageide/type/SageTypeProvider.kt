@@ -145,6 +145,18 @@ class SageTypeProvider : PyTypeProviderBase() {
             return null
         }
 
+        // A reference to a target in a .sage assignment must use the Sage
+        // preparse-aware target type as well.  Python's fallback otherwise
+        // follows the raw PSI literal (``Literal[123]``) or its widened
+        // ``int`` type, so a call such as ``GF(p)`` reports a false mismatch
+        // even though ``p = 123`` executes as ``Integer(123)`` in Sage.
+        // Reuse the same assignment-boundary contract used by completion and
+        // keep native/stub declarations authoritative outside user Sage files.
+        val resolvedTarget = resolved as? PyTargetExpression
+        if (resolvedTarget != null && SageFileUtils.isSageFile(resolvedTarget.containingFile)) {
+            getReferenceType(resolvedTarget, context, referenceExpression)?.get()?.let { return it }
+        }
+
         val name = referenceExpression.referencedName?.takeIf(String::isNotBlank) ?: return null
         val query = SageApiIndexService.getInstance().query() ?: return null
         val entry = query.namespaceEntry("sage.all", name) ?: return null

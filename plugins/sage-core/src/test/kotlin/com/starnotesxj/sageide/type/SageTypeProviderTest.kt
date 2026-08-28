@@ -158,6 +158,60 @@ class SageTypeProviderTest : SagePluginTestBase() {
         }
     }
 
+    fun testSageNumericAssignmentReferencesUseIntegerInsteadOfPythonLiteral() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "numeric.pyi")
+        val integer = "sage.rings.integer.Integer"
+        val finiteField = "sage.rings.finite_rings.finite_field_base.FiniteField"
+        val index = SageApiIndexQuery(SageApiIndex("10.9", "3.13", listOf(
+            SageApiEntry(integer, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(finiteField, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(
+                "sage.all.GF",
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(SageApiParameter("p", SageTypeRef.known(integer))),
+                        returnType = SageTypeRef.known(finiteField),
+                    ),
+                ),
+                sources = listOf(source),
+            ),
+        )))
+        SageApiIndexService.getInstance().install(index)
+        try {
+            myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/integer.pyi", "class Integer: ...\n")
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/finite_rings/finite_field_base.pyi",
+                "class FiniteField: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/all.pyi",
+                "from sage.rings.integer import Integer\n" +
+                    "from sage.rings.finite_rings.finite_field_base import FiniteField\n" +
+                    "def GF(p: Integer) -> FiniteField: ...\n",
+            )
+            myFixture.configureByText(
+                "numeric-reference.sage",
+                "p = 4368590184733545720227961182704359358435747188309319510520316493183539079703\n" +
+                    "F = GF(p)\n",
+            )
+            val context = defaultContext()
+            val pReference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+                .single { it.referencedName == "p" }
+            val pType = context.getType(pReference) as? PyClassType
+            assertEquals(integer, pType?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+            val highlights = myFixture.doHighlighting()
+            assertTrue(
+                highlights.none { it.description?.contains("Literal[") == true },
+                "Sage numeric assignment still reports a Python literal: ${highlights.mapNotNull { it.description }}",
+            )
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
     fun testCtfMatrixFactoryUsesConcreteMatrix2InsteadOfMatrix0() {
         val source = SageApiSourceRef(SageApiSourceKind.STUB, "matrix2.pyi")
         val matrix0 = "sage.matrix.matrix0.Matrix"

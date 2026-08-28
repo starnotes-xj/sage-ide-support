@@ -66,15 +66,28 @@ class SageCommandLineState(
                 val arguments = sageArguments + toWslPath(configuration.scriptPath) + scriptArguments
                 val sageExecutable = if (usesConfiguredWsl) {
                     configuredWslSageExecutable(s)
-                        ?: throw ExecutionException("The Sage executable is not configured for WSL")
                 } else {
                     executables!!.sage
                 }
-                // Use WSL's direct executable form rather than `bash -lc`. This
-                // keeps IntelliJ's console command readable and leaves only Sage
-                // stdout/stderr visible after the command line.
-                GeneralCommandLine("wsl.exe")
-                    .withParameters(wslDirectRunArguments(distribution, sageExecutable, arguments))
+                if (sageExecutable != null) {
+                    // Use WSL's direct executable form when the user supplied an
+                    // absolute path.  This keeps the console command readable.
+                    GeneralCommandLine("wsl.exe")
+                        .withParameters(wslDirectRunArguments(distribution, sageExecutable, arguments))
+                } else {
+                    // Do not discover the runtime on the EDT.  Let the target
+                    // shell activate Conda and resolve `sage` in the child.
+                    GeneralCommandLine(
+                        "wsl.exe", "-d", distribution, "--exec", "/bin/bash", "-lc",
+                        wslConfiguredRunScript(
+                            environment = s.wslCondaEnvironment,
+                            configuredExecutable = "",
+                            arguments = arguments,
+                            condaExecutable = s.wslCondaExecutable.trim().takeIf { it.isNotEmpty() },
+                        ),
+                        "sage-run",
+                    )
+                }
             }
 
             ExecutionMode.DOCKER -> {

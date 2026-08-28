@@ -187,6 +187,8 @@
          unchanged. -->
     <lang.quoteHandler language="Sage"
                        implementationClass="com.starnotesxj.sageide.editor.SageQuoteHandler"/>
+    <typedHandler implementation="com.starnotesxj.sageide.editor.SageAngleBracketTypedHandler"
+                   order="first"/>
 
     <!-- Defensive: if a sugar statement ever falls back to the error-recovered
          Python tree, suppress the parser-error squiggles on exactly that statement. -->
