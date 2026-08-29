@@ -116,6 +116,19 @@ MATRIX_SCALAR_UNION = (
     "sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt | "
     "sage.symbolic.expression.Expression'"
 )
+# Functional wrappers intentionally expose a small, concrete scalar union for
+# symbolic summation/product.  The wrappers simplify constant expressions to
+# Sage integers/rationals, numeric inputs to the real-double implementation,
+# and symbolic/complex inputs to symbolic expressions; do not collapse this to
+# the public ``Element``/``Number`` bases.
+FUNCTIONAL_SYMBOLIC_RESULT_UNION = (
+    "'sage.rings.integer.Integer | sage.rings.rational.Rational | "
+    "sage.rings.real_mpfr.RealNumber | "
+    "sage.rings.real_double_element_gsl.RealDoubleElement_gsl | "
+    "sage.rings.complex_mpfr.ComplexNumber | "
+    "sage.rings.complex_double.ComplexDoubleElement | "
+    "sage.symbolic.expression.Expression | sage.rings.infinity.PlusInfinity'"
+)
 MATRIX_POLYNOMIAL_UNION = (
     "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint | "
     "sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint | "
@@ -135,6 +148,30 @@ POLYNOMIAL_RETURN_UNION = (
     "sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p | "
     "sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX | "
     "sage.rings.polynomial.polynomial_element_generic.Polynomial_generic_dense_field'"
+)
+# Power-series conversions expose concrete polynomial implementations selected
+# by the univariate/multivariate parent.  Keep the implementation families
+# explicit instead of returning the public ``Polynomial`` protocol base.
+MULTIVARIATE_POLYNOMIAL_RETURN_UNION = (
+    "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular | "
+    "sage.rings.polynomial.multi_polynomial_element.MPolynomial_polydict'"
+)
+LAURENT_POLYNOMIAL_RETURN_UNION = (
+    "'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate | "
+    "sage.rings.polynomial.laurent_polynomial_mpair.LaurentPolynomial_mpair'"
+)
+POWER_SERIES_RETURN_UNION = (
+    "'sage.rings.power_series_poly.PowerSeries_poly | "
+    "sage.rings.power_series_pari.PowerSeries_pari'"
+)
+LINK_POLYNOMIAL_RETURN_UNION = (
+    "'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate | "
+    "sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint | "
+    "sage.rings.integer.Integer'"
+)
+JONES_POLYNOMIAL_RETURN_UNION = (
+    "'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate | "
+    "sage.symbolic.expression.Expression | sage.rings.integer.Integer'"
 )
 # ``MatrixSpace`` constructs an element using the base ring's selected
 # implementation.  The parent class cannot express that dispatch, so keep
@@ -2052,6 +2089,17 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     },
 }
 
+# The generated QQ stub uses a broad NumberField alias for ``number_field``
+# and unparameterized iterator/tuple aliases.  Retarget these existing
+# annotations to the concrete singleton contracts so reruns remain precise.
+CURATED_REPLACE_ANNOTATIONS["sage/rings/rational_field.pyi"] = {
+    "RationalField": {
+        "gens": "tuple['sage.rings.rational.Rational']",
+        "number_field": "Self",
+        "selmer_group_iterator": "Iterator['sage.rings.rational.Rational']",
+    },
+}
+
 # OVERLOAD: documented parameter/return correlations which cannot be recovered
 # from a broad union annotation alone.  These contracts are consumed by the
 # generic overload machinery in the generated API index; the Kotlin plugin does
@@ -2095,6 +2143,18 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
                 "def subgraph(self, vertices=None, edges=None, inplace: Literal[False] = False, vertex_property=None, edge_property=None, algorithm=None, immutable=None) -> Self: ...",
                 "def subgraph(self, vertices=None, edges=None, inplace: Literal[True] = True, vertex_property=None, edge_property=None, algorithm=None, immutable=None) -> None: ...",
                 "def subgraph(self, vertices=None, edges=None, inplace: bool = False, vertex_property=None, edge_property=None, algorithm=None, immutable=None) -> Self | None: ...",
+            ),
+        },
+    },
+    "sage/groups/perm_gps/permgroup.pyi": {
+        "PermutationGroup_generic": {
+            # ``direct_product`` returns only the product group when GAP
+            # maps are suppressed; the default branch also returns four
+            # embedding/projection morphisms in a five-tuple.
+            "direct_product": (
+                "def direct_product(self, other, maps: Literal[False] = False) -> 'sage.groups.perm_gps.permgroup.PermutationGroup_generic': ...",
+                "def direct_product(self, other, maps: Literal[True] = True) -> tuple: ...",
+                "def direct_product(self, other, maps: bool = True) -> 'sage.groups.perm_gps.permgroup.PermutationGroup_generic' | tuple: ...",
             ),
         },
     },
@@ -2285,6 +2345,158 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             "lcm": (
                 "def lcm(a: LcmT, b: LcmT) -> LcmT: ...",
                 "def lcm(a: list[LcmT], b=None) -> LcmT: ...",
+            ),
+        },
+    },
+    "sage/combinat/designs/difference_family.pyi": {
+        None: {
+            # Difference-family builders document stable outer containers;
+            # parent element types inside those containers remain dynamic.
+            "_construct_gs_difference_family_from_full": (
+                "def _construct_gs_difference_family_from_full(S1, S2, mu) -> list: ...",
+            ),
+            "_construct_gs_difference_family_from_compact": (
+                "def _construct_gs_difference_family_from_compact(rep1, rep2, H, mu) -> list: ...",
+            ),
+            "_construction_supplementary_difference_set": (
+                "def _construction_supplementary_difference_set(n, H, indices, cosets_gen, check=True) -> tuple: ...",
+            ),
+            "_create_m_sequence": (
+                "def _create_m_sequence(q, n, check=True) -> list: ...",
+            ),
+            "_is_skew_set": (
+                "def _is_skew_set(G, S) -> bool: ...",
+            ),
+            "are_mcfarland_1973_parameters": (
+                "def are_mcfarland_1973_parameters(v, k, lmbda, return_parameters: Literal[False] = False) -> bool: ...",
+                "def are_mcfarland_1973_parameters(v, k, lmbda, return_parameters: Literal[True]) -> tuple[bool, tuple[int, int] | None]: ...",
+                "def are_mcfarland_1973_parameters(v, k, lmbda, return_parameters: bool = False) -> bool | tuple[bool, tuple[int, int] | None]: ...",
+            ),
+            "complementary_difference_setsI": (
+                "def complementary_difference_setsI(n, check=True) -> tuple: ...",
+            ),
+            "complementary_difference_setsII": (
+                "def complementary_difference_setsII(n, check=True) -> tuple: ...",
+            ),
+            "complementary_difference_setsIII": (
+                "def complementary_difference_setsIII(n, check=True) -> tuple: ...",
+            ),
+            "complementary_difference_sets": (
+                "def complementary_difference_sets(n, existence: Literal[False] = False, check=True) -> tuple: ...",
+                "def complementary_difference_sets(n, existence: Literal[True], check=True) -> bool: ...",
+                "def complementary_difference_sets(n, existence: bool = False, check=True) -> tuple | bool: ...",
+            ),
+            "df_q_6_1": (
+                "def df_q_6_1(K, existence: Literal[False] = False, check=True) -> list: ...",
+                "def df_q_6_1(K, existence: Literal[True], check=True) -> bool: ...",
+                "def df_q_6_1(K, existence: bool = False, check=True) -> list | bool: ...",
+            ),
+            "difference_family": (
+                "def difference_family(v, k, l=1, existence: Literal[False] = False, explain_construction: Literal[False] = False, check=True) -> tuple: ...",
+                "def difference_family(v, k, l=1, existence: Literal[True] = True, explain_construction: Literal[False] = False, check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def difference_family(v, k, l=1, existence: Literal[False] = False, explain_construction: Literal[True] = True, check=True) -> str: ...",
+                "def difference_family(v, k, l=1, existence: bool = False, explain_construction: bool = False, check=True) -> tuple | bool | str | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "get_fixed_relative_difference_set": (
+                "def get_fixed_relative_difference_set(G, rel_diff_set, as_elements=False) -> list: ...",
+            ),
+            "hadamard_difference_set_product_parameters": (
+                "def hadamard_difference_set_product_parameters(N) -> tuple[int, int] | None: ...",
+            ),
+            "hadamard_difference_set_product": (
+                "def hadamard_difference_set_product(G1, D1, G2, D2) -> tuple: ...",
+            ),
+            "is_fixed_relative_difference_set": (
+                "def is_fixed_relative_difference_set(R, q) -> bool: ...",
+            ),
+            "is_relative_difference_set": (
+                "def is_relative_difference_set(R, G, H, params, verbose=False) -> bool: ...",
+            ),
+            "is_supplementary_difference_set": (
+                "def is_supplementary_difference_set(Ks, v=None, lmbda=None, G=None, verbose=False) -> bool: ...",
+            ),
+            "mcfarland_1973_construction": (
+                "def mcfarland_1973_construction(q, s) -> tuple: ...",
+            ),
+            "one_cyclic_tiling": (
+                "def one_cyclic_tiling(A, n) -> list: ...",
+            ),
+            "one_radical_difference_family": (
+                "def one_radical_difference_family(K, k) -> list | None: ...",
+            ),
+            "radical_difference_family": (
+                "def radical_difference_family(K, k, l=1, existence: Literal[False] = False, check=True) -> list: ...",
+                "def radical_difference_family(K, k, l=1, existence: Literal[True] = True, check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def radical_difference_family(K, k, l=1, existence: bool = False, check=True) -> list | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "radical_difference_set": (
+                "def radical_difference_set(K, k, l=1, existence: Literal[False] = False, check=True) -> list: ...",
+                "def radical_difference_set(K, k, l=1, existence: Literal[True] = True, check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def radical_difference_set(K, k, l=1, existence: bool = False, check=True) -> list | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "relative_difference_set_from_homomorphism": (
+                "def relative_difference_set_from_homomorphism(q, N, d, check=True, return_group: Literal[False] = False) -> list: ...",
+                "def relative_difference_set_from_homomorphism(q, N, d, check=True, return_group: Literal[True] = True) -> tuple: ...",
+                "def relative_difference_set_from_homomorphism(q, N, d, check=True, return_group: bool = False) -> list | tuple: ...",
+            ),
+            "relative_difference_set_from_m_sequence": (
+                "def relative_difference_set_from_m_sequence(q, N, check=True, return_group: Literal[False] = False) -> list: ...",
+                "def relative_difference_set_from_m_sequence(q, N, check=True, return_group: Literal[True] = True) -> tuple: ...",
+                "def relative_difference_set_from_m_sequence(q, N, check=True, return_group: bool = False) -> list | tuple: ...",
+            ),
+            "skew_spin_goethals_seidel_difference_family": (
+                "def skew_spin_goethals_seidel_difference_family(n, existence: Literal[False] = False, check=True) -> tuple: ...",
+                "def skew_spin_goethals_seidel_difference_family(n, existence: Literal[True], check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def skew_spin_goethals_seidel_difference_family(n, existence: bool = False, check=True) -> tuple | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "skew_supplementary_difference_set": (
+                "def skew_supplementary_difference_set(n, existence: Literal[False] = False, check=True, return_group: Literal[False] = False) -> list: ...",
+                "def skew_supplementary_difference_set(n, existence: Literal[False] = False, check=True, return_group: Literal[True] = True) -> tuple: ...",
+                "def skew_supplementary_difference_set(n, existence: Literal[True], check=True, return_group=False) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def skew_supplementary_difference_set(n, existence: bool = False, check=True, return_group: bool = False) -> list | tuple | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "skew_supplementary_difference_set_over_polynomial_ring": (
+                "def skew_supplementary_difference_set_over_polynomial_ring(n, existence: Literal[False] = False, check=True) -> tuple: ...",
+                "def skew_supplementary_difference_set_over_polynomial_ring(n, existence: Literal[True], check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def skew_supplementary_difference_set_over_polynomial_ring(n, existence: bool = False, check=True) -> tuple | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "skew_supplementary_difference_set_with_paley_todd": (
+                "def skew_supplementary_difference_set_with_paley_todd(n, existence: Literal[False] = False, check=True) -> tuple: ...",
+                "def skew_supplementary_difference_set_with_paley_todd(n, existence: Literal[True], check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def skew_supplementary_difference_set_with_paley_todd(n, existence: bool = False, check=True) -> tuple | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "spin_goethals_seidel_difference_family": (
+                "def spin_goethals_seidel_difference_family(n, existence: Literal[False] = False, check=True) -> tuple: ...",
+                "def spin_goethals_seidel_difference_family(n, existence: Literal[True], check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def spin_goethals_seidel_difference_family(n, existence: bool = False, check=True) -> tuple | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "supplementary_difference_set_from_rel_diff_set": (
+                "def supplementary_difference_set_from_rel_diff_set(q, existence: Literal[False] = False, check=True) -> tuple: ...",
+                "def supplementary_difference_set_from_rel_diff_set(q, existence: Literal[True], check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def supplementary_difference_set_from_rel_diff_set(q, existence: bool = False, check=True) -> tuple | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "supplementary_difference_set_hadamard": (
+                "def supplementary_difference_set_hadamard(n, existence: Literal[False] = False, check=True) -> tuple: ...",
+                "def supplementary_difference_set_hadamard(n, existence: Literal[True], check=True) -> bool | 'sage.misc.unknown.Unknown': ...",
+                "def supplementary_difference_set_hadamard(n, existence: bool = False, check=True) -> tuple | bool | 'sage.misc.unknown.Unknown': ...",
+            ),
+            "turyn_1965_3x3xK": (
+                "def turyn_1965_3x3xK(k=4) -> tuple: ...",
+            ),
+            "twin_prime_powers_difference_set": (
+                "def twin_prime_powers_difference_set(p, check=True) -> tuple: ...",
+            ),
+        },
+    },
+    "sage/combinat/skew_tableau.pyi": {
+        "SkewTableau": {
+            # ``slide(return_vacated=True)`` is the one argument-dependent
+            # branch: Sage returns the transformed skew tableau together with
+            # the vacated coordinates.  Keep both literal branches visible.
+            "slide": (
+                "def slide(self, corner=None, return_vacated: Literal[False] = False) -> Self: ...",
+                "def slide(self, corner=None, return_vacated: Literal[True] = True) -> tuple[Self, tuple[int, int]]: ...",
+                "def slide(self, corner=None, return_vacated: bool = False) -> Self | tuple[Self, tuple[int, int]]: ...",
             ),
         },
     },
@@ -4529,6 +4741,16 @@ def _doc_metric_contract_annotation(
     # even though the runtime class is stable; keep evaluation/solver helpers
     # out because their result depends on substitutions and backend choices.
     if owner_name == "Expression":
+        if node.name == "__enter__":
+            return "Self"
+        if node.name in {"_ascii_art_", "_unicode_art_"}:
+            return (
+                "'sage.typeset.ascii_art.AsciiArt'"
+                if node.name == "_ascii_art_"
+                else "'sage.typeset.unicode_art.UnicodeArt'"
+            )
+        if node.name in {"_fricas_init_", "_interface_init_"}:
+            return "str"
         if node.name in {
             "__abs__", "__invert__", "__add__", "__floordiv__", "__mul__",
             "__neg__", "__pow__", "__sub__", "__truediv__",
@@ -4550,6 +4772,29 @@ def _doc_metric_contract_annotation(
             "unhold", "zeta",
         }:
             return "Self"
+        if node.name in {
+            "content", "csgn", "demoivre", "function", "gcd", "gosper_sum",
+            "gosper_term", "half_angle", "horner", "implicit_derivative",
+            "inverse_laplace", "laplace", "leading_coefficient", "limit",
+            "mul", "norm", "poly", "prod", "residue", "resultant", "step",
+            "sum", "WZ_certificate",
+        }:
+            return "Self"
+        if node.name == "gradient":
+            return (
+                "'sage.modules.free_module_element.FreeModuleElement_generic_dense | "
+                "sage.modules.free_module_element.FreeModuleElement_generic_sparse'"
+            )
+        if node.name == "hessian":
+            return "'sage.matrix.matrix_symbolic_dense.Matrix_symbolic_dense'"
+        if node.name in {"find_local_maximum", "find_local_minimum"}:
+            return "tuple[float, float]"
+        if node.name == "match":
+            return "dict | None"
+        if node.name == "maxima_methods":
+            return "'sage.symbolic.maxima_wrapper.MaximaWrapper'"
+        if node.name == "nintegral":
+            return "tuple"
         if node.name in {"arguments", "variables", "free_variables", "numerator_denominator"}:
             return "tuple"
         if node.name in {"default_variable", "right_hand_side", "subs"}:
@@ -4582,6 +4827,210 @@ def _doc_metric_contract_annotation(
             return "list"
         if node.name == "plot":
             return "'sage.plot.graphics.Graphics'"
+
+    # Formal power/Laurent series have a particularly stable outer protocol:
+    # arithmetic and precision transforms preserve the selected series
+    # implementation, while coefficient/precision helpers return documented
+    # scalar or container families.  Keep substitutions and coefficient
+    # access fail-closed because their result depends on the argument parent.
+    series_owner = owner_name in {
+        "PowerSeries", "PowerSeries_poly", "PowerSeries_pari",
+        "MPowerSeries", "LaurentSeries",
+    }
+    if series_owner:
+        if node.name in {
+            "__bool__", "is_dense", "is_gen", "is_monomial", "is_nilpotent",
+            "is_square", "is_unit", "is_zero",
+        }:
+            return "bool"
+        if node.name in {"__hash__"}:
+            return "int"
+        if node.name in {"__copy__", "__neg__", "__pos__", "__setitem__", "_richcmp_"}:
+            return "Self" if node.name != "__setitem__" and node.name != "_richcmp_" else (
+                "None" if node.name == "__setitem__" else "bool"
+            )
+        if node.name == "__init__":
+            return "None"
+        if node.name == "__reduce__":
+            return "tuple | str"
+        if node.name in {"_repr_", "_latex_", "variable"}:
+            if node.name == "variable" and owner_name == "MPowerSeries":
+                return None
+            return "str"
+        if node.name in {
+            "_add_", "_sub_", "_mul_", "_lmul_", "_rmul_",
+            "__lshift__", "__rshift__", "__mod__", "add_bigoh", "O",
+            "change_ring", "base_extend", "derivative", "integral", "exp",
+            "log", "sin", "cos", "tan", "sinh", "cosh", "tanh", "shift",
+            "egf_to_ogf", "ogf_to_egf", "valuation_zero_part", "map_coefficients",
+            "lift_to_precision", "reverse", "truncate_powerseries", "_integral",
+        }:
+            # Multivariate shift/OGF helpers are explicitly unimplemented in
+            # the Sage docs; do not expose a value for those methods.
+            if owner_name == "MPowerSeries" and node.name in {
+                "__lshift__", "__rshift__", "shift", "egf_to_ogf", "ogf_to_egf",
+                "truncate_powerseries",
+            }:
+                return None
+            return "Self"
+        if node.name == "_div_":
+            if owner_name == "LaurentSeries" or owner_name == "MPowerSeries":
+                return "Self"
+            return "Self | 'sage.rings.laurent_series_ring_element.LaurentSeries'"
+        if node.name in {"__invert__", "inverse"}:
+            if owner_name in {"LaurentSeries", "MPowerSeries"}:
+                return "Self"
+            return "Self | 'sage.rings.laurent_series_ring_element.LaurentSeries'"
+        if node.name in {"__pow__", "nth_root"}:
+            if owner_name == "LaurentSeries":
+                return "Self"
+            return "Self | 'sage.rings.laurent_series_ring_element.LaurentSeries'"
+        if node.name in {"coefficients", "exponents", "list", "padded_list", "monomials"}:
+            if owner_name == "MPowerSeries" and node.name == "coefficients":
+                return "dict"
+            if owner_name == "MPowerSeries" and node.name in {"list", "padded_list"}:
+                return None
+            return "list"
+        if node.name == "monomial_coefficients":
+            return "dict"
+        if node.name == "variables":
+            return "tuple"
+        if node.name in {"degree"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {
+            "prec", "precision_absolute", "precision_relative", "common_prec",
+            "common_valuation", "valuation",
+        }:
+            return CARDINALITY_RETURN_UNION
+        if node.name == "polynomial":
+            return (
+                MULTIVARIATE_POLYNOMIAL_RETURN_UNION
+                if owner_name == "MPowerSeries"
+                else POLYNOMIAL_RETURN_UNION
+            )
+        if node.name == "truncate":
+            return "Self" if owner_name == "MPowerSeries" or owner_name == "LaurentSeries" else POLYNOMIAL_RETURN_UNION
+        if node.name == "pade" and owner_name == "PowerSeries_poly":
+            return "'sage.rings.fraction_field_element.FractionFieldElement'"
+        if node.name == "laurent_series" and owner_name in {"PowerSeries", "PowerSeries_poly", "PowerSeries_pari"}:
+            return "'sage.rings.laurent_series_ring_element.LaurentSeries'"
+        if node.name == "laurent_polynomial" and owner_name == "LaurentSeries":
+            return LAURENT_POLYNOMIAL_RETURN_UNION
+        if node.name == "power_series" and owner_name == "LaurentSeries":
+            return POWER_SERIES_RETURN_UNION
+        if node.name == "__iter__" and owner_name in {"PowerSeries_poly", "LaurentSeries"}:
+            return "Iterator"
+        if node.name == "residue" and owner_name == "LaurentSeries":
+            return None
+        if node.name == "__pari__" and owner_name in {"PowerSeries_pari", "LaurentSeries"}:
+            return "'cypari2.gen.Gen'"
+
+    # Lazy formal series use the same parent-preserving contract for their
+    # analytic transforms.  The coefficient stream and substitution operand
+    # can change the inner value type, so indexing and scalar action remain
+    # unresolved; the documented outer series/container result is stable.
+    if owner_name == "LazyModuleElement":
+        if node.name in {
+            "arccos", "arccot", "arcsin", "arcsinh", "arctan", "arctanh",
+            "cos", "cosh", "cot", "coth", "csc", "csch", "dilog", "euler",
+            "exp", "hypergeometric", "jacobi_theta", "log", "polylog",
+            "q_pochhammer", "sec", "sech", "sin", "sinh", "sqrt", "tan",
+            "tanh", "nth_root", "change_ring", "map_coefficients", "restrict",
+            "shift", "truncate", "__rshift__", "lift_to_precision",
+        }:
+            return "Self"
+        if node.name == "coefficients":
+            return "list"
+        if node.name == "prec":
+            return "'sage.rings.infinity.PlusInfinity'"
+        if node.name == "define":
+            return "None"
+
+    # Link invariants have fixed outer Sage types even though the crossing
+    # presentation is user supplied.  Keep knot/link transformations as Self
+    # so a concrete Knot receiver is preserved, and expose the documented
+    # polynomial and container families without falling back to ``Any``.
+    if owner_name == "Link":
+        if node.name in {"__eq__", "__ne__", "is_alternating", "is_colorable", "is_isotopic", "is_knot"}:
+            return "bool"
+        if node.name == "__hash__":
+            return "int"
+        if node.name == "braid":
+            return "'sage.groups.braid.Braid'"
+        if node.name in {
+            "arcs", "gauss_code", "oriented_gauss_code", "pd_code",
+            "dowker_notation", "orientation", "seifert_circles", "regions",
+            "colorings", "coloring_maps",
+        }:
+            return "list"
+        if node.name in {"number_of_components", "signature", "omega_signature", "determinant", "writhe"}:
+            return "'sage.rings.integer.Integer | int'"
+        if node.name == "genus":
+            return "'sage.rings.rational.Rational | int'"
+        if node.name in {"alexander_polynomial", "conway_polynomial"}:
+            return LINK_POLYNOMIAL_RETURN_UNION
+        if node.name == "jones_polynomial":
+            return JONES_POLYNOMIAL_RETURN_UNION
+        if node.name == "khovanov_polynomial":
+            return "'sage.rings.polynomial.laurent_polynomial_mpair.LaurentPolynomial_mpair'"
+        if node.name == "seifert_matrix":
+            return "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'"
+        if node.name == "_coloring_matrix":
+            return MATRIX_ELEMENT_UNION
+        if node.name in {"mirror_image", "reverse", "remove_loops"}:
+            return "Self"
+        if node.name == "simplify":
+            return "Self | None"
+        if node.name == "plot":
+            return "'sage.plot.graphics.Graphics'"
+
+    # Finite-state machines expose a small, documented object protocol.  State
+    # and transition payloads are concrete Sage helper classes; graph/matrix
+    # views use their concrete graph/matrix implementations, while machine
+    # transformations preserve the receiver family through ``Self``.
+    if owner_name == "FiniteStateMachine":
+        if node.name in {
+            "__bool__", "__eq__", "__ne__", "__contains__", "is_Markov_chain",
+            "is_deterministic", "is_complete", "is_connected", "has_state",
+            "has_transition", "has_initial_state", "has_initial_states",
+            "has_final_state", "has_final_states",
+        }:
+            return "bool"
+        if node.name == "__hash__":
+            return "int"
+        if node.name in {"_repr_", "_latex_", "_latex_transition_label_", "format_transition_label_reversed", "default_format_transition_label"}:
+            return "str"
+        if node.name in {"__copy__", "__deepcopy__", "coaccessible_components", "disjoint_union", "concatenation", "completion", "kleene_star"}:
+            return "Self"
+        if node.name in {"merged_transitions", "markov_chain_simplification"}:
+            return "Self"
+        if node.name in {"states", "transitions", "initial_states", "final_states", "final_components", "equivalence_classes", "predecessors", "add_states"}:
+            if node.name == "add_states":
+                return "None"
+            return "list"
+        if node.name in {"iter_states", "iter_transitions", "_iter_transitions_all_", "iter_initial_states", "iter_final_states", "iter_process", "_iter_process_simple_", "iter_process"}:
+            return "Iterator"
+        if node.name in {"state", "add_state"}:
+            return "'sage.combinat.finite_state_machine.FSMState'"
+        if node.name in {"transition", "add_transition", "_add_fsm_transition_"}:
+            return "'sage.combinat.finite_state_machine.FSMTransition'"
+        if node.name == "epsilon_successors":
+            return "dict"
+        if node.name in {"_matrix_", "adjacency_matrix"}:
+            return MATRIX_ELEMENT_UNION
+        if node.name == "graph":
+            return "'sage.graphs.digraph.DiGraph'"
+        if node.name == "plot":
+            return "'sage.plot.graphics.Graphics'"
+        if node.name == "language":
+            return "list"
+        if node.name in {
+            "add_from_transition_function", "add_transitions_from_function", "delete_transition",
+            "delete_state", "set_coordinates", "determine_input_alphabet",
+            "determine_output_alphabet", "determine_alphabets", "prepone_output",
+            "latex_options", "construct_final_word_out",
+        }:
+            return "None"
 
     # Algebraic number elements have a fixed rational-polynomial/height
     # protocol in Sage 10.9.  These methods are independent of the defining
@@ -4813,12 +5262,342 @@ def _doc_metric_contract_annotation(
         if node.name == "to_bytes":
             return "bytes"
 
+    if owner_name == "RationalField":
+        # QQ is a singleton field with fixed, documented outputs for these
+        # number-field compatibility helpers.  Parent-changing operations
+        # (completion, extension, residue_field, coercion maps) remain open.
+        if node.name in {
+            "discriminant", "absolute_discriminant", "relative_discriminant",
+            "class_number", "degree", "absolute_degree",
+        }:
+            return "'sage.rings.integer.Integer'"
+        if node.name == "construction":
+            return "tuple"
+        if node.name == "signature":
+            return "tuple"
+        if node.name in {"embeddings", "automorphisms"}:
+            return "'sage.structure.sequence.Sequence_generic'"
+        if node.name == "places":
+            return "list"
+        if node.name == "complex_embedding":
+            return "'sage.rings.morphism.RingHomomorphism_im_gens'"
+        if node.name == "hilbert_symbol_negative_at_S":
+            return "'sage.rings.rational.Rational'"
+        if node.name == "gens":
+            return "tuple['sage.rings.rational.Rational']"
+        if node.name == "maximal_order":
+            return "'sage.rings.integer_ring.IntegerRing_class'"
+        if node.name == "number_field":
+            return "Self"
+        if node.name == "power_basis":
+            return "list['sage.rings.rational.Rational']"
+        if node.name == "algebraic_closure":
+            return "'sage.rings.qqbar.AlgebraicField'"
+        if node.name == "polynomial":
+            return "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'"
+        if node.name == "_an_element_":
+            return "'sage.rings.rational.Rational'"
+        if node.name in {"some_elements", "selmer_group_iterator"}:
+            return "Iterator['sage.rings.rational.Rational']"
+        if node.name == "primes_of_bounded_norm_iter":
+            return "Iterator['sage.rings.integer.Integer']"
+        if node.name == "zeta":
+            return "'sage.rings.rational.Rational'"
+        if node.name == "selmer_generators":
+            return "list | tuple"
+        if node.name == "selmer_space":
+            return "tuple"
+        if node.name == "quadratic_defect":
+            return "'sage.rings.integer.Integer | sage.rings.infinity.PlusInfinity'"
+
+    if owner_name == "SageObject":
+        # SageObject's serialization, typesetting, and interface-init hooks
+        # have language/runtime-level outer contracts shared by every Sage
+        # subclass.  Conversion to a specific external interface remains
+        # dynamic and is intentionally not guessed here.
+        if node.name in {"rename", "reset_name", "save", "dump"}:
+            return "None"
+        if node.name == "get_custom_name":
+            return "str | None"
+        if node.name == "_ascii_art_":
+            return "'sage.typeset.ascii_art.AsciiArt'"
+        if node.name == "_unicode_art_":
+            return "'sage.typeset.unicode_art.UnicodeArt'"
+        if node.name == "dumps":
+            return "bytes"
+        if node.name.endswith("_init_"):
+            return "str"
+
+    if owner_name == "Tableau":
+        # These tableau helpers have stable outer results regardless of the
+        # element-class generated by the parent.  Transformations whose
+        # result remains a parent-specific tableau stay unresolved because a
+        # public Tableau base would hide the concrete implementation.
+        if node.name == "_ascii_art_":
+            return "'sage.typeset.ascii_art.AsciiArt'"
+        if node.name == "_unicode_art_":
+            return "'sage.typeset.unicode_art.UnicodeArt'"
+        if node.name == "_ascii_art_table":
+            return "str"
+        if node.name == "_heights":
+            return "list['sage.rings.integer.Integer']"
+        if node.name == "bender_knuth_involution":
+            return "'sage.combinat.tableau.SemistandardTableau'"
+        if node.name == "catabolism_sequence":
+            return "list"
+        if node.name in {"flush", "level", "seg", "socle"}:
+            return "int"
+        if node.name == "last_letter_lequal":
+            return "bool"
+        if node.name == "pp":
+            return "None"
+        if node.name == "residue":
+            return INTEGER_MOD_ELEMENT_UNION
+        if node.name == "standardization":
+            return "'sage.combinat.tableau.StandardTableau'"
+
+    if owner_name == "SkewTableau":
+        # Skew-tableau methods expose stable combinatorial containers and
+        # documented shape/tableau families.  Sage's runtime element classes
+        # are generated by their parents, so use the public concrete element
+        # classes (or Self for transformations that preserve the family)
+        # instead of leaking a generic parent/base type.
+        if node.name == "_repr_compact":
+            return "str"
+        if node.name in {"_ascii_art_", "_unicode_art_"}:
+            return (
+                "'sage.typeset.ascii_art.AsciiArt'"
+                if node.name == "_ascii_art_"
+                else "'sage.typeset.unicode_art.UnicodeArt'"
+            )
+        if node.name in {"check", "pp"}:
+            return "None"
+        if node.name in {
+            "cells", "cells_by_content", "entries_by_content", "filling",
+            "to_chain", "to_expr", "to_list", "weight",
+        }:
+            return "list"
+        if node.name in {"inner_shape", "outer_shape", "restriction_outer_shape"}:
+            return "'sage.combinat.partition.Partition'"
+        if node.name in {"shape", "restriction_shape"}:
+            return "'sage.combinat.skew_partition.SkewPartition'"
+        if node.name in {"inner_size", "outer_size", "size"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {
+            "add_entry", "anti_restrict", "backward_slide",
+            "bender_knuth_involution", "restrict",
+        }:
+            return "Self"
+        if node.name == "rectify":
+            return (
+                "'sage.combinat.tableau.StandardTableau | "
+                "sage.combinat.tableau.SemistandardTableau | "
+                "sage.combinat.tableau.Tableau'"
+            )
+        if node.name in {"row_stabilizer", "column_stabilizer"}:
+            return "'sage.groups.perm_gps.permgroup.PermutationGroup_generic'"
+        if node.name == "standardization":
+            return "'sage.combinat.skew_tableau.SkewTableau'"
+        if node.name == "to_permutation":
+            return "'sage.combinat.permutation.Permutation'"
+        if node.name == "to_tableau":
+            return "'sage.combinat.tableau.Tableau'"
+        if node.name in {"to_word_by_column", "to_word_by_row"}:
+            return "'sage.combinat.words.word.FiniteWord_list'"
+
+    if owner_name == "ParallelogramPolyomino":
+        # The polyomino implementation documents fixed scalar/container
+        # results and named combinatorial bijections.  Option-dependent
+        # drawing state is represented by its concrete LocalOptions object;
+        # the internal classcall/parent hooks stay unresolved.
+        if node.name in {"_ascii_art_", "_unicode_art_"}:
+            return (
+                "'sage.typeset.ascii_art.AsciiArt'"
+                if node.name == "_ascii_art_"
+                else "'sage.typeset.unicode_art.UnicodeArt'"
+            )
+        if node.name in {
+            "_latex_drawing", "_latex_list", "to_tikz",
+        }:
+            return "str"
+        if node.name in {"check", "set_options"}:
+            return "None"
+        if node.name == "__getitem__":
+            return "'sage.combinat.parallelogram_polyomino.ParallelogramPolyomino._polyomino_row'"
+        if node.name in {
+            "_get_node_position_at_column", "_get_node_position_at_row",
+            "get_node_position_from_box",
+        }:
+            return "list"
+        if node.name == "_get_number_of_nodes_in_the_bounding_path":
+            return "int"
+        if node.name in {
+            "_to_dyck_delest_viennot", "_to_dyck_delest_viennot_peaks_valleys",
+        }:
+            return "'sage.combinat.dyck_word.DyckWord'"
+        if node.name == "_to_binary_tree_Aval_Boussicault":
+            return "'sage.combinat.binary_tree.BinaryTree'"
+        if node.name in {"_to_ordered_tree_Bou_Socci", "_to_ordered_tree_via_dyck"}:
+            return "'sage.combinat.ordered_tree.OrderedTree'"
+        if node.name in {"to_binary_tree"}:
+            return "'sage.combinat.binary_tree.BinaryTree'"
+        if node.name in {"to_ordered_tree"}:
+            return "'sage.combinat.ordered_tree.OrderedTree'"
+        if node.name == "get_options":
+            return "'sage.combinat.parallelogram_polyomino.LocalOptions'"
+        if node.name == "get_tikz_options":
+            return "dict"
+        if node.name in {"get_array", "bounce_path", "widths", "heights"}:
+            return "list"
+        if node.name == "cell_is_inside":
+            return "int"
+        if node.name in {"width", "height", "bounce", "area"}:
+            return "int"
+
+    if owner_name == "BinaryTree":
+        # BinaryTree operations are concrete tree-preserving transforms or
+        # stable combinatorial containers.  Use Self for transforms so a
+        # labelled/subclassed tree remains visible to PyCharm; list/graph/
+        # predicate helpers expose their documented outer result directly.
+        if node.name in {
+            "_ascii_art_",
+            "_unicode_art_",
+        }:
+            return (
+                "'sage.typeset.ascii_art.AsciiArt'"
+                if node.name == "_ascii_art_"
+                else "'sage.typeset.unicode_art.UnicodeArt'"
+            )
+        if node.name in {"check", "make_node", "make_leaf", "show"}:
+            return "None"
+        if node.name in {
+            "canonical_labelling", "left_border_symmetry", "left_right_symmetry",
+            "left_rotate", "right_rotate", "prune", "to_full", "over", "under",
+            "tamari_join", "tamari_meet",
+        }:
+            return "Self"
+        if node.name in {
+            "tamari_greater", "tamari_pred", "tamari_smaller", "tamari_succ",
+            "under_decomposition", "over_decomposition",
+        }:
+            return "list[Self]"
+        if node.name in {"tamari_lequal", "is_empty"}:
+            return "bool"
+        if node.name in {"canopee", "in_order_traversal"}:
+            return "list"
+        if node.name == "in_order_traversal_iter":
+            return "Iterator"
+        if node.name == "graph":
+            return "'sage.graphs.digraph.DiGraph'"
+        if node.name == "to_undirected_graph":
+            return "'sage.graphs.graph.Graph'"
+        if node.name == "to_poset":
+            return "'sage.combinat.posets.posets.FinitePoset'"
+        if node.name in {"to_132_avoiding_permutation", "to_312_avoiding_permutation"}:
+            return "'sage.combinat.permutation.Permutation'"
+        if node.name in {"hook_number", "number_of_left_nodes"}:
+            return "int"
+
+    if owner_name == "ComplexIntervalFieldElement":
+        # MPFI complex intervals have a stable split between interval-valued
+        # component/metric methods, complex-preserving transcendental methods,
+        # and scalar protocol helpers.  Keep conversion methods whose parent
+        # is caller-supplied unresolved.
+        if node.name in {"__abs__", "arg", "argument", "norm", "real", "imag"}:
+            return "'sage.rings.real_mpfi.RealIntervalFieldElement'"
+        if node.name in {"intersection", "union", "cos", "cosh", "exp", "log", "sin", "sinh", "sqrt", "tan", "tanh", "zeta"}:
+            return "Self"
+        if node.name in {"center", "_complex_mpfr_field_"}:
+            return "'sage.rings.complex_mpfr.ComplexNumber'"
+        if node.name in {"diameter", "magnitude", "mignitude"}:
+            return "'sage.rings.real_mpfr.RealNumber'"
+        if node.name == "prec":
+            return "int"
+        if node.name == "bisection":
+            return "tuple[Self, Self, Self, Self]"
+        if node.name == "lexico_cmp":
+            return "int"
+        if node.name == "multiplicative_order":
+            return "'sage.rings.integer.Integer | sage.rings.infinity.PlusInfinity'"
+        if node.name == "_integer_":
+            return "'sage.rings.integer.Integer'"
+        if node.name == "plot":
+            return "'sage.plot.graphics.Graphics'"
+
     if owner_name == "MatroidDatabaseModule":
         # Every public constructor in ``database_matroids`` (including the
         # private relabel helper used by those constructors) returns one of
         # Sage's concrete matroid implementations.  Keep the implementation
         # union explicit instead of exposing the abstract ``Matroid`` base.
         return MATROID_RETURN_UNION
+
+    if owner_name == "HadamardMatrixModule":
+        # Hadamard/conference constructors all materialize concrete integer
+        # matrices unless ``existence=True`` asks only for a predicate.  The
+        # documented pair/code helpers are kept as tuple/list unions instead
+        # of being collapsed to a matrix or an abstract parent.
+        if node.name in {"williamson_type_quadruples_smallcases", "amicable_hadamard_matrices"}:
+            return "tuple | bool"
+        if node.name == "amicable_hadamard_matrices_wallis":
+            return "tuple"
+        if node.name in {"four_symbol_delta_code_smallcases"}:
+            return "list | bool"
+        if node.name == "szekeres_difference_set_pair":
+            return "tuple"
+        if node.name == "_get_baumert_hall_units":
+            return "tuple | bool"
+        if node.name in {
+            "hadamard_matrix_from_symmetric_conference_matrix", "hadamard_matrix_miyamoto_construction",
+            "hadamard_matrix_from_sds", "hadamard_matrix_cooper_wallis_smallcases",
+            "williamson_hadamard_matrix_smallcases",
+            "turyn_type_hadamard_matrix_smallcases", "hadamard_matrix_spence_construction",
+            "skew_hadamard_matrix_spence_1975", "GS_skew_hadamard_smallcases",
+            "skew_hadamard_matrix_from_orthogonal_design", "skew_hadamard_matrix_from_complementary_difference_sets",
+            "skew_hadamard_matrix_from_good_matrices_smallcases", "symmetric_conference_matrix",
+            "hadamard_matrix", "skew_hadamard_matrix",
+        }:
+            suffix = " | bool | str" if node.name == "hadamard_matrix" else " | bool"
+            return f"{MATRIX_ELEMENT_UNION}{suffix}"
+        if node.name in {"normalise_hadamard", "hadamard_matrix_paleyI", "symmetric_conference_matrix_paley", "hadamard_matrix_paleyII", "hadamard_matrix_from_sds", "_construction_goethals_seidel_matrix", "hadamard_matrix_cooper_wallis_construction", "hadamard_matrix_turyn_type", "regular_symmetric_hadamard_matrix_with_constant_diagonal", "RSHCD_324", "_helper_payley_matrix", "rshcd_from_close_prime_powers", "rshcd_from_prime_power_and_conference_matrix", "williamson_goethals_seidel_skew_hadamard_matrix", "skew_hadamard_matrix_spence_construction", "skew_hadamard_matrix_whiteman_construction", "skew_hadamard_matrix_from_good_matrices", "typeI_matrix_difference_set"}:
+            return MATRIX_ELEMENT_UNION
+
+    if owner_name == "FunctionalModule":
+        # These wrappers have stable outer results independent of the receiver
+        # implementation.  Keep receiver-dependent factories (base_ring,
+        # gen, image, norm, etc.) unresolved so the call-site propagator can
+        # use argument/parent information instead of guessing.
+        if node.name == "interval":
+            return "list"
+        if node.name == "xinterval":
+            return "range"
+        if node.name in {"symbolic_sum", "symbolic_prod"}:
+            return FUNCTIONAL_SYMBOLIC_RESULT_UNION
+        if node.name == "krull_dimension":
+            return "'sage.rings.integer.Integer | int'"
+        if node.name == "regulator":
+            return "'sage.rings.real_mpfr.RealNumber'"
+        if node.name == "cyclotomic_polynomial":
+            # This catalogue always constructs over ZZ; changing ``var`` only
+            # changes the generator name, not the concrete FLINT class.
+            return "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'"
+        if node.name == "round":
+            return "'sage.rings.integer.Integer | sage.rings.real_double_element_gsl.RealDoubleElement_gsl | sage.rings.infinity.PlusInfinity'"
+
+    if owner_name == "StronglyRegularDatabaseModule":
+        # The fixed SRG catalogue constructors all materialize Sage's
+        # concrete Graph implementation.  The generic builders have explicit
+        # existence/promise branches in their docstrings, so preserve those
+        # outer alternatives instead of collapsing them to GenericGraph.
+        if node.name.startswith("SRG_") and node.name != "SRG_from_RSHCD":
+            return "'sage.graphs.graph.Graph'"
+        if node.name in {"strongly_regular_from_two_weight_code", "strongly_regular_from_two_intersection_set"}:
+            return "'sage.graphs.graph.Graph'"
+        if node.name == "SRG_from_RSHCD":
+            return "'sage.graphs.graph.Graph | bool'"
+        if node.name == "strongly_regular_graph":
+            return "'sage.graphs.graph.Graph | bool | sage.misc.unknown.Unknown'"
+        if node.name == "strongly_regular_graph_lazy":
+            return "tuple"
 
     if owner_name == "DesignDatabaseModule":
         # The small-design catalogue functions materialize their design data
@@ -4931,6 +5710,7 @@ def _doc_metric_contract_annotation(
             return "'sage.rings.integer.Integer | int'"
         if node.name == "hook_polynomial":
             return POLYNOMIAL_RETURN_UNION
+
         if node.name == "quotient":
             return "'sage.combinat.partition_tuple.PartitionTuple'"
         if node.name == "k_boundary":
@@ -4962,6 +5742,45 @@ def _doc_metric_contract_annotation(
             return "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'"
         if node.name == "dual_equivalence_graph":
             return "'sage.graphs.graph.Graph'"
+
+    if owner_name == "PartitionTuple":
+        # Partition-tuple combinatorics has stable scalar/container results;
+        # only the parent-generated element class is represented by the public
+        # ``PartitionTuple`` constructor in the stub surface.
+        if node.name in {
+            "_latex_diagram", "_latex_exp_high", "_latex_exp_low",
+            "_latex_list", "_latex_young_diagram",
+        }:
+            return "str"
+        if node.name == "pp":
+            return "None"
+        if node.name in {"cells", "to_list", "young_subgroup_generators"}:
+            return "list"
+        if node.name in {"up", "down"}:
+            return "Iterator['sage.combinat.partition_tuple.PartitionTuple']"
+        if node.name in {"level", "defect"}:
+            return "int"
+        if node.name == "size":
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"arm_length", "leg_length", "hook_length", "_initial_degree"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name == "content":
+            return (
+                "'sage.rings.integer.Integer | "
+                "sage.rings.finite_rings.integer_mod.IntegerMod_int'"
+            )
+        if node.name == "content_tableau":
+            return "'sage.combinat.tableau_tuple.TableauTuple'"
+        if node.name == "initial_column_tableau":
+            return "'sage.combinat.tableau_tuple.StandardTableauTuple'"
+        if node.name in {"garnir_tableau", "top_garnir_tableau"}:
+            return "'sage.combinat.tableau_tuple.TableauTuple' | bool"
+        if node.name in {"add_cell", "remove_cell"}:
+            return "'sage.combinat.partition_tuple.PartitionTuple'"
+        if node.name == "dominates":
+            return "bool"
+        if node.name == "young_subgroup":
+            return "'sage.groups.perm_gps.permgroup.PermutationGroup_generic'"
 
     if owner_name == "FiniteWord_class":
         if node.name in {
@@ -5088,6 +5907,18 @@ def _doc_metric_contract_annotation(
     if owner_name == "PermutationGroup_generic":
         if node.name in {"gen", "one", "random_element"}:
             return "'sage.groups.perm_gps.permgroup_element.PermutationGroupElement'"
+        if node.name in {"base", "gens_small"}:
+            return "list"
+        if node.name == "orbit":
+            return "tuple"
+        if node.name in {"stabilizer", "subgroup", "_subgroup_constructor", "socle"}:
+            return "'sage.groups.perm_gps.permgroup.PermutationGroup_subgroup'"
+        if node.name in {"intersection", "holomorph", "semidirect_product"}:
+            return "'sage.groups.perm_gps.permgroup.PermutationGroup_generic'"
+        if node.name == "disjoint_direct_product_decomposition":
+            return "set"
+        if node.name == "construction":
+            return "tuple | None"
         if node.name in {"exponent", "order", "group_primitive_id"}:
             return "'sage.rings.integer.Integer'"
         if node.name in {"largest_moved_point", "smallest_moved_point"}:
@@ -5654,6 +6485,17 @@ def _doc_output_annotation(
     summary = raw_summary.lower()
     if node.name.startswith("_test_"):
         return "None"
+    # Explicit owner contracts must run before generic summary/class-name
+    # matching.  For example, ``RationalField.number_field`` documentation
+    # contains the words "number field"; resolving that prose first would
+    # incorrectly select the public NumberField base instead of the singleton
+    # ``Self`` contract below.  Keep this early pass limited to owners whose
+    # contracts are intentionally name-specific, then let the normal parser
+    # handle all other Sage prose.
+    if owner_name in {"FunctionalModule", "HadamardMatrixModule", "StronglyRegularDatabaseModule", "RationalField", "SageObject", "Tableau", "SkewTableau", "PartitionTuple", "ParallelogramPolyomino", "BinaryTree", "ComplexIntervalFieldElement", "PowerSeries", "PowerSeries_poly", "PowerSeries_pari", "MPowerSeries", "LaurentSeries", "LazyModuleElement", "Link", "FiniteStateMachine"}:
+        metric_annotation = _doc_metric_contract_annotation(node, raw_summary, owner_name)
+        if metric_annotation is not None:
+            return metric_annotation
     self_preserving_annotation = _doc_self_preserving_summary_annotation(raw_summary, owner_name)
     if self_preserving_annotation is not None:
         return self_preserving_annotation
@@ -5684,7 +6526,19 @@ def _doc_output_annotation(
          or owner_name == "FiniteField"
          or owner_name.casefold().startswith("finitefield_")
          or owner_name == "FinitePolyExtElement"
+         or owner_name == "RationalField"
+         or owner_name == "SageObject"
+         or owner_name == "Tableau"
+         or owner_name == "SkewTableau"
+         or owner_name == "PartitionTuple"
+         or owner_name == "ParallelogramPolyomino"
+         or owner_name == "BinaryTree"
+         or owner_name == "ComplexIntervalFieldElement"
+         or owner_name in {"PowerSeries", "PowerSeries_poly", "PowerSeries_pari", "MPowerSeries", "LaurentSeries", "LazyModuleElement", "Link", "FiniteStateMachine"}
          or owner_name == "MatroidDatabaseModule"
+         or owner_name == "HadamardMatrixModule"
+         or owner_name == "FunctionalModule"
+         or owner_name == "StronglyRegularDatabaseModule"
          or owner_name in {"DesignDatabaseModule", "GraphFamiliesModule", "SmallGraphsModule"}
          or owner_name == "DistanceRegularGraphsModule"
          or owner_name == "Polytopes"
@@ -6101,6 +6955,12 @@ def annotate_doc_output_returns(path: Path, class_index: dict[str, tuple[str, ..
         if module_path.endswith("sage/graphs/generators/smallgraphs.pyi")
         else "DistanceRegularGraphsModule"
         if module_path.endswith("sage/graphs/generators/distance_regular.pyi")
+        else "HadamardMatrixModule"
+        if module_path.endswith("sage/combinat/matrices/hadamard_matrix.pyi")
+        else "FunctionalModule"
+        if module_path.endswith("sage/misc/functional.pyi")
+        else "StronglyRegularDatabaseModule"
+        if module_path.endswith("sage/graphs/strongly_regular_db.pyi")
         else None
     )
 

@@ -37,16 +37,16 @@ Gradle、索引和 ZIP 静态结果不能替代 fresh PyCharm GUI smoke。
 
 ## 5. 当前验证状态（Sage 10.9 / Python 3.13）
 
-- Staging 索引：`2,843` 源文件、`85,009` entries、`52,387` signatures、`126` diagnostics、coverage `1.0`、missing `0`；generator 仍保留 `1` 个既有 conflicts gate warning。
-- 合同审计：`UNKNOWN=25,531`、`CONCRETE=5,358`、`TYPE_VARIABLE=1,972`、`BROAD_BUILTIN=12,551`、`NONE=4,774`、`UNION_OR_OPTIONAL=1,529`、`DYNAMIC=17`、`STRUCTURAL_BASE=53`。相对本文件上一记录减少 `35` 个 UNKNOWN。
-- 本轮新增并用 WSL 实测：矩阵空间具体矩阵族/模块、Graph/Digraph 容器与原地 `None` 分支、符号 Expression、NumberField（含绝对域）、有限域与 IntegerMod 后端、椭圆曲线标量/多项式、通用 Polynomial、matroid/design/graph/polytope/poset/partition/tableau/word/permutation catalogue 构造器；动态参数仍保留联合或 UNKNOWN。
-- 通过：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`（`147` 项）、`compileall`、`git diff --check`、AST 检查、staging `generate.py` 和 `audit_contracts.py`。
+- Staging 索引：`2,843` 源文件、`85,019` entries、`52,423` signatures、`162` diagnostics、coverage `1.0`、missing `0`；本轮 `direct_product` 参数合同新增 3 个 overload，inventory digest 为 `8b2676689e9b7a782d209fb9b83a656b350fa6fb903ec646894ee430c0363515`。
+- 合同审计：`UNKNOWN=24,983`、`CONCRETE=5,478`、`TYPE_VARIABLE=2,132`、`BROAD_BUILTIN=12,685`、`NONE=4,790`、`UNION_OR_OPTIONAL=1,655`、`DYNAMIC=17`、`STRUCTURAL_BASE=62`、`GENERIC=478`、`UNQUALIFIED=143`。相对本文件上一记录净减少 `548` 个 UNKNOWN；其中本轮最后的有限状态机、幂级数/惰性级数、Link 与 permutation-group 基础协议都保留具体外层实现，不回退公共基类。
+- 本轮新增以 Sage 10.9 文档为主、对可运行项用 WSL 复核：矩阵空间具体矩阵族/模块、Graph/Digraph 容器与原地 `None` 分支、符号 Expression、NumberField（含绝对域）、有限域与 IntegerMod 后端、椭圆曲线标量/多项式、通用 Polynomial、matroid/design/graph/polytope/poset/partition/tableau/word/permutation catalogue 构造器、PowerSeries/MPowerSeries/LaurentSeries/LazyModuleElement、Link、FiniteStateMachine；PermutationGroup 的 `base`/`gens_small`/`orbit`/`stabilizer`/`subgroup` 已由 WSL 复核，`socle`/交集/holomorph 等 GAP 依赖方法以源码文档证据为准（当前 WSL GAP 进程崩溃后保持保守合同）。动态参数仍保留联合或 UNKNOWN。
+- 通过：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`（`162` 项）、`compileall`、`git diff --check`、AST 检查、staging `generate.py` 和 `audit_contracts.py`。
 - 当前索引文件：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.json`。
 
 ## 6. 风险与下一步
 
 - 最新可用 ZIP `G:\sage-build\staging-build6\sage-core-0.1.0-dev-ctf-output-contracts-20260829-r5.zip` 未包含本轮新增合同；本轮仍未重新打包、安装或执行 PyCharm GUI smoke。
 - 尚无可用 Windows installer；`verify-upstream-staging.ps1 -FinalCheck` 仍因官方 checkout SHA 为 `3b652e714c12009bb69f0a2d2416dad02259fe5d` 而安全失败，官方 checkout 未修改。
-- 下一步：以当前 staging 索引重建插件 ZIP，安装后验证 `test2.sage` 的类型/补全、Ctrl+Q、`R.<` 编辑体验和运行日志；继续新增合同时必须先用 Sage 源码或 WSL 10.9 运行类型证明，动态工厂无法证明时保持 UNKNOWN。
+- 下一步：以当前 staging 索引重建插件 ZIP，安装后验证 `test2.sage` 的类型/补全、Ctrl+Q、`R.<` 编辑体验和运行日志；继续按审计高频 bucket 做源码/WSL 双证据验证，动态工厂无法证明时保持 UNKNOWN。
 
-最近提交：`7d3f648`（继续压缩多项式与数域 UNKNOWN）。
+最近提交：本轮变更已保存；具体提交号以 `git log -1` 为准。
