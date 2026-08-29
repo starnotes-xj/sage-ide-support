@@ -4735,6 +4735,38 @@ def _doc_metric_contract_annotation(
         if node.name == "relativize":
             return "'sage.rings.number_field.number_field_rel.NumberField_relative'"
 
+    if owner_name == "NumberField_absolute":
+        if node.name in {"_coerce_from_other_number_field", "absolute_generator"}:
+            return "'sage.rings.number_field.number_field_element.NumberFieldElement'"
+        if node.name == "base_field":
+            return "'sage.rings.rational_field.RationalField'"
+        if node.name in {"absolute_polynomial", "relative_polynomial"}:
+            return "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'"
+        if node.name in {"optimized_representation", "free_module", "absolute_vector_space", "relative_vector_space"}:
+            return "tuple"
+        if node.name in {"optimized_subfields", "subfields", "automorphisms", "embeddings", "places", "real_places"}:
+            return "list"
+        if node.name == "change_names":
+            return "Self"
+        if node.name in {"galois_closure", "_galois_closure_and_embedding"}:
+            return "'sage.rings.number_field.number_field.NumberField_absolute | tuple'"
+        if node.name == "minkowski_embedding":
+            return "'sage.matrix.matrix_double_dense.Matrix_double_dense'"
+        if node.name == "abs_val":
+            return "'sage.rings.real_mpfr.RealNumber'"
+        if node.name == "relativize":
+            return "'sage.rings.number_field.number_field_rel.NumberField_relative'"
+        if node.name in {"absolute_degree", "relative_degree", "absolute_discriminant", "relative_discriminant"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"absolute_different", "relative_different"}:
+            return "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'"
+        if node.name == "hilbert_symbol":
+            return "'sage.rings.integer.Integer'"
+        if node.name == "hilbert_symbol_negative_at_S":
+            return "'sage.rings.number_field.number_field_element.NumberFieldElement'"
+        if node.name == "hilbert_conductor":
+            return "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'"
+
     if owner_name == "Integer":
         # Integer transcendental helpers construct symbolic expressions; the
         # factorial-like gamma specialization stays in Sage's Integer class.
@@ -5261,6 +5293,23 @@ def _doc_metric_contract_annotation(
     # rule to polynomial owners so unrelated graph/group ``degree`` methods do
     # not inherit a false scalar contract.
     if owner_name and "polynomial" in owner_name.casefold():
+        if owner_name == "Polynomial":
+            if node.name in {"is_cyclotomic", "is_square"}:
+                return "bool"
+            if node.name == "prec":
+                return "int"
+            if node.name in {"change_ring", "subs"}:
+                return POLYNOMIAL_RETURN_UNION
+            if node.name in {"__truediv__", "__invert__"}:
+                return POLYNOMIAL_POWER_UNION
+            if node.name == "squarefree_decomposition":
+                return "'sage.structure.factorization.Factorization'"
+            if node.name == "sylvester_matrix":
+                return MATRIX_ELEMENT_UNION
+            if node.name == "newton_polytope":
+                return POLYHEDRON_RETURN_UNION
+            if node.name in {"root_field", "splitting_field"}:
+                return "'sage.rings.number_field.number_field.NumberField_absolute'"
         if node.name == "degree":
             return "'sage.rings.integer.Integer | int'"
         if node.name in {"derivative", "_derivative_"}:

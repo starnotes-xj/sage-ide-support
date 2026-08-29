@@ -395,6 +395,22 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    def roots_of_unity(self): ...\n",
                 encoding="utf-8",
             )
+            absolute_path = root / "sage" / "rings" / "number_field" / "number_field_absolute.pyi"
+            absolute_path.write_text(
+                "class NumberField_absolute:\n"
+                "    def base_field(self): ...\n"
+                "    def absolute_polynomial(self): ...\n"
+                "    def absolute_generator(self): ...\n"
+                "    def optimized_representation(self): ...\n"
+                "    def subfields(self): ...\n"
+                "    def free_module(self): ...\n"
+                "    def minkowski_embedding(self): ...\n"
+                "    def abs_val(self, v, iota): ...\n"
+                "    def relativize(self, alpha, names): ...\n"
+                "    def absolute_degree(self): ...\n"
+                "    def absolute_different(self): ...\n",
+                encoding="utf-8",
+            )
             result = subprocess.run(
                 [sys.executable, str(PATCHER), "--stub-root", str(root)],
                 capture_output=True,
@@ -452,6 +468,19 @@ class AnnotateStubsTest(unittest.TestCase):
                 "def absolute_field(self, names) -> 'sage.rings.number_field.number_field.NumberField_absolute':",
                 relative_text,
             )
+            absolute_text = absolute_path.read_text(encoding="utf-8")
+            self.assertIn("def base_field(self) -> 'sage.rings.rational_field.RationalField':", absolute_text)
+            self.assertIn(
+                "def absolute_polynomial(self) -> 'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint':",
+                absolute_text,
+            )
+            self.assertIn("def optimized_representation(self) -> tuple:", absolute_text)
+            self.assertIn("def subfields(self) -> list:", absolute_text)
+            self.assertIn("def free_module(self) -> tuple:", absolute_text)
+            self.assertIn("def minkowski_embedding(self) -> 'sage.matrix.matrix_double_dense.Matrix_double_dense':", absolute_text)
+            self.assertIn("def abs_val(self, v, iota) -> 'sage.rings.real_mpfr.RealNumber':", absolute_text)
+            self.assertIn("def relativize(self, alpha, names) -> 'sage.rings.number_field.number_field_rel.NumberField_relative':", absolute_text)
+            self.assertIn("def absolute_degree(self) -> 'sage.rings.integer.Integer':", absolute_text)
 
     def test_finite_field_and_residue_backend_contracts_are_concrete(self):
         """Finite-field parents/elements retain their selected Sage backend."""
@@ -967,6 +996,12 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    def truncate(self, n): ...\n"
                 "    def valuation(self, p=None): ...\n"
                 "    def ord(self): ...\n"
+                "    def is_square(self): ...\n"
+                "    def prec(self): ...\n"
+                "    def subs(self, *args, **kwds): ...\n"
+                "    def squarefree_decomposition(self): ...\n"
+                "    def sylvester_matrix(self, other): ...\n"
+                "    def root_field(self): ...\n"
                 "    def coefficient(self, degrees):\n"
                 "        " + '"""OUTPUT: element of the parent of ``self``"""' + "\n"
                 "    def __getitem__(self, key): ...\n",
@@ -1014,6 +1049,12 @@ class AnnotateStubsTest(unittest.TestCase):
                 "def ord(self) -> 'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity': ...",
                 patched,
             )
+            self.assertIn("def is_square(self) -> bool: ...", patched)
+            self.assertIn("def prec(self) -> int: ...", patched)
+            self.assertIn("def subs(self, *args, **kwds) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", patched)
+            self.assertIn("def squarefree_decomposition(self) -> 'sage.structure.factorization.Factorization': ...", patched)
+            self.assertIn("def sylvester_matrix(self, other) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |", patched)
+            self.assertIn("def root_field(self) -> 'sage.rings.number_field.number_field.NumberField_absolute': ...", patched)
             self.assertIn("def coefficient(self, degrees) -> Self:", patched)
             self.assertIn("def __getitem__(self, key: slice) -> Self: ...", patched)
             self.assertIn("def _add_(self, other) -> Self: ...", patched)
