@@ -1223,6 +1223,65 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def make_graph() -> 'sage.graphs.digraph.DiGraph':", patched)
             self.assertIn("def maybe_graph():", patched)
 
+    def test_summary_class_roles_and_predicates_use_atomic_contracts(self):
+        """Summary-only Sage docs should not remain UNKNOWN when explicit."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            class_stub = root / "sage" / "combinat" / "pbw.pyi"
+            user_stub = root / "sage" / "combinat" / "factory.pyi"
+            class_stub.parent.mkdir(parents=True)
+            class_stub.write_text("class PBWDatum: ...\nclass Expression: ...\n", encoding="utf-8")
+            user_stub.write_text(
+                "def make_pbw():\n"
+                "    \"\"\"Return a new :class:`PBWDatum` equivalent to ``self``.\"\"\"\n"
+                "def check_value(x):\n"
+                "    \"\"\"Check whether ``x`` is valid or reducible.\n\n"
+                "    The implementation may use one of several algorithms or\n"
+                "    return early when the value is cached.\n"
+                "    \"\"\"\n"
+                "def generate_code(tree):\n"
+                "    \"\"\"Generate code from an :class:`Expression` tree.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = user_stub.read_text(encoding="utf-8")
+            self.assertIn("def make_pbw() -> 'sage.combinat.pbw.PBWDatum':", patched)
+            self.assertIn("def check_value(x) -> bool:", patched)
+            # The class role names an input here, not the generated string.
+            self.assertIn("def generate_code(tree):", patched)
+
+    def test_operator_summary_preserves_concrete_receiver_with_self(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "rings" / "element.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class Element:\n"
+                "    def __neg__(self):\n"
+                "        \"\"\"Return the negative of this element.\"\"\"\n"
+                "    def _add_(self, other):\n"
+                "        \"\"\"Return the sum of this element and ``other``.\"\"\"\n"
+                "    def inverse(self):\n"
+                "        \"\"\"Return the inverse of ``self``.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def __neg__(self) -> Self:", patched)
+            self.assertIn("def _add_(self, other) -> Self:", patched)
+            # Inversion may change parent/type and remains fail-closed.
+            self.assertIn("def inverse(self):", patched)
+
     def test_source_scalar_and_chinese_object_contracts_are_typed(self):
         """Documented scalar invariants reduce UNKNOWN without guessing unions."""
         with tempfile.TemporaryDirectory() as temporary:

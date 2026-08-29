@@ -2523,6 +2523,15 @@ def _doc_summary_annotation(
                 return annotation
     normalized_rest = re.sub(r"`{1,2}(true|false|none|nothing)`{1,2}", r"\1", rest, flags=re.IGNORECASE)
     normalized_rest = normalized_rest.replace("`", "").replace('"', "").replace("'", "")
+
+    # ``whether or not`` is one boolean predicate, not a heterogeneous
+    # ``or`` union.  Handle it before the generic union guard below; otherwise
+    # hundreds of Sage predicates were left UNKNOWN even though their
+    # docstrings explicitly state the Python-level result.
+    if node.name not in {"__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__"} and re.match(
+        r"^whether\s+(?:or\s+not\s+)?", normalized_rest, re.IGNORECASE
+    ):
+        return "bool"
     if owner_name and re.fullmatch(r"Integer", owner_name, re.IGNORECASE) and re.match(
         r"^(?:compute .*self|the bitwise|the multiplicative|shift [xy] to the|"
         r"compute the exclusive or|integer (?:addition|multiplication|subtraction)|integer\._neg_)",
@@ -2595,6 +2604,36 @@ def _doc_summary_annotation(
             re.IGNORECASE,
         ):
             return "Self"
+    # Concrete operator implementations document their result as the
+    # corresponding operation on ``self``.  This is a receiver-preserving
+    # contract (unlike a generic ``Element`` base return), so materialize the
+    # concrete class through ``Self``.  Keep the method-name and wording
+    # guards narrow: divisions, inverses, derivatives and norms can change
+    # parent/type and are intentionally left unresolved.
+    if node.name in {
+        "__add__",
+        "__radd__",
+        "__sub__",
+        "__rsub__",
+        "__mul__",
+        "__rmul__",
+        "_add_",
+        "_sub_",
+        "_mul_",
+        "_lmul_",
+        "_rmul_",
+        "__neg__",
+        "_neg_",
+        "__pos__",
+        "_pos_",
+        "__transpose__",
+        "transpose",
+    } and re.search(
+        r"\b(?:sum|difference|product|negative|opposite|negation|transpose)\b.*\b(?:self|this)\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "Self"
     if class_index:
         class_annotation = _doc_plain_class_annotation(rest, class_index)
         if class_annotation is not None:
@@ -2677,6 +2716,37 @@ def _doc_summary_annotation(
         if re.match(r"^(?:返回|输出)(?:是否|一个布尔值|布尔值|布尔)", normalized_rest):
             return "bool"
     return None
+
+
+def _doc_summary_class_role_annotation(
+    summary: str,
+    class_index: dict[str, tuple[str, ...]] | None,
+) -> str | None:
+    """Resolve an explicitly returned Sphinx class in a summary sentence.
+
+    Sage's generated docs often put the complete contract in the summary
+    (``Return a :class:`Foo` ...`` or ``Construct an :class:`Foo` ...``)
+    instead of an ``OUTPUT:`` section.  Restrict this fast path to verbs that
+    construct/return a value; descriptions such as ``Generate code from an
+    :class:`Expression``` are deliberately excluded because the role names an
+    input rather than the result.
+    """
+    if not class_index or ":class:`" not in summary:
+        return None
+    if not re.match(
+        r"^(?:return|returns|construct|constructs|create|creates|build|builds|convert|converts)\s+",
+        summary,
+        re.IGNORECASE,
+    ):
+        return None
+    # A role introduced by ``for``/``from``/``this`` is normally an input or
+    # contextual class.  Keep explicit ``as ... of :class:`` result forms,
+    # which are common in Sage conversion APIs.
+    role_start = summary.find(":class:`")
+    prefix = summary[:role_start].casefold()
+    if re.search(r"\b(?:for|from|this|given|input|support)\s+(?:an?\s+)?$", prefix):
+        return None
+    return _doc_output_class_annotation(summary, class_index)
 
 
 def _doc_explicit_type_annotation(
@@ -2826,6 +2896,9 @@ def _doc_output_annotation(
         summary_lines.append(stripped)
     raw_summary = re.sub(r"\s+", " ", " ".join(summary_lines))
     summary = raw_summary.lower()
+    summary_class_annotation = _doc_summary_class_role_annotation(raw_summary, class_index)
+    if summary_class_annotation is not None:
+        return summary_class_annotation
     summary_annotation = _doc_summary_annotation(node, summary, class_index, owner_name)
     if summary_annotation is not None:
         return summary_annotation
@@ -3099,8 +3172,24 @@ def _doc_output_annotation(
         r"^(?:test|check|determine)\s+(?:whether|if)|^return\s+(?:true|false)\b|^whether\s+",
         summary,
     ):
+        # ``whether or not`` and ordinary explanatory prose frequently use
+        # ``or`` in the body; that does not make the predicate's result a
+        # union.  Only explicit alternate-payload markers keep this branch
+        # fail-closed (for example a documented ``get_data`` pair).
         lowered = value.lower()
-        if not re.search(r"\b(?:get_data|tuple|pair|dictionary|list|notimplemented)\b|\bor\b", lowered):
+        if not re.search(r"\b(?:get_data|tuple|pair|dictionary|list|notimplemented)\b", lowered):
+            return "bool"
+    # Sage's predicate helpers are not uniform enough for a name-only guess,
+    # but their documentation almost always states the predicate wording in
+    # the summary (``is_*``/``has_*``/``contains_*`` plus ``whether``/``if``
+    # or an explicit True/False).  Require that source-level wording and keep
+    # the same alternate-payload guard as above; methods such as
+    # ``is_planar(kuratowski=True)`` therefore remain unresolved unions.
+    if node.name.startswith(("is_", "has_", "can_", "contains_", "exists_")) and re.search(
+        r"\b(?:whether|if|true|false|boolean|predicate)\b", summary, re.IGNORECASE
+    ):
+        lowered = value.lower()
+        if not re.search(r"\b(?:get_data|tuple|pair|dictionary|list|notimplemented)\b", lowered):
             return "bool"
     if re.match(r"^(?:string|latex|\\latex)\s+representation\b", summary, re.IGNORECASE):
         return "str"
