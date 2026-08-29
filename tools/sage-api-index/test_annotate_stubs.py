@@ -5051,6 +5051,119 @@ def generic_matroid():
             # unannotated rather than being mistaken for the matrix itself.
             self.assertIn("def base_ring(self):", patched)
 
+    def test_multivariate_polynomial_contracts_keep_stable_outer_types(self):
+        """MPolynomial backends expose documented containers and transforms."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base = root / "sage" / "rings" / "polynomial"
+            base.mkdir(parents=True)
+            (base / "multi_polynomial.pyi").write_text(
+                "class MPolynomial:\n"
+                "    def leading_support(self): ...\n"
+                "    def trailing_support(self): ...\n"
+                "    def coefficients(self): ...\n"
+                "    def args(self): ...\n"
+                "    def homogeneous_components(self): ...\n"
+                "    def iterator_exp_coeff(self): ...\n"
+                "    def _symbolic_(self, R): ...\n"
+                "    def _magma_init_(self, magma): ...\n"
+                "    def number_of_terms(self): ...\n"
+                "    def total_degree(self): ...\n"
+                "    def variables(self): ...\n"
+                "    def homogenize(self): ...\n"
+                "    def lift(self, I): ...\n"
+                "    def newton_polytope(self): ...\n"
+                "    def sylvester_matrix(self, right): ...\n"
+                "    def nth_root(self, n): ...\n"
+                "    def crt(self, y, m, n): ...\n"
+                "    def polynomial(self, var): ...\n"
+                "    def reduced_form(self, **kwds): ...\n"
+                "    def canonical_associate(self) -> Self: ...\n",
+                encoding="utf-8",
+            )
+            element = base / "multi_polynomial_element.pyi"
+            element.write_text(
+                "class MPolynomial_element:\n"
+                "    def subs(self, fixed=None, **kwds): ...\n"
+                "    def monomials(self): ...\n"
+                "    def univariate_polynomial(self, R=None): ...\n",
+                encoding="utf-8",
+            )
+            singular = base / "multi_polynomial_libsingular.pyi"
+            singular.write_text(
+                "class MPolynomial_libsingular:\n"
+                "    def monomials(self): ...\n"
+                "    def univariate_polynomial(self, R=None): ...\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = (base / "multi_polynomial.pyi").read_text(encoding="utf-8")
+            self.assertIn("def leading_support(self) -> tuple:", text)
+            self.assertIn("def coefficients(self) -> list:", text)
+            self.assertIn("def homogeneous_components(self) -> dict:", text)
+            self.assertIn("def iterator_exp_coeff(self) -> Iterator:", text)
+            self.assertIn("def _symbolic_(self, R) -> 'sage.symbolic.expression.Expression':", text)
+            self.assertIn("def homogenize(self) -> Self:", text)
+            self.assertIn("def lift(self, I) -> list:", text)
+            self.assertIn("def newton_polytope(self) -> 'sage.geometry.polyhedron.backend_ppl.Polyhedron_ZZ_ppl |", text)
+            self.assertIn("def sylvester_matrix(self, right) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |", text)
+            self.assertIn("def nth_root(self, n) -> Self:", text)
+            self.assertIn("def crt(self, y, m, n) -> Self:", text)
+            self.assertIn("def polynomial(self, var) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", text)
+            self.assertIn("def reduced_form(self, **kwds) -> Self | tuple:", text)
+            self.assertIn("def canonical_associate(self) -> tuple:", text)
+            element_text = element.read_text(encoding="utf-8")
+            self.assertIn("def subs(self, fixed=None, **kwds) -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular |", element_text)
+            self.assertIn("def monomials(self) -> list:", element_text)
+            self.assertIn("def univariate_polynomial(self, R=None) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", element_text)
+            singular_text = singular.read_text(encoding="utf-8")
+            self.assertIn("def monomials(self) -> list:", singular_text)
+
+    def test_multivariate_polynomial_ring_contracts_keep_parent_outputs(self):
+        """MPolynomialRing factories expose concrete elements and containers."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "rings" / "polynomial" / "multi_polynomial_ring_base.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class MPolynomialRing_base:\n"
+                "    def construction(self): ...\n"
+                "    def interpolation(self, bound, *args): ...\n"
+                "    def gen(self, n=0): ...\n"
+                "    def random_element(self, degree=2, terms=None): ...\n"
+                "    def variable_names_recursive(self, depth=None): ...\n"
+                "    def krull_dimension(self): ...\n"
+                "    def monomial(self, *exponents): ...\n"
+                "    def monomials_of_degree(self, degree): ...\n"
+                "    def some_elements(self): ...\n"
+                "    def _gap_init_(self): ...\n"
+                "    def is_exact(self): ...\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def construction(self) -> tuple:", text)
+            self.assertIn("def interpolation(self, bound, *args) -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular |", text)
+            self.assertIn("def gen(self, n=0) -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular |", text)
+            self.assertIn("def random_element(self, degree=2, terms=None) -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular |", text)
+            self.assertIn("def variable_names_recursive(self, depth=None) -> tuple:", text)
+            self.assertIn("def krull_dimension(self) -> 'sage.rings.integer.Integer | int':", text)
+            self.assertIn("def monomial(self, *exponents) -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular |", text)
+            self.assertIn("def monomials_of_degree(self, degree) -> list:", text)
+            self.assertIn("def some_elements(self) -> list:", text)
+            self.assertIn("def _gap_init_(self) -> str:", text)
+            self.assertIn("def is_exact(self) -> bool:", text)
+
 
 if __name__ == "__main__":
     unittest.main()

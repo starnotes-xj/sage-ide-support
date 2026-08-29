@@ -2100,6 +2100,32 @@ CURATED_REPLACE_ANNOTATIONS["sage/rings/rational_field.pyi"] = {
     },
 }
 
+# Multivariate polynomial implementations are selected by the ring backend
+# (Singular or the generic polydict implementation).  Their public list and
+# conversion helpers nevertheless have stable outer contracts; replace the
+# generated base-class annotations that would otherwise expose the abstract
+# ``MPolynomial`` or the unrelated ``TermOrder`` class.
+CURATED_REPLACE_ANNOTATIONS["sage/rings/polynomial/multi_polynomial_element.pyi"] = {
+    "MPolynomial_element": {
+        "subs": MULTIVARIATE_POLYNOMIAL_RETURN_UNION,
+        "monomials": "list",
+        "univariate_polynomial": POLYNOMIAL_RETURN_UNION,
+    },
+}
+CURATED_REPLACE_ANNOTATIONS["sage/rings/polynomial/multi_polynomial_libsingular.pyi"] = {
+    "MPolynomial_libsingular": {
+        "monomials": "list",
+        "univariate_polynomial": POLYNOMIAL_RETURN_UNION,
+    },
+}
+CURATED_REPLACE_ANNOTATIONS["sage/rings/polynomial/multi_polynomial.pyi"] = {
+    "MPolynomial": {
+        # The documented result is ``(associate, unit)``; the generated
+        # ``Self`` annotation loses the unit and is therefore misleading.
+        "canonical_associate": "tuple",
+    },
+}
+
 # OVERLOAD: documented parameter/return correlations which cannot be recovered
 # from a broad union annotation alone.  These contracts are consumed by the
 # generic overload machinery in the generated API index; the Kotlin plugin does
@@ -6124,6 +6150,78 @@ def _doc_metric_contract_annotation(
     # rule to polynomial owners so unrelated graph/group ``degree`` methods do
     # not inherit a false scalar contract.
     if owner_name and "polynomial" in owner_name.casefold():
+        if owner_name in {
+            "MPolynomialRing_base", "MPolynomialRing_libsingular",
+            "MPolynomialRing_polydict", "MPolynomialRing_polydict_domain",
+        }:
+            if node.name in {"_repr_", "repr_long", "_latex_", "_magma_init_", "_gap_init_"}:
+                return "str"
+            if node.name in {"is_integral_domain", "is_noetherian", "is_exact", "is_field"}:
+                return "bool"
+            if node.name in {"characteristic", "ngens", "krull_dimension"}:
+                return "'sage.rings.integer.Integer | int'"
+            if node.name in {"construction"}:
+                return "tuple"
+            if node.name in {"gen", "random_element", "monomial", "interpolation"}:
+                return MULTIVARIATE_POLYNOMIAL_RETURN_UNION
+            if node.name in {"some_elements", "monomials_of_degree"}:
+                return "list"
+            if node.name == "variable_names_recursive":
+                return "tuple"
+        if owner_name in {
+            "MPolynomial", "MPolynomial_element", "MPolynomial_polydict",
+            "MPolynomial_libsingular", "MPolynomial_libsingular_base",
+        }:
+            if node.name in {"leading_support", "trailing_support", "args", "degrees"}:
+                return "tuple"
+            if node.name in {"coefficients", "gradient"}:
+                return "list"
+            if node.name == "monomials":
+                return "list"
+            if node.name in {"exponents", "monomial_coefficients"}:
+                return "list" if node.name == "exponents" else "dict"
+            if node.name in {"homogeneous_components"}:
+                return "dict"
+            if node.name in {"iterator_exp_coeff", "__iter__"}:
+                return "Iterator"
+            if node.name == "_symbolic_":
+                return "'sage.symbolic.expression.Expression'"
+            if node.name == "subs":
+                return MULTIVARIATE_POLYNOMIAL_RETURN_UNION
+            if node.name in {"_magma_init_", "_giac_init_"}:
+                return "str"
+            if node.name in {"number_of_terms"}:
+                return "int"
+            if node.name in {"total_degree", "weighted_degree", "nvariables"}:
+                return "'sage.rings.integer.Integer | int'"
+            if node.name in {"variables"}:
+                return "tuple"
+            if node.name in {"homogenize", "_homogenize", "inverse_of_unit", "inverse_mod", "reduce", "numerator"}:
+                return "Self"
+            if node.name in {"change_ring", "map_coefficients"}:
+                return MULTIVARIATE_POLYNOMIAL_RETURN_UNION
+            if node.name == "univariate_polynomial":
+                return POLYNOMIAL_RETURN_UNION
+            if node.name == "lift":
+                return "list"
+            if node.name == "newton_polytope":
+                return POLYHEDRON_RETURN_UNION
+            if node.name == "sylvester_matrix":
+                return MATRIX_ELEMENT_UNION
+            if node.name in {"nth_root", "crt"}:
+                return "Self"
+            if node.name == "polynomial":
+                return POLYNOMIAL_RETURN_UNION
+            if node.name == "reduced_form":
+                return "Self | tuple"
+            if node.name in {"__eq__", "__ne__"}:
+                return "bool"
+            if node.name in {"_derivative", "integral", "resultant", "lcm", "add_m_mul_q", "sub_m_mul_q"}:
+                return "Self"
+            if node.name in {"_singular_init_", "_repr_short_"}:
+                return "str"
+            if node.name == "variable":
+                return MULTIVARIATE_POLYNOMIAL_RETURN_UNION
         if owner_name == "Polynomial":
             if node.name in {"is_cyclotomic", "is_square"}:
                 return "bool"
