@@ -27,6 +27,36 @@ import re
 import tokenize
 from pathlib import Path
 
+# Sage finite-field values are selected by the field implementation.  Keep
+# the complete concrete implementation union when a point/pairing exposes a
+# base-field element, rather than collapsing it to the public ``Element``
+# base.  The union is shared by the finite-field curve/point contracts below.
+FINITE_FIELD_ELEMENT_UNION = (
+    "'sage.rings.finite_rings.integer_mod.IntegerMod_int | "
+    "sage.rings.finite_rings.integer_mod.IntegerMod_int64 | "
+    "sage.rings.finite_rings.integer_mod.IntegerMod_gmp | "
+    "sage.rings.finite_rings.element_givaro.FiniteField_givaroElement | "
+    "sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement | "
+    "sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt'"
+)
+PRIME_FIELD_ELEMENT_UNION = (
+    "'sage.rings.finite_rings.integer_mod.IntegerMod_int | "
+    "sage.rings.finite_rings.integer_mod.IntegerMod_int64 | "
+    "sage.rings.finite_rings.integer_mod.IntegerMod_gmp'"
+)
+POLYNOMIAL_POWER_UNION = "Self | 'sage.rings.fraction_field_element.FractionFieldElement'"
+INTEGER_MATRIX_POWER_UNION = "Self | 'sage.matrix.matrix_rational_dense.Matrix_rational_dense'"
+FINITE_FIELD_UNION = (
+    "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn | "
+    "sage.rings.finite_rings.finite_field_givaro.FiniteField_givaro | "
+    "sage.rings.finite_rings.finite_field_ntl_gf2e.FiniteField_ntl_gf2e | "
+    "sage.rings.finite_rings.finite_field_pari_ffelt.FiniteField_pari_ffelt'"
+)
+FINITE_FIELD_MORPHISM_UNION = (
+    "'sage.categories.morphism.IdentityMorphism | "
+    "sage.rings.finite_rings.hom_finite_field.FiniteFieldHomomorphism_generic'"
+)
+
 # ADD: member name -> annotation expression for unannotated defs.
 CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     "sage/arith/misc.pyi": {
@@ -37,6 +67,12 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
         None: {
             "_key_complex_for_display": "tuple",
             "sort_complex_numbers_for_display": "list",
+            "__GCD_sequence": "GcdT",
+            "get_gcd": "Callable[..., 'sage.rings.integer.Integer']",
+            "get_inverse_mod": "Callable[..., 'sage.rings.integer.Integer']",
+            "primes": "Iterator['sage.rings.integer.Integer']",
+            "smooth_part": "'sage.structure.factorization.Factorization'",
+            "valuation": "'sage.rings.integer.Integer'",
         },
         "Euler_Phi": {
             "__call__": "'sage.rings.integer.Integer'",
@@ -82,6 +118,7 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "annihilator": "'sage.rings.polynomial.pbori.pbori.BooleanPolynomial'",
             "algebraic_normal_form": "'sage.rings.polynomial.pbori.pbori.BooleanPolynomial'",
             "linear_structures": "'sage.modules.free_module.FreeModule_submodule_field_with_category'",
+            "__setitem__": "None",
         },
         "BooleanFunctionIterator": {
             "__iter__": "Self",
@@ -119,6 +156,8 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "ring": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomialRing_libsingular'",
             "autocorrelation_table": "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'",
             "__iter__": "Iterator['sage.rings.integer.Integer']",
+            "__eq__": "bool",
+            "__ne__": "bool",
         },
     },
     "sage/crypto/sboxes.pyi": {
@@ -155,6 +194,10 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "_srd": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
             "_mix_columns_pc": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
             "_shift_rows_pc": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
+            "add_round_key_poly_constr": "'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr'",
+            "sub_bytes_poly_constr": "'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr'",
+            "mix_columns_poly_constr": "'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr'",
+            "shift_rows_poly_constr": "'sage.crypto.mq.rijndael_gf.RijndaelGF.Round_Component_Poly_Constr'",
         },
         "Round_Component_Poly_Constr": {
             "__call__": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'",
@@ -165,11 +208,14 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # DES permutation helpers always construct dense GF(2) bit
             # vectors, independent of the cipher instance's key schedule.
             "_ip": "'sage.modules.vector_mod2_dense.Vector_mod2_dense'",
+            "__eq__": "bool",
         },
         "DES_KS": {
             # The key-schedule half-register is a GF(2) bit vector and the
             # documented left rotation preserves that concrete implementation.
             "_left_shift": "'sage.modules.vector_mod2_dense.Vector_mod2_dense'",
+            "__eq__": "bool",
+            "__iter__": "Iterator['sage.rings.integer.Integer']",
         },
     },
     "sage/crypto/block_cipher/miniaes.pyi": {
@@ -179,6 +225,7 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # implementation and sbox returns Sage's concrete SBox table.
             "random_key": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
             "sbox": "'sage.crypto.sbox.SBox'",
+            "__eq__": "bool",
         },
     },
     "sage/crypto/block_cipher/present.pyi": {
@@ -187,6 +234,17 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # matrix shown by its doctest, not a generic Matrix base.
             "_smallscale_present_linearlayer": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
         },
+        "PRESENT": {"__eq__": "bool"},
+        "PRESENT_KS": {
+            "__eq__": "bool",
+            "__iter__": "Iterator['sage.rings.integer.Integer']",
+        },
+    },
+    "sage/crypto/block_cipher/sdes.pyi": {
+        "SimplifiedDES": {"__eq__": "bool"},
+    },
+    "sage/crypto/cipher.pyi": {
+        "Cipher": {"__eq__": "bool"},
     },
     "sage/crypto/mq/sr.pyi": {
         "SR_generic": {
@@ -211,6 +269,14 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "key_schedule_polynomials": "tuple",
             "polynomial_system": "tuple",
             "_insert_matrix_into_matrix": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "__eq__": "bool",
+            "__ne__": "bool",
+            "base_ring": "'sage.rings.finite_rings.finite_field_givaro.FiniteField_givaro'",
+            "ring": "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomialRing_libsingular'",
+            "sbox_constant": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
+            "sub_byte": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
+            "random_vector": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
+            "random_element": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
         },
         "SR_gf2n": {
             "vector": "'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense'",
@@ -229,6 +295,9 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "inversion_polynomials": "list",
             "inversion_polynomials_single_sbox": "list",
             "_inversion_polynomials_single_sbox": "list",
+            "ring": "'sage.rings.polynomial.pbori.pbori.BooleanPolynomialRing'",
+            "random_vector": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
+            "random_element": "'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense'",
         },
         "SR_gf2_2": {
             "inversion_polynomials_single_sbox": "list",
@@ -251,6 +320,9 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "random_key": "tuple",
         },
         "HillCryptosystem": {
+            # Constructing a cipher from a valid Hill key is a stable factory
+            # contract; keep the concrete cipher class visible to completion.
+            "__call__": "'sage.crypto.classical_cipher.HillCipher'",
             "deciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
             "enciphering": "'sage.monoids.string_monoid_element.StringMonoidElement'",
             "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
@@ -291,31 +363,143 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     "sage/crypto/classical_cipher.pyi": {
         "AffineCipher": {
             "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "__eq__": "bool",
         },
         "HillCipher": {
             "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
             "inverse": "'sage.crypto.classical_cipher.HillCipher'",
+            "__eq__": "bool",
         },
         "ShiftCipher": {
             "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "__eq__": "bool",
         },
         "SubstitutionCipher": {
             "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
             "inverse": "'sage.crypto.classical_cipher.SubstitutionCipher'",
+            "__eq__": "bool",
         },
         "TranspositionCipher": {
             "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
             "inverse": "'sage.crypto.classical_cipher.TranspositionCipher'",
+            "__eq__": "bool",
         },
         "VigenereCipher": {
             "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
             "inverse": "'sage.crypto.classical_cipher.VigenereCipher'",
+            "__eq__": "bool",
+        },
+    },
+    "sage/crypto/cryptosystem.pyi": {
+        "Cryptosystem": {
+            "__eq__": "bool",
+            # A configured periodic cryptosystem exposes a Sage Integer;
+            # non-periodic variants raise rather than returning another type.
+            "period": "'sage.rings.integer.Integer'",
+        },
+        "SymmetricKeyCryptosystem": {
+            "alphabet_size": "int",
         },
     },
     "sage/crypto/lfsr.pyi": {
         None: {
             "lfsr_sequence": "list",
             "lfsr_autocorrelation": "'sage.rings.rational.Rational'",
+            # The implementation chooses the polynomial ring from the finite
+            # field carried by the sequence.  These are the concrete Sage
+            # polynomial implementations exercised by Sage 10.9 (GF(2),
+            # prime fields, and extension fields); no abstract Polynomial
+            # base is used as the final result.
+            "lfsr_connection_polynomial": (
+                "'sage.rings.polynomial.polynomial_gf2x.Polynomial_GF2X | "
+                "sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint | "
+                "sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX'"
+            ),
+        },
+    },
+    "sage/crypto/stream.pyi": {
+        "LFSRCryptosystem": {
+            "__call__": "'sage.crypto.stream_cipher.LFSRCipher'",
+            "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "__eq__": "bool",
+        },
+        "ShrinkingGeneratorCryptosystem": {
+            "__call__": "'sage.crypto.stream_cipher.ShrinkingGeneratorCipher'",
+            "encoding": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+        },
+        None: {
+            # BBS exposes its generated bits through Sage's binary string
+            # monoid, not a plain Python list or string.
+            "blum_blum_shub": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+        },
+    },
+    "sage/crypto/stream_cipher.pyi": {
+        "LFSRCipher": {
+            "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "initial_state": "list",
+            # LFSRCryptosystem is implemented over GF(2); its connection
+            # polynomial is therefore the concrete GF(2) polynomial class.
+            "connection_polynomial": "'sage.rings.polynomial.polynomial_gf2x.Polynomial_GF2X'",
+        },
+        "ShrinkingGeneratorCipher": {
+            "__call__": "'sage.monoids.string_monoid_element.StringMonoidElement'",
+            "keystream_cipher": "'sage.crypto.stream_cipher.LFSRCipher'",
+            "decimating_cipher": "'sage.crypto.stream_cipher.LFSRCipher'",
+        },
+    },
+    "sage/crypto/public_key/blum_goldwasser.pyi": {
+        "BlumGoldwasser": {
+            # The public-key helpers expose concrete Sage integers and fixed
+            # tuple/list shapes documented by the implementation.  The
+            # ciphertext's final seed is a Sage Integer while its bit blocks
+            # are ordinary Python lists; decryption returns the corresponding
+            # nested bit-list structure.
+            "decrypt": "list[list[int]]",
+            "encrypt": "tuple[list[list[int]], 'sage.rings.integer.Integer']",
+            "private_key": (
+                "tuple['sage.rings.integer.Integer', 'sage.rings.integer.Integer', "
+                "'sage.rings.integer.Integer', 'sage.rings.integer.Integer']"
+            ),
+            "public_key": "'sage.rings.integer.Integer'",
+            "random_key": (
+                "tuple['sage.rings.integer.Integer', tuple['sage.rings.integer.Integer', "
+                "'sage.rings.integer.Integer', 'sage.rings.integer.Integer', "
+                "'sage.rings.integer.Integer']]"
+            ),
+            "__eq__": "bool",
+        },
+    },
+    "sage/crypto/lwe.pyi": {
+        "UniformSampler": {
+            # ``randint`` is intentionally a Python int in Sage's sampler.
+            "__call__": "int",
+        },
+        None: {
+            # These cryptographic helpers have stable outer containers even
+            # though their vector/finite-field element parents depend on q.
+            "samples": "list[tuple]",
+            "balance_sample": "tuple",
+        },
+        "LWE": {"__call__": "tuple"},
+        "RingLWE": {"__call__": "tuple"},
+        "RingLWEConverter": {"__call__": "tuple"},
+    },
+    "sage/groups/generic.pyi": {
+        None: {
+            # Generic group helpers have stable scalar/tuple contracts in the
+            # source documentation.  Their group *element* result remains
+            # argument-dependent and is intentionally handled separately.
+            "_parse_group_def": "tuple",
+            "_ord_from_op": "'sage.rings.integer.Integer'",
+            "discrete_log_generic": "'sage.rings.integer.Integer'",
+            "linear_relation": "tuple['sage.rings.integer.Integer', 'sage.rings.integer.Integer']",
+            "order_from_multiple": "'sage.rings.integer.Integer'",
+            "order_from_bounds": "'sage.rings.integer.Integer'",
+        },
+        "multiples": {
+            # The iterator object itself is the only protocol result that is
+            # independent of the dynamic group element yielded by __next__.
+            "__iter__": "Self",
         },
     },
     "sage/schemes/elliptic_curves/ell_point.pyi": {
@@ -338,9 +522,21 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # implementation; the coordinate element classes themselves are
             # intentionally left parent-dependent.
             "__tuple__": "tuple",
+            "_neg_": "Self",
+            "_divide_out": "tuple[Self, 'sage.rings.integer.Integer']",
+            "__pari__": "'cypari2.gen.Gen'",
         },
     },
     "sage/schemes/elliptic_curves/ell_finite_field.pyi": {
+        None: {
+            "curves_with_j_0": "list['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']",
+            "curves_with_j_1728": "list['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']",
+            "curves_with_j_0_char2": "list['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']",
+            "curves_with_j_0_char3": "list['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']",
+            "supersingular_j_polynomial": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+            "EllipticCurve_with_order": "Iterator['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']",
+            "EllipticCurve_with_prime_order": "Iterator['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']",
+        },
         "EllipticCurve_finite_field": {
             # Sage 10.9 finite-field implementations return these concrete
             # values (verified against the WSL runtime): cardinality and
@@ -348,9 +544,26 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # polynomial is the standard ZZ/FLINT polynomial, and plot() is
             # the 2-D Graphics container.
             "cardinality_pari": "'sage.rings.integer.Integer'",
+            "base_ring": FINITE_FIELD_UNION,
             "frobenius_discriminant": "'sage.rings.integer.Integer'",
             "frobenius_polynomial": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
             "plot": "'sage.plot.graphics.Graphics'",
+            "_fetch_cached_order": "None",
+            "height_above_floor": "'sage.rings.integer.Integer'",
+            "frobenius_order": "'sage.rings.number_field.order.Order_absolute'",
+            "endomorphism_order": "'sage.rings.number_field.order.Order_absolute'",
+            "frobenius": (
+                "'sage.rings.number_field.number_field_element_quadratic.OrderElement_quadratic | "
+                "sage.rings.integer.Integer'"
+            ),
+            "frobenius_endomorphism": "'sage.schemes.elliptic_curves.hom_frobenius.EllipticCurveHom_frobenius'",
+            "multiplication_by_p_isogeny": "'sage.schemes.elliptic_curves.hom_composite.EllipticCurveHom_composite'",
+        },
+    },
+    "sage/schemes/elliptic_curves/cardinality.pyi": {
+        None: {
+            "cardinality_exhaustive": "'sage.rings.integer.Integer'",
+            "cardinality_bsgs": "'sage.rings.integer.Integer'",
         },
     },
     "sage/schemes/elliptic_curves/ell_generic.pyi": {
@@ -408,6 +621,116 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "__mod__": "Self",
             "with_swapped_columns": "Self",
             "with_swapped_rows": "Self",
+        },
+    },
+    "sage/matrix/matrix_modn_sparse.pyi": {
+        "Matrix_modn_sparse": {
+            "determinant": PRIME_FIELD_ELEMENT_UNION,
+            "matrix_from_columns": "Self",
+            "matrix_from_rows": "Self",
+            "rank": "int",
+            "swap_rows": "None",
+            "transpose": "Self",
+        },
+    },
+    "sage/matrix/matrix_mod2_dense.pyi": {
+        "Matrix_mod2_dense": {
+            "__invert__": "Self",
+            "__neg__": "Self",
+            "_add_": "Self",
+            "_sub_": "Self",
+            "augment": "Self",
+            "determinant": "'sage.rings.finite_rings.integer_mod.IntegerMod_int'",
+            "doubly_lexical_ordering": "tuple['sage.groups.perm_gps.permgroup_element.SymmetricGroupElement', 'sage.groups.perm_gps.permgroup_element.SymmetricGroupElement']",
+            "echelonize": "None",
+            "rank": "int",
+            "row": "'sage.modules.vector_mod2_dense.Vector_mod2_dense'",
+            "str": "str",
+            "submatrix": "Self",
+            "transpose": "Self",
+        },
+    },
+    "sage/matrix/matrix_gf2e_dense.pyi": {
+        "Matrix_gf2e_dense": {
+            "__invert__": "Self",
+            "__neg__": "Self",
+            "_add_": "Self",
+            "_sub_": "Self",
+            "augment": "Self",
+            "cling": "None",
+            "determinant": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
+            "echelonize": "None",
+            "rank": "int",
+            "slice": "tuple['sage.matrix.matrix_mod2_dense.Matrix_mod2_dense', ...]",
+            "submatrix": "Self",
+            "transpose": "Self",
+        },
+    },
+    "sage/matrix/matrix_integer_dense.pyi": {
+        "Matrix_integer_dense": {
+            # These operations allocate through the integer-dense receiver;
+            # the one deliberate exception is ``~M``, which promotes a
+            # nonsingular integer matrix to a rational-dense inverse.
+            "_add_": "Self",
+            "_sub_": "Self",
+            "__neg__": "Self",
+            "__pow__": INTEGER_MATRIX_POWER_UNION,
+            "_lmul_": "Self",
+            "__invert__": "'sage.matrix.matrix_rational_dense.Matrix_rational_dense'",
+            "inverse_of_unit": "Self",
+            "augment": "Self",
+            "echelon_form": "Self",
+            "transpose": "Self",
+            "antitranspose": "Self",
+            "determinant": "'sage.rings.integer.Integer'",
+            "charpoly": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+            "minpoly": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+            "frobenius_form": "Self",
+            "symplectic_form": "tuple[Self, Self]",
+            "saturation": "Self",
+            "rational_reconstruction": "'sage.matrix.matrix_rational_dense.Matrix_rational_dense'",
+            "gcd": "'sage.rings.integer.Integer'",
+            "_ntl_": "'sage.libs.ntl.ntl_mat_ZZ.ntl_mat_ZZ'",
+            "_magma_init_": "str",
+            "_richcmp_": "bool",
+            "decomposition": "'sage.structure.sequence.Sequence_generic'",
+            "null_ideal": "'sage.rings.ideal.Ideal_principal'",
+            "row": "'sage.modules.vector_integer_dense.Vector_integer_dense'",
+            "column": "'sage.modules.vector_integer_dense.Vector_integer_dense'",
+            "insert_row": "Self",
+            "BKZ": "Self",
+        },
+    },
+    "sage/matrix/matrix_rational_dense.pyi": {
+        "Matrix_rational_dense": {
+            # Rational-dense linear algebra stays in the same concrete
+            # implementation, including inversion and echelonization.
+            "_add_": "Self",
+            "_sub_": "Self",
+            "__neg__": "Self",
+            "_lmul_": "Self",
+            "__invert__": "Self",
+            "inverse": "Self",
+            "augment": "Self",
+            "echelon_form": "Self",
+            "transpose": "Self",
+            "antitranspose": "Self",
+            "determinant": "'sage.rings.rational.Rational'",
+            "charpoly": "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'",
+            "minpoly": "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'",
+            "rank": "int",
+            "row": "'sage.modules.vector_rational_dense.Vector_rational_dense'",
+            "column": "'sage.modules.vector_rational_dense.Vector_rational_dense'",
+            "matrix_from_columns": "Self",
+            "add_to_entry": "None",
+            "echelonize": "None",
+            "set_row_to_multiple_of_row": "None",
+            "BKZ": "Self",
+            "LLL": "Self",
+            "prod_of_row_sums": "'sage.rings.rational.Rational'",
+            "_magma_init_": "str",
+            "_richcmp_": "bool",
+            "decomposition": "'sage.structure.sequence.Sequence_generic'",
         },
     },
     "sage/rings/finite_rings/finite_field_base.pyi": {
@@ -500,11 +823,93 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # ``Self`` is intentional: emitting the abstract Polynomial base
             # here would make ``f.derivative()`` lose the concrete
             # Polynomial_zmod_flint/Polynomial_dense_mod_p API in PyCharm.
-            "__pow__": "Self",
+            "__pow__": POLYNOMIAL_POWER_UNION,
             "derivative": "Self",
             "gcd": "Self",
             "xgcd": "tuple[Self, Self, Self]",
             "quo_rem": "tuple[Self, Self]",
+        },
+    },
+    "sage/rings/polynomial/polynomial_zmod_flint.pyi": {
+        "Polynomial_zmod_flint": {
+            # GF(p)[x] evaluation/resultants produce the concrete modular
+            # element family; polynomial transforms stay in this FLINT
+            # implementation.  Rational reconstruction returns a pair of
+            # polynomials in the same parent.
+            "__call__": PRIME_FIELD_ELEMENT_UNION,
+            "resultant": PRIME_FIELD_ELEMENT_UNION,
+            "small_roots": "list['sage.rings.integer.Integer']",
+            "__pow__": POLYNOMIAL_POWER_UNION,
+            "rational_reconstruction": "tuple[Self, Self]",
+            "squarefree_decomposition": "'sage.structure.factorization.Factorization'",
+            "monic": "Self",
+            "reverse": "Self",
+            "revert_series": "Self",
+            "minpoly_mod": "Self",
+            "compose_mod": "Self",
+        },
+    },
+    "sage/rings/polynomial/polynomial_modn_dense_ntl.pyi": {
+        "Polynomial_dense_mod_p": {
+            "__pow__": "'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p | sage.rings.fraction_field_element.FractionFieldElement'",
+        },
+    },
+    "sage/rings/polynomial/polynomial_integer_dense_flint.pyi": {
+        "Polynomial_integer_dense_flint": {
+            "_add_": "Self",
+            "_sub_": "Self",
+            "_neg_": "Self",
+            "quo_rem": "tuple[Self, Self]",
+            "gcd": "Self",
+            "lcm": "Self",
+            "xgcd": "tuple[Self, Self, Self]",
+            "_mul_": "Self",
+            "_lmul_": "Self",
+            "_rmul_": "Self",
+            "__pow__": POLYNOMIAL_POWER_UNION,
+            "__floordiv__": "Self",
+            "squarefree_decomposition": "'sage.structure.factorization.Factorization'",
+            "factor_mod": "'sage.structure.factorization.Factorization'",
+            "factor_padic": "'sage.structure.factorization.Factorization'",
+            "resultant": "'sage.rings.integer.Integer'",
+            "reverse": "Self",
+            "revert_series": "Self",
+            "discriminant": "'sage.rings.integer.Integer'",
+            "_eval_mpfr_": "'sage.rings.real_mpfr.RealNumber'",
+            "_eval_mpfi_": "'sage.rings.real_mpfi.RealIntervalFieldElement'",
+            "pseudo_divrem": "tuple[Self, Self, 'sage.rings.integer.Integer']",
+            "real_root_intervals": "list[tuple[tuple['sage.rings.rational.Rational', 'sage.rings.rational.Rational'], 'sage.rings.integer.Integer']]",
+        },
+    },
+    "sage/rings/polynomial/polynomial_rational_flint.pyi": {
+        "Polynomial_rational_flint": {
+            "_add_": "Self",
+            "_sub_": "Self",
+            "_neg_": "Self",
+            "quo_rem": "tuple[Self, Self]",
+            "gcd": "Self",
+            "lcm": "Self",
+            "xgcd": "tuple[Self, Self, Self]",
+            "_mul_": "Self",
+            "_lmul_": "Self",
+            "_rmul_": "Self",
+            "__pow__": POLYNOMIAL_POWER_UNION,
+            "__floordiv__": "Self",
+            "_mod_": "Self",
+            "squarefree_decomposition": "'sage.structure.factorization.Factorization'",
+            "factor_mod": "'sage.structure.factorization.Factorization'",
+            "factor_padic": "'sage.structure.factorization.Factorization'",
+            "resultant": "'sage.rings.rational.Rational'",
+            "reverse": "Self",
+            "revert_series": "Self",
+            "discriminant": "'sage.rings.rational.Rational'",
+            "__lshift__": "Self",
+            "__rshift__": "Self",
+            "numerator": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+            "denominator": "'sage.rings.integer.Integer'",
+            "hensel_lift": "list['sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint']",
+            "galois_group_davenport_smith_test": "int",
+            "real_root_intervals": "list[tuple[tuple['sage.rings.rational.Rational', 'sage.rings.rational.Rational'], 'sage.rings.integer.Integer']]",
         },
     },
 }
@@ -521,11 +926,21 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "_add_": "Self",
         },
     },
+    "sage/schemes/elliptic_curves/ell_finite_field.pyi": {
+        "EllipticCurve_finite_field": {
+            # The finite-field curve enumerators are concrete point
+            # containers, not an untyped tuple/Sequence.  This keeps
+            # ``E.gens()[0].log(...)`` and ``E.points()[0].order()`` visible
+            # to the IDE while preserving the runtime container classes.
+            "gens": "tuple['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field', ...]",
+            "points": "'sage.structure.sequence.Sequence_generic[sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field]'",
+        },
+    },
     "sage/rings/polynomial/polynomial_element.pyi": {
         "Polynomial": {
             # Retarget an earlier broad Polynomial annotation to Self when
             # this pass is rerun over an already-curated staging tree.
-            "__pow__": "Self",
+            "__pow__": POLYNOMIAL_POWER_UNION,
             "derivative": "Self",
             "gcd": "Self",
             "xgcd": "tuple[Self, Self, Self]",
@@ -544,6 +959,13 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # a different base ring, so the concrete receiver is preserved.
             "with_swapped_columns": "Self",
             "with_swapped_rows": "Self",
+        },
+    },
+    "sage/matrix/matrix_integer_dense.pyi": {
+        "Matrix_integer_dense": {
+            # Sage 10.9 returns a native Python int for rank(), even though
+            # older generated stubs exposed Sage Integer here.
+            "rank": "int",
         },
     },
     # .sage resolves unqualified factories through sage.all, so its aliases
@@ -579,6 +1001,41 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
 # generic overload machinery in the generated API index; the Kotlin plugin does
 # not recognize these class or member names.
 CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
+    "sage/crypto/classical.pyi": {
+        "HillCryptosystem": {
+            # Inversion is performed in the key space and preserves the
+            # caller's concrete matrix implementation (including modular
+            # dense matrices used by the classical CTF examples).
+            "inverse_key": (
+                "def inverse_key(self, A: HillKeyT) -> HillKeyT: ...",
+            ),
+        },
+    },
+    "sage/crypto/lattice.pyi": {
+        None: {
+            # ``lattice`` and ``ntl`` are mutually exclusive output switches:
+            # the default produces Sage's dense integer matrix, ``ntl=True``
+            # produces an NTL matrix, and ``lattice=True`` produces the
+            # free-module lattice wrapper.
+            "gen_lattice": (
+                "def gen_lattice(type='modular', n=4, m=8, q=11, seed=None, quotient=None, dual=False, *, ntl: Literal[False] = False, lattice: Literal[False] = False) -> 'sage.matrix.matrix_integer_dense.Matrix_integer_dense': ...",
+                "def gen_lattice(type='modular', n=4, m=8, q=11, seed=None, quotient=None, dual=False, *, ntl: Literal[True] = True, lattice: Literal[False] = False) -> 'sage.libs.ntl.ntl_mat_ZZ.ntl_mat_ZZ': ...",
+                "def gen_lattice(type='modular', n=4, m=8, q=11, seed=None, quotient=None, dual=False, *, ntl: Literal[False] = False, lattice: Literal[True] = True) -> 'sage.modules.free_module_integer.FreeModule_submodule_with_basis_integer_with_category': ...",
+            ),
+        },
+    },
+    "sage/matrix/constructor.pyi": {
+        None: {
+            "matrix": (
+                "def matrix(base_ring: 'sage.rings.integer_ring.IntegerRing_class', *args, sparse: Literal[False] = False, **kwds) -> 'sage.matrix.matrix_integer_dense.Matrix_integer_dense': ...",
+                "def matrix(base_ring: 'sage.rings.integer_ring.IntegerRing_class', *args, sparse: Literal[True] = True, **kwds) -> 'sage.matrix.matrix_integer_sparse.Matrix_integer_sparse': ...",
+                "def matrix(base_ring: 'sage.rings.rational_field.RationalField', *args, sparse: Literal[False] = False, **kwds) -> 'sage.matrix.matrix_rational_dense.Matrix_rational_dense': ...",
+                "def matrix(base_ring: 'sage.rings.rational_field.RationalField', *args, sparse: Literal[True] = True, **kwds) -> 'sage.matrix.matrix_rational_sparse.Matrix_rational_sparse': ...",
+                "def matrix(base_ring: 'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn', *args, sparse: Literal[False] = False, **kwds) -> 'sage.matrix.matrix_modn_dense_float.Matrix_modn_dense_float': ...",
+                "def matrix(base_ring: 'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn', *args, sparse: Literal[True] = True, **kwds) -> 'sage.matrix.matrix_modn_sparse.Matrix_modn_sparse': ...",
+            ),
+        },
+    },
     "sage/arith/misc.pyi": {
         None: {
             # ``gcd`` coerces operands to a common parent and returns an
@@ -599,6 +1056,19 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             ),
             "rising_factorial": (
                 "def rising_factorial(x: RisingFactorialT, a) -> RisingFactorialT: ...",
+            ),
+            "continuant": (
+                "def continuant(v: list[ContinuantT], n=None) -> ContinuantT: ...",
+                "def continuant(v: tuple[ContinuantT, ...], n=None) -> ContinuantT: ...",
+            ),
+            "gauss_sum": (
+                "def gauss_sum(char_value: GaussSumT, finite_field) -> GaussSumT: ...",
+            ),
+            "radical": (
+                "def radical(n: RadicalT, *args, **kwds) -> RadicalT: ...",
+            ),
+            "coprime_part": (
+                "def coprime_part(x: CoprimePartT, base) -> CoprimePartT: ...",
             ),
             # The optional ``get_data`` flag is a genuine call-argument
             # contract: the default/False branch is a predicate, while the
@@ -719,6 +1189,24 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             ),
         },
     },
+    "sage/schemes/elliptic_curves/ell_finite_field.pyi": {
+        "EllipticCurve_finite_field": {
+            # ``map`` controls whether the division field is returned alone
+            # or together with the base-field embedding.  The field and map
+            # implementations vary with the finite-field backend, so the
+            # overload retains the complete concrete backend unions.
+            "division_field": (
+                f"def division_field(self, n, names='t', map: Literal[False] = False, **kwds) -> {FINITE_FIELD_UNION}: ...",
+                f"def division_field(self, n, names='t', map: Literal[True] = True, **kwds) -> tuple[{FINITE_FIELD_UNION}, {FINITE_FIELD_MORPHISM_UNION}]: ...",
+            ),
+        },
+        None: {
+            "special_supersingular_curve": (
+                "def special_supersingular_curve(F, q=None, *, endomorphism: Literal[False] = False) -> 'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field': ...",
+                "def special_supersingular_curve(F, q=None, *, endomorphism: Literal[True] = True) -> tuple['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field', 'sage.schemes.elliptic_curves.ell_curve_isogeny.EllipticCurveIsogeny']: ...",
+            ),
+        },
+    },
     "sage/crypto/block_cipher/miniaes.pyi": {
         "MiniAES": {
             # Mini-AES matrix transforms preserve the concrete matrix parent
@@ -759,6 +1247,31 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             "PolynomialRing": (
                 "def PolynomialRing(base_ring: 'sage.rings.finite_rings.finite_field_base.FiniteField', *args, **kwds) -> 'sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p': ...",
             ),
+            # ``GF``/``FiniteField`` are factories whose implementation is
+            # selected by the literal ``implementation`` keyword.  The
+            # fallback is the complete concrete backend union, never the
+            # public FiniteField base, so ``F.gen()`` and ``F.random_element``
+            # retain backend-aware completion in CTF scripts.
+            "GF": (
+                "def GF(*args, implementation: Literal['givaro'] = 'givaro', **kwargs) -> 'sage.rings.finite_rings.finite_field_givaro.FiniteField_givaro': ...",
+                "def GF(*args, implementation: Literal['ntl'], **kwargs) -> 'sage.rings.finite_rings.finite_field_ntl_gf2e.FiniteField_ntl_gf2e': ...",
+                "def GF(*args, implementation: Literal['pari', 'pari_ffelt'], **kwargs) -> 'sage.rings.finite_rings.finite_field_pari_ffelt.FiniteField_pari_ffelt': ...",
+                f"def GF(*args, **kwargs) -> {FINITE_FIELD_UNION}: ...",
+            ),
+            "FiniteField": (
+                "def FiniteField(*args, implementation: Literal['givaro'] = 'givaro', **kwargs) -> 'sage.rings.finite_rings.finite_field_givaro.FiniteField_givaro': ...",
+                "def FiniteField(*args, implementation: Literal['ntl'], **kwargs) -> 'sage.rings.finite_rings.finite_field_ntl_gf2e.FiniteField_ntl_gf2e': ...",
+                "def FiniteField(*args, implementation: Literal['pari', 'pari_ffelt'], **kwargs) -> 'sage.rings.finite_rings.finite_field_pari_ffelt.FiniteField_pari_ffelt': ...",
+                f"def FiniteField(*args, **kwargs) -> {FINITE_FIELD_UNION}: ...",
+            ),
+            "Matrix": (
+                "def Matrix(base_ring: 'sage.rings.integer_ring.IntegerRing_class', *args, sparse: Literal[False] = False, **kwds) -> 'sage.matrix.matrix_integer_dense.Matrix_integer_dense': ...",
+                "def Matrix(base_ring: 'sage.rings.integer_ring.IntegerRing_class', *args, sparse: Literal[True] = True, **kwds) -> 'sage.matrix.matrix_integer_sparse.Matrix_integer_sparse': ...",
+                "def Matrix(base_ring: 'sage.rings.rational_field.RationalField', *args, sparse: Literal[False] = False, **kwds) -> 'sage.matrix.matrix_rational_dense.Matrix_rational_dense': ...",
+                "def Matrix(base_ring: 'sage.rings.rational_field.RationalField', *args, sparse: Literal[True] = True, **kwds) -> 'sage.matrix.matrix_rational_sparse.Matrix_rational_sparse': ...",
+                "def Matrix(base_ring: 'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn', *args, sparse: Literal[False] = False, **kwds) -> 'sage.matrix.matrix_modn_dense_float.Matrix_modn_dense_float': ...",
+                "def Matrix(base_ring: 'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn', *args, sparse: Literal[True] = True, **kwds) -> 'sage.matrix.matrix_modn_sparse.Matrix_modn_sparse': ...",
+            ),
         },
     },
     "sage/matrix/matrix2.pyi": {
@@ -779,6 +1292,48 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             "decomposition": (
                 "def decomposition(self, algorithm='spin', is_diagonalizable=False, dual: Literal[False] = False) -> 'sage.structure.sequence.Sequence_generic': ...",
                 "def decomposition(self, algorithm='spin', is_diagonalizable=False, dual: Literal[True] = True) -> tuple['sage.structure.sequence.Sequence_generic', 'sage.structure.sequence.Sequence_generic']: ...",
+            ),
+        },
+    },
+    "sage/matrix/matrix_integer_dense.pyi": {
+        "Matrix_integer_dense": {
+            # ``transformation`` controls whether Smith normal form returns
+            # only the diagonal matrix or the (D, U, V) transformation tuple.
+            "smith_form": (
+                "def smith_form(self, transformation: Literal[False] = False, integral=None) -> Self: ...",
+                "def smith_form(self, transformation: Literal[True] = True, integral=None) -> tuple[Self, Self, Self]: ...",
+            ),
+        },
+    },
+    "sage/matrix/matrix_rational_dense.pyi": {
+        "Matrix_rational_dense": {
+            "smith_form": (
+                "def smith_form(self, transformation: Literal[False] = False, integral=None) -> Self: ...",
+                "def smith_form(self, transformation: Literal[True] = True, integral=None) -> tuple[Self, Self, Self]: ...",
+            ),
+        },
+    },
+    "sage/matrix/matrix_modn_sparse.pyi": {
+        "Matrix_modn_sparse": {
+            "density": (
+                "def density(self, approx: Literal[False] = False) -> 'sage.rings.rational.Rational': ...",
+                "def density(self, approx: Literal[True]) -> float: ...",
+            ),
+        },
+    },
+    "sage/matrix/matrix_mod2_dense.pyi": {
+        "Matrix_mod2_dense": {
+            "density": (
+                "def density(self, approx: Literal[False] = False) -> 'sage.rings.rational.Rational': ...",
+                "def density(self, approx: Literal[True]) -> float: ...",
+            ),
+        },
+    },
+    "sage/matrix/matrix_gf2e_dense.pyi": {
+        "Matrix_gf2e_dense": {
+            "density": (
+                "def density(self, approx: Literal[False] = False) -> 'sage.rings.rational.Rational': ...",
+                "def density(self, approx: Literal[True]) -> float: ...",
             ),
         },
     },
@@ -814,10 +1369,20 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
 # Module-level TypeVars used by the contracts above.  The declaration is kept
 # in the generated source stub so the extractor records it on each overload.
 CURATED_TYPE_VARIABLES: dict[str, tuple[str, ...]] = {
-    "sage/arith/misc.pyi": ("GcdT", "BinomialT", "FallingFactorialT", "RisingFactorialT"),
+    "sage/arith/misc.pyi": (
+        "GcdT",
+        "BinomialT",
+        "FallingFactorialT",
+        "RisingFactorialT",
+        "ContinuantT",
+        "GaussSumT",
+        "RadicalT",
+        "CoprimePartT",
+    ),
     "sage/arith/functions.pyi": ("LcmT",),
     "sage/crypto/block_cipher/miniaes.pyi": ("MiniAEST",),
     "sage/crypto/mq/rijndael_gf.pyi": ("RijndaelStateT",),
+    "sage/crypto/classical.pyi": ("HillKeyT",),
 }
 
 # INSERT: declarations that model a real, dynamically inherited method whose
@@ -829,12 +1394,34 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "EllipticCurve_finite_field": (
             "def __call__(self, *args, **kwargs) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
             "def gen(self, i: int) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
+            "def __getitem__(self, n) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
+            "def __iter__(self) -> Iterator['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field']: ...",
+            f"def base_ring(self) -> {FINITE_FIELD_UNION}: ...",
+            f"def a1(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def a2(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def a3(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def a4(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def a6(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def b2(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def b4(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def b6(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def b8(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def c4(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def c6(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def discriminant(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def j_invariant(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
         ),
     },
     "sage/schemes/elliptic_curves/ell_point.pyi": {
         "EllipticCurvePoint_finite_field": (
             "def curve(self) -> 'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field': ...",
             "def _acted_upon_(self, other, side) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
+            f"def __getitem__(self, n) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def __iter__(self) -> Iterator[{FINITE_FIELD_ELEMENT_UNION}]: ...",
+            f"def x(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def y(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def weil_pairing(self, Q, n, algorithm=None) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
+            f"def tate_pairing(self, Q, n, k, q=None) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
         ),
     },
     "sage/rings/integer_ring.pyi": {
@@ -876,7 +1463,6 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "sage/rings/polynomial/polynomial_modn_dense_ntl.pyi": {
         "Polynomial_dense_mod_p": (
-            "def __pow__(self, n, modulus=None) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
             "def __add__(self, other) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
             "def __mul__(self, other) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
             "def __rmul__(self, other) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p': ...",
@@ -885,7 +1471,6 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "sage/rings/polynomial/polynomial_zmod_flint.pyi": {
         "Polynomial_zmod_flint": (
-            "def __pow__(self, exp, modulus=None) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
             "def __add__(self, other) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
             "def __mul__(self, other) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
             "def __rmul__(self, other) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint': ...",
@@ -1674,24 +2259,36 @@ def annotate_insertions(path: Path, classes: dict[str, tuple[str, ...]]) -> list
         if class_index is None:
             continue
         indent = re.match(r"^(\s*)", lines[class_index]).group(1) + "    "
-        block = [f"{indent}{declaration}\n" for declaration in declarations]
-        if all(declaration in "".join(lines) for declaration in declarations):
+        existing = "".join(lines)
+        missing = [declaration for declaration in declarations if declaration not in existing]
+        if not missing:
             continue
+        block = [f"{indent}{declaration}\n" for declaration in missing]
         insertion_index = class_index + 1
         while insertion_index < len(lines) and not lines[insertion_index].strip():
             insertion_index += 1
         if insertion_index < len(lines) and re.match(r"^\s*(?:r|u|b|f|br|rb|fr|rf)?['\"]{3}", lines[insertion_index], re.IGNORECASE):
             quote = '\"\"\"' if '\"\"\"' in lines[insertion_index] else "'''"
-            insertion_index += 1
-            while insertion_index < len(lines):
-                if quote in lines[insertion_index]:
-                    insertion_index += 1
-                    break
+            # A generated stub may use either a multi-line class docstring or
+            # a compact one-line ``\"\"\"text\"\"\"`` form.  Do not scan
+            # past the class body when the opening and closing delimiters are
+            # on the same line, otherwise subclass declarations are inserted
+            # inside the first following top-level function.
+            if lines[insertion_index].count(quote) >= 2:
                 insertion_index += 1
+            else:
+                insertion_index += 1
+                while insertion_index < len(lines):
+                    if quote in lines[insertion_index]:
+                        insertion_index += 1
+                        break
+                    insertion_index += 1
         lines[insertion_index:insertion_index] = block
-        inserted.extend(declaration.split("(", 1)[0].removeprefix("def ") for declaration in declarations)
+        inserted.extend(declaration.split("(", 1)[0].removeprefix("def ") for declaration in missing)
     if inserted:
         path.write_text("".join(lines), encoding="utf-8")
+        if any("Iterator[" in declaration for declarations in classes.values() for declaration in declarations):
+            ensure_typing_name(path, "Iterator")
     return inserted
 
 
@@ -2649,7 +3246,11 @@ def main() -> int:
         if not path.is_file():
             continue
         annotations = [annotation for members in classes.values() for annotation in members.values()]
-        for typing_name, marker in (("Self", "Self"), ("Iterator", "Iterator[")):
+        for typing_name, marker in (
+            ("Self", "Self"),
+            ("Iterator", "Iterator["),
+            ("Callable", "Callable["),
+        ):
             if any(marker in annotation for annotation in annotations):
                 if ensure_typing_name(path, typing_name):
                     verify(path)

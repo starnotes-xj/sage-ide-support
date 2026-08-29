@@ -361,6 +361,12 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    def hex_str(self, M, typ='matrix'):\n        ...\n"
                 "    def block_order(self):\n        ...\n"
                 "    def _insert_matrix_into_matrix(self, dst, src, row, col):\n        ...\n"
+                "    def base_ring(self):\n        ...\n"
+                "    def ring(self, order=None, reverse_variables=None):\n        ...\n"
+                "    def sbox_constant(self):\n        ...\n"
+                "    def sub_byte(self, b):\n        ...\n"
+                "    def random_vector(self, *args, **kwds):\n        ...\n"
+                "    def random_element(self, elem_type='vector', *args, **kwds):\n        ...\n"
                 "class SR_gf2n(SR_generic):\n"
                 "    def vector(self, d=None):\n        ...\n"
                 "    def shift_rows_matrix(self):\n        ...\n"
@@ -369,6 +375,9 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    def inversion_polynomials(self, xi, wi, length):\n        ...\n"
                 "class SR_gf2(SR_generic):\n"
                 "    def vector(self, d=None):\n        ...\n"
+                "    def ring(self, order=None, reverse_variables=None):\n        ...\n"
+                "    def random_vector(self, *args, **kwds):\n        ...\n"
+                "    def random_element(self, elem_type='vector', *args, **kwds):\n        ...\n"
                 "    def phi(self, l):\n        ...\n"
                 "    def antiphi(self, l):\n        ...\n"
                 "    def _mul_matrix(self, x):\n        ...\n",
@@ -399,6 +408,15 @@ class AnnotateStubsTest(unittest.TestCase):
             )
             self.assertIn("def new_generator(self, **kwds) -> Self:", patched)
             self.assertIn("def sbox(self) -> 'sage.crypto.sbox.SBox':", patched)
+            self.assertIn("def base_ring(self) -> 'sage.rings.finite_rings.finite_field_givaro.FiniteField_givaro':", patched)
+            self.assertIn("def ring(self, order=None, reverse_variables=None) -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomialRing_libsingular':", patched)
+            self.assertIn("def sbox_constant(self) -> 'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement':", patched)
+            self.assertIn("def sub_byte(self, b) -> 'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement':", patched)
+            self.assertIn("def random_vector(self, *args, **kwds) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':", patched)
+            self.assertIn("def random_element(self, elem_type='vector', *args, **kwds) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':", patched)
+            self.assertIn("def ring(self, order=None, reverse_variables=None) -> 'sage.rings.polynomial.pbori.pbori.BooleanPolynomialRing':", patched)
+            self.assertIn("def random_vector(self, *args, **kwds) -> 'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense':", patched)
+            self.assertIn("def random_element(self, elem_type='vector', *args, **kwds) -> 'sage.matrix.matrix_mod2_dense.Matrix_mod2_dense':", patched)
             self.assertIn("def sub_bytes(self, d) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':", patched)
             self.assertIn("def state_array(self, d=None) -> 'sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense':", patched)
             self.assertIn("def hex_str(self, M, typ='matrix') -> str:", patched)
@@ -550,11 +568,193 @@ class AnnotateStubsTest(unittest.TestCase):
             patched = stub.read_text(encoding="utf-8")
             self.assertIn("def lfsr_sequence(key, fill, n) -> list:", patched)
             self.assertIn("def lfsr_autocorrelation(L, p, k) -> 'sage.rings.rational.Rational':", patched)
-            self.assertNotIn("lfsr_connection_polynomial(s) ->", patched)
+            self.assertIn(
+                "def lfsr_connection_polynomial(s) -> 'sage.rings.polynomial.polynomial_gf2x.Polynomial_GF2X | sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint | sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX':",
+                patched,
+            )
             ast.parse(patched)
             second = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, second.returncode, second.stderr)
             self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_generic_group_contracts_cover_ctf_discrete_log_helpers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "groups" / "generic.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "def _parse_group_def(parent, operation, identity, inverse, op, check=True):\n    ...\n"
+                "def _ord_from_op(x, op, param_name='ord'):\n    ...\n"
+                "def discrete_log_generic(a, base, ord=None, bounds=None, operation='*'):\n    ...\n"
+                "def linear_relation(P, Q, operation='+'):\n    ...\n"
+                "def order_from_multiple(P, m, operation='+'):\n    ...\n"
+                "def order_from_bounds(P, bounds, operation='+'):\n    ...\n"
+                "class multiples:\n"
+                "    def __iter__(self):\n        ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def _parse_group_def(parent, operation, identity, inverse, op, check=True) -> tuple:", patched)
+            self.assertIn("def _ord_from_op(x, op, param_name='ord') -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def discrete_log_generic(a, base, ord=None, bounds=None, operation='*') -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def linear_relation(P, Q, operation='+') -> tuple['sage.rings.integer.Integer', 'sage.rings.integer.Integer']:", patched)
+            self.assertIn("def order_from_multiple(P, m, operation='+') -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def order_from_bounds(P, bounds, operation='+') -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def __iter__(self) -> Self:", patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_stream_cipher_contracts_cover_lfsr_and_bbs_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stream = root / "sage" / "crypto" / "stream.pyi"
+            cipher = root / "sage" / "crypto" / "stream_cipher.pyi"
+            stream.parent.mkdir(parents=True)
+            stream.write_text(
+                "class LFSRCryptosystem:\n"
+                "    def __call__(self, key):\n        ...\n"
+                "    def encoding(self, M):\n        ...\n"
+                "class ShrinkingGeneratorCryptosystem:\n"
+                "    def __call__(self, key):\n        ...\n"
+                "    def encoding(self, M):\n        ...\n"
+                "def blum_blum_shub(length, seed=None):\n    ...\n",
+                encoding="utf-8",
+            )
+            cipher.write_text(
+                "class LFSRCipher:\n"
+                "    def __call__(self, M, mode='ECB'):\n        ...\n"
+                "    def initial_state(self):\n        ...\n"
+                "class ShrinkingGeneratorCipher:\n"
+                "    def __call__(self, M, mode='ECB'):\n        ...\n"
+                "    def keystream_cipher(self):\n        ...\n"
+                "    def decimating_cipher(self):\n        ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched_stream = stream.read_text(encoding="utf-8")
+            patched_cipher = cipher.read_text(encoding="utf-8")
+            string_type = "'sage.monoids.string_monoid_element.StringMonoidElement'"
+            self.assertIn("def __call__(self, key) -> 'sage.crypto.stream_cipher.LFSRCipher':", patched_stream)
+            self.assertIn(f"def encoding(self, M) -> {string_type}:", patched_stream)
+            self.assertIn("def __call__(self, key) -> 'sage.crypto.stream_cipher.ShrinkingGeneratorCipher':", patched_stream)
+            self.assertIn("def blum_blum_shub(length, seed=None) -> " + string_type + ":", patched_stream)
+            self.assertIn(f"def __call__(self, M, mode='ECB') -> {string_type}:", patched_cipher)
+            self.assertIn("def initial_state(self) -> list:", patched_cipher)
+            self.assertIn("def keystream_cipher(self) -> 'sage.crypto.stream_cipher.LFSRCipher':", patched_cipher)
+            self.assertIn("def decimating_cipher(self) -> 'sage.crypto.stream_cipher.LFSRCipher':", patched_cipher)
+            ast.parse(patched_stream)
+            ast.parse(patched_cipher)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched_stream, stream.read_text(encoding="utf-8"))
+            self.assertEqual(patched_cipher, cipher.read_text(encoding="utf-8"))
+
+    def test_ctf_public_key_and_hill_contracts_are_concrete_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            classical = root / "sage" / "crypto" / "classical.pyi"
+            blum = root / "sage" / "crypto" / "public_key" / "blum_goldwasser.pyi"
+            classical.parent.mkdir(parents=True)
+            blum.parent.mkdir(parents=True)
+            classical.write_text(
+                "class HillCryptosystem:\n"
+                "    def __call__(self, A):\n        ...\n"
+                "    def inverse_key(self, A):\n        ...\n",
+                encoding="utf-8",
+            )
+            blum.write_text(
+                "class BlumGoldwasser:\n"
+                "    def decrypt(self, C, K):\n        ...\n"
+                "    def encrypt(self, P, K, seed=None):\n        ...\n"
+                "    def private_key(self, p, q):\n        ...\n"
+                "    def public_key(self, p, q):\n        ...\n"
+                "    def random_key(self, lbound, ubound, ntries=100):\n        ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched_classical = classical.read_text(encoding="utf-8")
+            patched_blum = blum.read_text(encoding="utf-8")
+            self.assertIn(
+                "def __call__(self, A) -> 'sage.crypto.classical_cipher.HillCipher':",
+                patched_classical,
+            )
+            integer_type = "'sage.rings.integer.Integer'"
+            self.assertIn("def decrypt(self, C, K) -> list[list[int]]:", patched_blum)
+            self.assertIn(
+                "def encrypt(self, P, K, seed=None) -> tuple[list[list[int]], 'sage.rings.integer.Integer']:",
+                patched_blum,
+            )
+            self.assertIn(
+                "def private_key(self, p, q) -> tuple[" + ", ".join([integer_type] * 4) + "]:",
+                patched_blum,
+            )
+            self.assertIn("def public_key(self, p, q) -> 'sage.rings.integer.Integer':", patched_blum)
+            self.assertIn(
+                "def random_key(self, lbound, ubound, ntries=100) -> tuple['sage.rings.integer.Integer', tuple["
+                + ", ".join([integer_type] * 4)
+                + "]]:",
+                patched_blum,
+            )
+            ast.parse(patched_classical)
+            ast.parse(patched_blum)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched_classical, classical.read_text(encoding="utf-8"))
+            self.assertEqual(patched_blum, blum.read_text(encoding="utf-8"))
+
+    def test_lwe_and_lattice_contracts_preserve_ctf_output_branches(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            lwe = root / "sage" / "crypto" / "lwe.pyi"
+            lattice = root / "sage" / "crypto" / "lattice.pyi"
+            lwe.parent.mkdir(parents=True)
+            lwe.write_text(
+                "class UniformSampler:\n"
+                "    def __call__(self):\n        ...\n"
+                "class LWE:\n"
+                "    def __call__(self):\n        ...\n"
+                "class RingLWE:\n"
+                "    def __call__(self):\n        ...\n"
+                "class RingLWEConverter:\n"
+                "    def __call__(self):\n        ...\n"
+                "def samples(m, n, lwe, seed=None, balanced=False, **kwds):\n    ...\n"
+                "def balance_sample(s, q=None):\n    ...\n",
+                encoding="utf-8",
+            )
+            lattice.write_text(
+                "def gen_lattice(type='modular', n=4, m=8, q=11, seed=None, quotient=None, dual=False, ntl=False, lattice=False):\n"
+                "    ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched_lwe = lwe.read_text(encoding="utf-8")
+            patched_lattice = lattice.read_text(encoding="utf-8")
+            self.assertIn("def __call__(self) -> int:", patched_lwe)
+            self.assertIn("def __call__(self) -> tuple:", patched_lwe)
+            self.assertIn("def samples(m, n, lwe, seed=None, balanced=False, **kwds) -> list[tuple]:", patched_lwe)
+            self.assertIn("def balance_sample(s, q=None) -> tuple:", patched_lwe)
+            self.assertIn("def gen_lattice(type='modular'", patched_lattice)
+            self.assertIn("Literal[True]", patched_lattice)
+            self.assertIn("Matrix_integer_dense", patched_lattice)
+            self.assertIn("ntl_mat_ZZ", patched_lattice)
+            self.assertIn("FreeModule_submodule_with_basis_integer_with_category", patched_lattice)
+            ast.parse(patched_lwe)
+            ast.parse(patched_lattice)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched_lwe, lwe.read_text(encoding="utf-8"))
+            self.assertEqual(patched_lattice, lattice.read_text(encoding="utf-8"))
 
     def test_boolean_function_contracts_cover_ctf_operations_and_format_branch(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1564,6 +1764,371 @@ class AnnotateStubsTest(unittest.TestCase):
                 entry = next(item for item in entries if item["qualifiedName"] == name)
                 self.assertEqual(type_parameter, entry["signatures"][0]["returnType"]["expression"])
 
+    def test_ctf_arithmetic_helpers_have_scalar_iterator_and_parent_contracts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "arith" / "misc.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "def __GCD_sequence(v, **kwargs):\n    ...\n"
+                "def get_gcd(order):\n    ...\n"
+                "def get_inverse_mod(order):\n    ...\n"
+                "def primes(start=2, stop=None, proof=None):\n    ...\n"
+                "def smooth_part(x, base):\n    ...\n"
+                "def valuation(m, *args, **kwds):\n    ...\n"
+                "def continuant(v, n=None):\n    ...\n"
+                "def gauss_sum(char_value, finite_field):\n    ...\n"
+                "def radical(n, *args, **kwds):\n    ...\n"
+                "def coprime_part(x, base):\n    ...\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("from typing import TypeVar", patched)
+            self.assertIn("from typing import Iterator, Callable", patched)
+            self.assertIn("def __GCD_sequence(v, **kwargs) -> GcdT:", patched)
+            self.assertIn("def get_gcd(order) -> Callable[..., 'sage.rings.integer.Integer']:", patched)
+            self.assertIn("def get_inverse_mod(order) -> Callable[..., 'sage.rings.integer.Integer']:", patched)
+            self.assertIn("def primes(start=2, stop=None, proof=None) -> Iterator['sage.rings.integer.Integer']:", patched)
+            self.assertIn("def smooth_part(x, base) -> 'sage.structure.factorization.Factorization':", patched)
+            self.assertIn("def valuation(m, *args, **kwds) -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def continuant(v: list[ContinuantT], n=None) -> ContinuantT: ...", patched)
+            self.assertIn("def gauss_sum(char_value: GaussSumT, finite_field) -> GaussSumT: ...", patched)
+            self.assertIn("def radical(n: RadicalT, *args, **kwds) -> RadicalT: ...", patched)
+            self.assertIn("def coprime_part(x: CoprimePartT, base) -> CoprimePartT: ...", patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_ctf_protocol_and_key_schedule_contracts_are_concrete(self):
+        """Crypto protocol methods expose their Python/runtime result types."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixtures = {
+                "sage/crypto/block_cipher/des.pyi": (
+                    "class DES:\n    def __eq__(self, other): ...\n"
+                    "class DES_KS:\n    def __eq__(self, other): ...\n    def __iter__(self): ...\n"
+                ),
+                "sage/crypto/block_cipher/present.pyi": (
+                    "class PRESENT:\n    def __eq__(self, other): ...\n"
+                    "class PRESENT_KS:\n    def __eq__(self, other): ...\n    def __iter__(self): ...\n"
+                ),
+                "sage/crypto/block_cipher/miniaes.pyi": "class MiniAES:\n    def __eq__(self, other): ...\n",
+                "sage/crypto/block_cipher/sdes.pyi": "class SimplifiedDES:\n    def __eq__(self, other): ...\n",
+                "sage/crypto/boolean_function.pyi": "class BooleanFunction:\n    def __setitem__(self, i, y): ...\n",
+                "sage/crypto/cipher.pyi": "class Cipher:\n    def __eq__(self, other): ...\n",
+                "sage/crypto/classical_cipher.pyi": (
+                    "class AffineCipher:\n    def __eq__(self, other): ...\n"
+                    "class HillCipher:\n    def __eq__(self, other): ...\n"
+                    "class ShiftCipher:\n    def __eq__(self, other): ...\n"
+                    "class SubstitutionCipher:\n    def __eq__(self, other): ...\n"
+                    "class TranspositionCipher:\n    def __eq__(self, other): ...\n"
+                    "class VigenereCipher:\n    def __eq__(self, other): ...\n"
+                ),
+                "sage/crypto/cryptosystem.pyi": (
+                    "class Cryptosystem:\n    def __eq__(self, other): ...\n    def period(self): ...\n"
+                    "class SymmetricKeyCryptosystem:\n    def alphabet_size(self): ...\n"
+                ),
+                "sage/crypto/public_key/blum_goldwasser.pyi": "class BlumGoldwasser:\n    def __eq__(self, other): ...\n",
+                "sage/crypto/sbox.pyi": (
+                    "class SBox:\n    def __eq__(self, other): ...\n    def __ne__(self, other): ...\n"
+                ),
+                "sage/crypto/stream.pyi": "class LFSRCryptosystem:\n    def __eq__(self, other): ...\n",
+                "sage/crypto/mq/sr.pyi": (
+                    "class SR_generic:\n    def __eq__(self, other): ...\n    def __ne__(self, other): ...\n"
+                ),
+            }
+            for relative, content in fixtures.items():
+                stub = root / relative
+                stub.parent.mkdir(parents=True, exist_ok=True)
+                # Curated insertion is intentionally documentation-driven;
+                # give each minimal fixture the same docstring shape as the
+                # real Sage stubs rather than relying on a bare ellipsis.
+                stub.write_text(
+                    content.replace(": ...", ":\n        \"\"\"Return the documented value.\"\"\""),
+                    encoding="utf-8",
+                )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            expected = {
+                "sage/crypto/block_cipher/des.pyi": (
+                    "def __eq__(self, other) -> bool:",
+                    "def __iter__(self) -> Iterator['sage.rings.integer.Integer']:",
+                ),
+                "sage/crypto/block_cipher/present.pyi": (
+                    "def __eq__(self, other) -> bool:",
+                    "def __iter__(self) -> Iterator['sage.rings.integer.Integer']:",
+                ),
+                "sage/crypto/boolean_function.pyi": ("def __setitem__(self, i, y) -> None:",),
+                "sage/crypto/cryptosystem.pyi": (
+                    "def period(self) -> 'sage.rings.integer.Integer':",
+                    "def alphabet_size(self) -> int:",
+                ),
+            }
+            for relative, snippets in expected.items():
+                patched = (root / relative).read_text(encoding="utf-8")
+                for snippet in snippets:
+                    self.assertIn(snippet, patched)
+            first_contents = {
+                relative: (root / relative).read_text(encoding="utf-8")
+                for relative in fixtures
+            }
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            for relative in fixtures:
+                stub = root / relative
+                self.assertEqual(first_contents[relative], stub.read_text(encoding="utf-8"))
+
+    def test_elliptic_cardinality_helpers_return_sage_integers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "schemes" / "elliptic_curves" / "cardinality.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "def cardinality_exhaustive(self):\n    \"\"\"Count points.\"\"\"\n"
+                "def cardinality_bsgs(self, verbose=False):\n    \"\"\"Count points.\"\"\"\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def cardinality_exhaustive(self) -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def cardinality_bsgs(self, verbose=False) -> 'sage.rings.integer.Integer':", patched)
+
+    def test_ctf_matrix_backends_keep_concrete_parent_and_flag_contracts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixtures = {
+                "sage/matrix/matrix_modn_sparse.pyi": (
+                    "class Matrix_modn_sparse:\n"
+                    "    def determinant(self): ...\n    def rank(self): ...\n"
+                    "    def matrix_from_rows(self, rows): ...\n    def swap_rows(self, i, j): ...\n"
+                    "    def transpose(self): ...\n    def density(self, approx=False): ...\n"
+                ),
+                "sage/matrix/matrix_mod2_dense.pyi": (
+                    "class Matrix_mod2_dense:\n"
+                    "    def determinant(self): ...\n    def rank(self): ...\n"
+                    "    def row(self, i): ...\n    def echelonize(self): ...\n"
+                    "    def transpose(self): ...\n    def density(self, approx=False): ...\n"
+                ),
+                "sage/matrix/matrix_gf2e_dense.pyi": (
+                    "class Matrix_gf2e_dense:\n"
+                    "    def determinant(self): ...\n    def rank(self): ...\n"
+                    "    def slice(self): ...\n    def cling(self, *C): ...\n"
+                    "    def transpose(self): ...\n    def density(self, approx=False): ...\n"
+                ),
+                "sage/matrix/matrix_integer_dense.pyi": (
+                    "class Matrix_integer_dense:\n"
+                    "    def _add_(self, right): ...\n    def _sub_(self, right): ...\n"
+                    "    def __neg__(self): ...\n    def __pow__(self, n, dummy): ...\n    def __invert__(self): ...\n"
+                    "    def inverse_of_unit(self): ...\n    def augment(self, right): ...\n"
+                    "    def echelon_form(self): ...\n    def transpose(self): ...\n"
+                    "    def antitranspose(self): ...\n    def determinant(self): ...\n"
+                    "    def charpoly(self): ...\n    def minpoly(self): ...\n"
+                    "    def frobenius_form(self): ...\n    def symplectic_form(self): ...\n    def saturation(self): ...\n"
+                    "    def _ntl_(self): ...\n    def _magma_init_(self, magma): ...\n    def _richcmp_(self, right, op): ...\n"
+                    "    def decomposition(self, **kwds): ...\n    def row(self, i): ...\n"
+                    "    def column(self, i): ...\n    def rank(self) -> 'sage.rings.integer.Integer': ...\n"
+                    "    def smith_form(self, transformation=True, integral=None): ...\n"
+                ),
+                "sage/matrix/matrix_rational_dense.pyi": (
+                    "class Matrix_rational_dense:\n"
+                    "    def _add_(self, right): ...\n    def _sub_(self, right): ...\n"
+                    "    def __neg__(self): ...\n    def __invert__(self): ...\n"
+                    "    def inverse(self): ...\n    def augment(self, right): ...\n"
+                    "    def echelon_form(self): ...\n    def transpose(self): ...\n"
+                    "    def antitranspose(self): ...\n    def determinant(self): ...\n"
+                    "    def charpoly(self): ...\n    def minpoly(self): ...\n"
+                    "    def rank(self): ...\n    def row(self, i): ...\n"
+                    "    def column(self, i): ...\n    def prod_of_row_sums(self, cols): ...\n"
+                    "    def _magma_init_(self, magma): ...\n    def _richcmp_(self, right, op): ...\n"
+                    "    def decomposition(self, is_diagonalizable=False, dual=False, algorithm=None, height_guess=None, proof=None): ...\n"
+                    "    def smith_form(self, transformation=True, integral=None): ...\n"
+                ),
+            }
+            for relative, content in fixtures.items():
+                stub = root / relative
+                stub.parent.mkdir(parents=True, exist_ok=True)
+                stub.write_text(
+                    content.replace(": ...", ":\n        \"\"\"Return the documented value.\"\"\""),
+                    encoding="utf-8",
+                )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            modn = (root / "sage/matrix/matrix_modn_sparse.pyi").read_text(encoding="utf-8")
+            mod2 = (root / "sage/matrix/matrix_mod2_dense.pyi").read_text(encoding="utf-8")
+            gf2e = (root / "sage/matrix/matrix_gf2e_dense.pyi").read_text(encoding="utf-8")
+            integer = (root / "sage/matrix/matrix_integer_dense.pyi").read_text(encoding="utf-8")
+            rational = (root / "sage/matrix/matrix_rational_dense.pyi").read_text(encoding="utf-8")
+            self.assertIn("def determinant(self) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp':", modn)
+            self.assertIn("def rank(self) -> int:", modn)
+            self.assertIn("def swap_rows(self, i, j) -> None:", modn)
+            self.assertIn("def density(self, approx: Literal[False] = False) -> 'sage.rings.rational.Rational': ...", modn)
+            self.assertIn("def density(self, approx: Literal[True]) -> float: ...", mod2)
+            self.assertIn("def determinant(self) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int':", mod2)
+            self.assertIn("def row(self, i) -> 'sage.modules.vector_mod2_dense.Vector_mod2_dense':", mod2)
+            self.assertIn("def echelonize(self) -> None:", mod2)
+            self.assertIn("def determinant(self) -> 'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement':", gf2e)
+            self.assertIn("def slice(self) -> tuple['sage.matrix.matrix_mod2_dense.Matrix_mod2_dense', ...]:", gf2e)
+            self.assertIn("def cling(self, *C) -> None:", gf2e)
+            self.assertIn("def transpose(self) -> Self:", gf2e)
+            self.assertIn("def __invert__(self) -> 'sage.matrix.matrix_rational_dense.Matrix_rational_dense':", integer)
+            self.assertIn("def inverse_of_unit(self) -> Self:", integer)
+            self.assertIn("def determinant(self) -> 'sage.rings.integer.Integer':", integer)
+            self.assertIn("def rank(self) -> int:", integer)
+            self.assertIn("def charpoly(self) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint':", integer)
+            self.assertIn("def row(self, i) -> 'sage.modules.vector_integer_dense.Vector_integer_dense':", integer)
+            self.assertIn("def smith_form(self, transformation: Literal[False] = False, integral=None) -> Self: ...", integer)
+            self.assertIn("def smith_form(self, transformation: Literal[True] = True, integral=None) -> tuple[Self, Self, Self]: ...", integer)
+            self.assertIn("def __pow__(self, n, dummy) -> Self | 'sage.matrix.matrix_rational_dense.Matrix_rational_dense':", integer)
+            self.assertIn("def symplectic_form(self) -> tuple[Self, Self]:", integer)
+            self.assertIn("def _ntl_(self) -> 'sage.libs.ntl.ntl_mat_ZZ.ntl_mat_ZZ':", integer)
+            self.assertIn("def _richcmp_(self, right, op) -> bool:", integer)
+            self.assertIn("def decomposition(self, **kwds) -> 'sage.structure.sequence.Sequence_generic':", integer)
+            self.assertIn("def inverse(self) -> Self:", rational)
+            self.assertIn("def determinant(self) -> 'sage.rings.rational.Rational':", rational)
+            self.assertIn("def charpoly(self) -> 'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint':", rational)
+            self.assertIn("def rank(self) -> int:", rational)
+            self.assertIn("def column(self, i) -> 'sage.modules.vector_rational_dense.Vector_rational_dense':", rational)
+            self.assertIn("def smith_form(self, transformation: Literal[False] = False, integral=None) -> Self: ...", rational)
+            self.assertIn("def smith_form(self, transformation: Literal[True] = True, integral=None) -> tuple[Self, Self, Self]: ...", rational)
+            self.assertIn("def prod_of_row_sums(self, cols) -> 'sage.rings.rational.Rational':", rational)
+            self.assertIn("def _magma_init_(self, magma) -> str:", rational)
+            self.assertIn("def _richcmp_(self, right, op) -> bool:", rational)
+            for content in (modn, mod2, gf2e, integer, rational):
+                ast.parse(content)
+
+    def test_ctf_polynomial_zmod_flint_contracts_are_concrete(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "rings" / "polynomial" / "polynomial_zmod_flint.pyi"
+            ntl_stub = root / "sage" / "rings" / "polynomial" / "polynomial_modn_dense_ntl.pyi"
+            stub.parent.mkdir(parents=True)
+            ntl_stub.parent.mkdir(parents=True, exist_ok=True)
+            stub.write_text(
+                """class Polynomial_zmod_flint:
+    def __call__(self, *args, **kwargs):
+        '''Evaluate at a modular element.'''
+    def resultant(self, other):
+        '''Return the modular resultant.'''
+    def small_roots(self, *args, **kwds):
+        '''Return small modular roots.'''
+    def __pow__(self, n, modulus=None):
+        '''Raise to a power.'''
+    def rational_reconstruction(self, m, n_deg=0, d_deg=0):
+        '''Return numerator and denominator polynomials.'''
+    def squarefree_decomposition(self):
+        '''Return a factorization.'''
+    def monic(self):
+        '''Return a monic polynomial.'''
+    def reverse(self):
+        '''Return the reversed polynomial.'''
+    def revert_series(self, n):
+        '''Return the compositional inverse series.'''
+    def minpoly_mod(self, other):
+        '''Return the modular minimal polynomial.'''
+    def compose_mod(self, other, modulus):
+        '''Return the modular composition.'''
+""",
+                encoding="utf-8",
+            )
+            ntl_stub.write_text(
+                """class Polynomial_dense_mod_p:
+    def __pow__(self, n, modulus=None):
+        '''Return modular or fraction-field exponentiation.'''
+""",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            ntl_patched = ntl_stub.read_text(encoding="utf-8")
+            self.assertIn("def __call__(self, *args, **kwargs) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp':", patched)
+            self.assertIn("def resultant(self, other) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp':", patched)
+            self.assertIn("def small_roots(self, *args, **kwds) -> list['sage.rings.integer.Integer']:", patched)
+            self.assertIn("def rational_reconstruction(self, m, n_deg=0, d_deg=0) -> tuple[Self, Self]:", patched)
+            self.assertIn("def squarefree_decomposition(self) -> 'sage.structure.factorization.Factorization':", patched)
+            self.assertIn("def minpoly_mod(self, other) -> Self:", patched)
+            self.assertIn("def compose_mod(self, other, modulus) -> Self:", patched)
+            self.assertIn("def __pow__(self, n, modulus=None) -> 'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p | sage.rings.fraction_field_element.FractionFieldElement':", ntl_patched)
+            ast.parse(patched)
+            ast.parse(ntl_patched)
+
+    def test_ctf_integer_and_rational_flint_polynomials_keep_parent_contracts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixtures = {
+                "sage/rings/polynomial/polynomial_integer_dense_flint.pyi": (
+                    "class Polynomial_integer_dense_flint:\n"
+                    "    def _add_(self, other): ...\n    def _sub_(self, other): ...\n"
+                    "    def _neg_(self): ...\n    def quo_rem(self, other): ...\n"
+                    "    def gcd(self, other): ...\n    def lcm(self, other): ...\n"
+                    "    def xgcd(self, other): ...\n    def _mul_(self, other): ...\n"
+                    "    def _lmul_(self, other): ...\n    def _rmul_(self, other): ...\n"
+                    "    def __pow__(self, exp, modulus=None): ...\n    def __floordiv__(self, other): ...\n"
+                    "    def squarefree_decomposition(self): ...\n    def factor_mod(self, p): ...\n"
+                    "    def factor_padic(self, p, prec): ...\n    def resultant(self, other): ...\n"
+                    "    def reverse(self): ...\n    def revert_series(self, n): ...\n"
+                    "    def discriminant(self): ...\n    def _eval_mpfr_(self, a): ...\n    def _eval_mpfi_(self, a): ...\n"
+                    "    def pseudo_divrem(self, B): ...\n    def real_root_intervals(self): ...\n"
+                ),
+                "sage/rings/polynomial/polynomial_rational_flint.pyi": (
+                    "class Polynomial_rational_flint:\n"
+                    "    def _add_(self, other): ...\n    def _sub_(self, other): ...\n"
+                    "    def _neg_(self): ...\n    def quo_rem(self, other): ...\n"
+                    "    def gcd(self, other): ...\n    def lcm(self, other): ...\n"
+                    "    def xgcd(self, other): ...\n    def _mul_(self, other): ...\n"
+                    "    def _lmul_(self, other): ...\n    def _rmul_(self, other): ...\n"
+                    "    def __pow__(self, exp, modulus=None): ...\n    def __floordiv__(self, other): ...\n"
+                    "    def _mod_(self, other): ...\n    def squarefree_decomposition(self): ...\n"
+                    "    def factor_mod(self, p): ...\n    def factor_padic(self, p, prec): ...\n"
+                    "    def resultant(self, other): ...\n    def reverse(self): ...\n"
+                    "    def revert_series(self, n): ...\n    def discriminant(self): ...\n"
+                    "    def __lshift__(self, n): ...\n    def __rshift__(self, n): ...\n"
+                    "    def numerator(self): ...\n    def denominator(self): ...\n    def hensel_lift(self, p, e): ...\n"
+                    "    def galois_group_davenport_smith_test(self, num_trials=50, assume_irreducible=False): ...\n"
+                    "    def real_root_intervals(self): ...\n"
+                ),
+            }
+            for relative, content in fixtures.items():
+                stub = root / relative
+                stub.parent.mkdir(parents=True, exist_ok=True)
+                stub.write_text(
+                    content.replace(": ...", ":\n        '''Return the documented value.'''") ,
+                    encoding="utf-8",
+                )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            integer = (root / "sage/rings/polynomial/polynomial_integer_dense_flint.pyi").read_text(encoding="utf-8")
+            rational = (root / "sage/rings/polynomial/polynomial_rational_flint.pyi").read_text(encoding="utf-8")
+            self.assertIn("def quo_rem(self, other) -> tuple[Self, Self]:", integer)
+            self.assertIn("def xgcd(self, other) -> tuple[Self, Self, Self]:", integer)
+            self.assertIn("def __pow__(self, exp, modulus=None) -> Self | 'sage.rings.fraction_field_element.FractionFieldElement':", integer)
+            self.assertIn("def resultant(self, other) -> 'sage.rings.integer.Integer':", integer)
+            self.assertIn("def discriminant(self) -> 'sage.rings.integer.Integer':", integer)
+            self.assertIn("def _eval_mpfr_(self, a) -> 'sage.rings.real_mpfr.RealNumber':", integer)
+            self.assertIn("def _eval_mpfi_(self, a) -> 'sage.rings.real_mpfi.RealIntervalFieldElement':", integer)
+            self.assertIn("def pseudo_divrem(self, B) -> tuple[Self, Self, 'sage.rings.integer.Integer']:", integer)
+            self.assertIn("def real_root_intervals(self) -> list[tuple[tuple['sage.rings.rational.Rational', 'sage.rings.rational.Rational'], 'sage.rings.integer.Integer']]:", integer)
+            self.assertIn("def _mod_(self, other) -> Self:", rational)
+            self.assertIn("def resultant(self, other) -> 'sage.rings.rational.Rational':", rational)
+            self.assertIn("def discriminant(self) -> 'sage.rings.rational.Rational':", rational)
+            self.assertIn("def __lshift__(self, n) -> Self:", rational)
+            self.assertIn("def numerator(self) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint':", rational)
+            self.assertIn("def denominator(self) -> 'sage.rings.integer.Integer':", rational)
+            self.assertIn("def hensel_lift(self, p, e) -> list['sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint']:", rational)
+            self.assertIn("def galois_group_davenport_smith_test(self, num_trials=50, assume_irreducible=False) -> int:", rational)
+            for content in (integer, rational):
+                ast.parse(content)
+
     def test_finite_field_elliptic_factory_and_points_are_precise_and_idempotent(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1577,6 +2142,8 @@ class AnnotateStubsTest(unittest.TestCase):
                 """from sage.rings.finite_rings.finite_field_base import FiniteField as _FactoryReturn_GF
 
 def EllipticCurve(*args, **kwargs) -> object: ...
+def GF(*args, **kwargs) -> object: ...
+def FiniteField(*args, **kwargs) -> object: ...
 """,
                 encoding="utf-8",
             )
@@ -1591,6 +2158,28 @@ def EllipticCurve(*args, **kwargs) -> object: ...
             finite_stub.write_text(
                 """class EllipticCurve_finite_field:
     \"\"\"An elliptic curve over a finite field.\"\"\"
+    def division_field(self, n, names='t', map=False, **kwds):
+        pass
+    def _fetch_cached_order(self, other):
+        pass
+    def height_above_floor(self, ell, e):
+        pass
+    def frobenius_order(self):
+        pass
+    def endomorphism_order(self):
+        pass
+    def frobenius(self):
+        pass
+    def frobenius_endomorphism(self):
+        pass
+    def multiplication_by_p_isogeny(self):
+        pass
+    def base_ring(self):
+        pass
+    def gens(self) -> tuple:
+        pass
+    def points(self) -> Sequence[Any]:
+        pass
     def cardinality_pari(self):
         pass
     def frobenius_discriminant(self):
@@ -1599,6 +2188,23 @@ def EllipticCurve(*args, **kwargs) -> object: ...
         pass
     def plot(self):
         pass
+
+def curves_with_j_0(K):
+    pass
+def curves_with_j_1728(K):
+    pass
+def curves_with_j_0_char2(K):
+    pass
+def curves_with_j_0_char3(K):
+    pass
+def supersingular_j_polynomial(p, use_cache=True):
+    pass
+def EllipticCurve_with_order(m, *, D=None):
+    pass
+def EllipticCurve_with_prime_order(N):
+    pass
+def special_supersingular_curve(F, q=None, *, endomorphism=False):
+    pass
 """,
                 encoding="utf-8",
             )
@@ -1608,6 +2214,12 @@ def EllipticCurve(*args, **kwargs) -> object: ...
 
 class EllipticCurvePoint_field(EllipticCurvePoint):
     def __tuple__(self):
+        pass
+    def _neg_(self):
+        pass
+    def _divide_out(self, p):
+        pass
+    def __pari__(self):
         pass
 
 class EllipticCurvePoint_finite_field(EllipticCurvePoint_field):
@@ -1621,7 +2233,7 @@ class EllipticCurvePoint_finite_field(EllipticCurvePoint_field):
             command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
             first = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(first.returncode, 0, first.stderr)
-            patched = {stub: stub.read_text(encoding="utf-8") for stub in (all_stub, generic_stub, finite_stub)}
+            patched = {stub: stub.read_text(encoding="utf-8") for stub in (all_stub, generic_stub, finite_stub, point_stub)}
             for content in patched.values():
                 ast.parse(content)
             second = subprocess.run(command, capture_output=True, text=True)
@@ -1652,6 +2264,11 @@ class EllipticCurvePoint_finite_field(EllipticCurvePoint_field):
             factory = entries["sage.all.EllipticCurve"]["signatures"]
             self.assertEqual("sage.rings.finite_rings.finite_field_base.FiniteField", factory[0]["parameters"][0]["type"]["expression"])
             self.assertEqual("sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field", factory[0]["returnType"]["expression"])
+            gf_entry = entries["sage.all.GF"]
+            self.assertTrue(any("finite_field_givaro.FiniteField_givaro" in sig["returnType"]["expression"] for sig in gf_entry["signatures"]))
+            self.assertTrue(any("finite_field_ntl_gf2e.FiniteField_ntl_gf2e" in sig["returnType"]["expression"] for sig in gf_entry["signatures"]))
+            self.assertTrue(any("finite_field_pari_ffelt.FiniteField_pari_ffelt" in sig["returnType"]["expression"] for sig in gf_entry["signatures"]))
+            self.assertTrue(any("finite_field_base.FiniteField" not in sig["returnType"].get("expression", "") for sig in gf_entry["signatures"]))
             self.assertEqual(
                 "sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field",
                 entries["sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field.__call__"]["signatures"][0]["returnType"]["expression"],
@@ -1669,6 +2286,10 @@ class EllipticCurvePoint_finite_field(EllipticCurvePoint_field):
                 entries["sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field.frobenius_discriminant"]["signatures"][0]["returnType"]["expression"],
             )
             self.assertEqual(
+                "sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn | sage.rings.finite_rings.finite_field_givaro.FiniteField_givaro | sage.rings.finite_rings.finite_field_ntl_gf2e.FiniteField_ntl_gf2e | sage.rings.finite_rings.finite_field_pari_ffelt.FiniteField_pari_ffelt",
+                entries["sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field.base_ring"]["signatures"][0]["returnType"]["expression"],
+            )
+            self.assertEqual(
                 "sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint",
                 entries["sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field.frobenius_polynomial"]["signatures"][0]["returnType"]["expression"],
             )
@@ -1679,6 +2300,56 @@ class EllipticCurvePoint_finite_field(EllipticCurvePoint_field):
             self.assertEqual(
                 "sage.rings.integer.Integer",
                 entries["sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field._compute_order"]["signatures"][0]["returnType"]["expression"],
+            )
+            for name, expected in (
+                ("_fetch_cached_order", "None"),
+                ("height_above_floor", "sage.rings.integer.Integer"),
+                ("frobenius_order", "sage.rings.number_field.order.Order_absolute"),
+                ("endomorphism_order", "sage.rings.number_field.order.Order_absolute"),
+                ("frobenius_endomorphism", "sage.schemes.elliptic_curves.hom_frobenius.EllipticCurveHom_frobenius"),
+                ("multiplication_by_p_isogeny", "sage.schemes.elliptic_curves.hom_composite.EllipticCurveHom_composite"),
+            ):
+                self.assertEqual(
+                    expected,
+                    entries[f"sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field.{name}"]["signatures"][0]["returnType"]["expression"],
+                )
+            self.assertIn(
+                "def __getitem__(self, n) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
+                patched[finite_stub],
+            )
+            self.assertIn("def __iter__(self) -> Iterator[", patched[finite_stub])
+            self.assertIn(
+                "def gens(self) -> tuple['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field', ...]:",
+                patched[finite_stub],
+            )
+            self.assertIn(
+                "def points(self) -> 'sage.structure.sequence.Sequence_generic[sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field]':",
+                patched[finite_stub],
+            )
+            self.assertIn(
+                "def a1(self) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp | sage.rings.finite_rings.element_givaro.FiniteField_givaroElement | sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement | sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt': ...",
+                patched[finite_stub],
+            )
+            for declaration in (
+                "def curves_with_j_0(K) -> list['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']:",
+                "def curves_with_j_1728(K) -> list['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']:",
+                "def supersingular_j_polynomial(p, use_cache=True) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint':",
+                "def EllipticCurve_with_order(m, *, D=None) -> Iterator['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']:",
+            ):
+                self.assertIn(declaration, patched[finite_stub])
+            self.assertIn(
+                "def special_supersingular_curve(F, q=None, *, endomorphism: Literal[True] = True) -> tuple['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field', 'sage.schemes.elliptic_curves.ell_curve_isogeny.EllipticCurveIsogeny']: ...",
+                patched[finite_stub],
+            )
+            self.assertIn("def division_field(self, n, names='t', map: Literal[False] = False, **kwds) ->", patched[finite_stub])
+            self.assertIn("def division_field(self, n, names='t', map: Literal[True] = True, **kwds) -> tuple[", patched[finite_stub])
+            self.assertEqual(
+                "tuple[typing.Self, sage.rings.integer.Integer]",
+                entries["sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_field._divide_out"]["signatures"][0]["returnType"]["expression"],
+            )
+            self.assertEqual(
+                "cypari2.gen.Gen",
+                entries["sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_field.__pari__"]["signatures"][0]["returnType"]["expression"],
             )
             self.assertEqual(
                 "tuple",
@@ -1743,6 +2414,34 @@ class Matrix:
                     for signature in solve_right["signatures"]
                 ],
             )
+
+    def test_matrix_factory_overloads_select_concrete_ctf_backends(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            constructor = root / "sage" / "matrix" / "constructor.pyi"
+            all_stub = root / "sage" / "all.pyi"
+            constructor.parent.mkdir(parents=True)
+            all_stub.parent.mkdir(parents=True, exist_ok=True)
+            constructor.write_text("def matrix(*args, **kwds) -> object:\n    ...\n", encoding="utf-8")
+            all_stub.write_text("def Matrix(*args, **kwds) -> object:\n    ...\n", encoding="utf-8")
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched_constructor = constructor.read_text(encoding="utf-8")
+            patched_all = all_stub.read_text(encoding="utf-8")
+            for content in (patched_constructor, patched_all):
+                ast.parse(content)
+                self.assertEqual(6, content.count("@overload"))
+                self.assertIn("Matrix_integer_dense", content)
+                self.assertIn("Matrix_integer_sparse", content)
+                self.assertIn("Matrix_rational_dense", content)
+                self.assertIn("Matrix_rational_sparse", content)
+                self.assertIn("Matrix_modn_dense_float", content)
+                self.assertIn("Matrix_modn_sparse", content)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched_constructor, constructor.read_text(encoding="utf-8"))
+            self.assertEqual(patched_all, all_stub.read_text(encoding="utf-8"))
 
     def test_explicit_source_return_heads_materialize_self_and_unique_classes(self):
         """Chinese return sections must not leave proven classes as UNKNOWN."""

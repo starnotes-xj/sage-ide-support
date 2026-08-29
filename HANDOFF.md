@@ -75,3 +75,11 @@ Gradle、索引和 ZIP 静态证据不能替代上述 fresh PyCharm GUI smoke。
 - 新包为第 6 节 `-r5` ZIP；fresh PyCharm 安装/GUI smoke、installer 和 FinalCheck 的官方 SHA 阻塞仍未改变。
 
 本文件已压缩为当前边界、可复用决策、最新证据和下一步；旧轮次的重复 ZIP、重复计数和已解决堆栈不再逐轮保留。
+
+## 10. 继续收敛 UNKNOWN（2026-08-29）
+
+- 基于 Sage 10.9/Python 3.13 WSL 实际运行结果，继续补齐 CTF 常用后端合同：`Matrix_integer_dense`/`Matrix_rational_dense` 的具体线性代数、负幂联合、Smith 变换条件分支、辛基/饱和/NTL 导出、行列向量和多项式特征值；`Polynomial_zmod_flint` 的模元素求值、resultant、small roots、分解、重构、组合；ZZ/QQ FLINT 多项式的算术、伪除法、根区间、Hensel lift、分子/分母和 Galois 测试。
+- 负指数幂不再强行返回 `Self`：多项式使用 `Self | FractionFieldElement`，ZZ 矩阵使用 `Self | Matrix_rational_dense`；`hensel_lift` 按文档和运行时改为 `list[Polynomial_zmod_flint]`。`CURATED_INSERTIONS` 移除已存在的多项式 `__pow__` 转发声明，避免增量注解产生重复签名。
+- 最新索引：`2,843` 源文件、`84,592` raw symbols、`84,436` entries、`95` diagnostics；inventory digest `1acf3d22426b172a32845146403618ef9c35e3ad8120d49934e60a3b6124e82b`，coverage `1.0`、missing `0`。审计 `52,743` callable、`52,347` signatures，`UNKNOWN=30,652`、`DYNAMIC=16`、`TYPE_VARIABLE=440`、`CONCRETE=3,918`、`UNION_OR_OPTIONAL=477`、`STRUCTURAL_BASE=41`；相对第 9 节记录的 `30,893` 再减少 `241`。
+- 验证：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'` 共 `114` 项通过；索引生成与合同审计均退出码 `0`；AST 解析和 `git diff --check` 通过。WSL Sage 10.9 已核对 ZZ/QQ/GF(2)/GF(2^e) 矩阵和 GF(p)/ZZ/QQ 多项式的实际返回类。
+- 本轮未重新构建或安装 fresh PyCharm ZIP；第 6 节 `-r5` 包不包含本轮新增合同。剩余 UNKNOWN 主要集中在 PARI/Magma/Singular 接口、换环/父对象动态选择和抽象系统生成器，继续保持 fail-closed，不用公共基类或 `Any` 猜测。
