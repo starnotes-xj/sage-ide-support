@@ -2508,6 +2508,46 @@ def _doc_summary_annotation(
             for pattern, annotation in DOC_SUMMARY_COLLECTION_PATTERNS:
                 if re.search(pattern, summary, re.IGNORECASE):
                     return annotation
+            if re.match(r"^return .* as a python long\b", summary, re.IGNORECASE):
+                return "int"
+            if (
+                node.name == "prod"
+                and re.search(r"\bproduct of the prime moduli\b", summary, re.IGNORECASE)
+            ):
+                return "'sage.rings.integer.Integer'"
+            if re.match(r"^(?:iterate|iterates)\s+over\b", summary, re.IGNORECASE):
+                return "Iterator"
+            if re.match(
+                r"^(?:compute|return)\s+(?:the\s+|a\s+)?(?:irreducible\s+)?factorization\s+of\b",
+                summary,
+                re.IGNORECASE,
+            ):
+                return "'sage.structure.factorization.Factorization'"
+            if re.match(
+                r"^(?:return|divide|perform)\b.*\bquotient\s+and\s+remainder\b",
+                summary,
+                re.IGNORECASE,
+            ):
+                return "tuple"
+            if re.search(r"(?:FiniteField.*Element(?:_[A-Za-z0-9_]+)?|IntegerMod_(?:int|int64|gmp))$", owner_name or ""):
+                if node.name in {"_add_", "_sub_", "_mul_", "_div_"} and re.match(
+                    r"^(?:add|subtract|multiply|divide)\s+two\s+elements?\b",
+                    summary,
+                    re.IGNORECASE,
+                ):
+                    return "Self"
+                if node.name == "__invert__" and re.match(
+                    r"^return\s+the\s+multiplicative\s+inverse\s+of\s+(?:an?\s+)?(?:element|self)\b",
+                    summary,
+                    re.IGNORECASE,
+                ):
+                    return "Self"
+                if node.name in {"__lshift__", "__rshift__"} and re.match(
+                    r"^perform\s+a\s+(?:left|right)\s+shift\b",
+                    summary,
+                    re.IGNORECASE,
+                ):
+                    return "Self"
             if owner_name and re.search(r"polynomial", owner_name, re.IGNORECASE) and re.match(
                 r"^(?:add|subtract|multiply|divide) (?:two )?polynomials\b", summary, re.IGNORECASE
             ):
@@ -2539,6 +2579,98 @@ def _doc_summary_annotation(
                 return annotation
     normalized_rest = re.sub(r"`{1,2}(true|false|none|nothing)`{1,2}", r"\1", rest, flags=re.IGNORECASE)
     normalized_rest = normalized_rest.replace("`", "").replace('"', "").replace("'", "")
+
+    # A documented iterator is a stable Python protocol result even when the
+    # yielded element type depends on the parent.  Keep that outer contract
+    # explicit, but do not guess the element parameter (``Iterator[T]``).
+    if re.match(r"^(?:an?|the)\s+iterator\b", normalized_rest, re.IGNORECASE):
+        return "Iterator"
+    if re.match(r"^(?:iterate|iterates)\s+over\b", summary, re.IGNORECASE):
+        return "Iterator"
+
+    # Polynomial factorization methods return Sage's stable Factorization
+    # container.  Descriptions that return a unit plus factors use a separate
+    # tuple contract and intentionally do not match this anchored form.
+    if re.match(
+        r"^(?:(?:the|a)\s+)?(?:irreducible\s+)?factorization\s+of\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ) or re.match(
+        r"^(?:compute|return)\s+(?:the\s+|a\s+)?(?:irreducible\s+)?factorization\s+of\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "'sage.structure.factorization.Factorization'"
+
+    # Euclidean division APIs explicitly expose the quotient/remainder pair;
+    # element implementations may vary with the parent, but the outer tuple
+    # is fixed by the contract.
+    if re.match(
+        r"^(?:quotient\s+and\s+remainder\b|"
+        r"(?:return|divide|perform)\b.*\bquotient\s+and\s+remainder\b)",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "tuple"
+
+    # Unary negation and multiplicative inversion are receiver-preserving
+    # operations for concrete element implementations.  Restrict this to the
+    # corresponding protocol/method names and the explicit self wording;
+    # parent-level ``inverse`` factories remain unresolved.
+    if node.name in {"__neg__", "_neg_"} and re.match(r"^-?self\b", normalized_rest, re.IGNORECASE):
+        return "Self"
+    if re.search(r"(?:FiniteField.*Element(?:_[A-Za-z0-9_]+)?|IntegerMod_(?:int|int64|gmp))$", owner_name or ""):
+        if node.name in {"_add_", "_sub_", "_mul_", "_div_"} and re.match(
+            r"^(?:add|subtract|multiply|divide)\s+two\s+elements?\b",
+            normalized_rest,
+            re.IGNORECASE,
+        ):
+            return "Self"
+        if node.name == "__invert__" and re.match(
+            r"^(?:the\s+)?multiplicative\s+inverse\s+of\s+(?:an?\s+)?(?:element|self)\b",
+            normalized_rest,
+            re.IGNORECASE,
+        ):
+            return "Self"
+        if node.name in {"__lshift__", "__rshift__"} and re.match(
+            r"^perform\s+a\s+(?:left|right)\s+shift\b",
+            normalized_rest,
+            re.IGNORECASE,
+        ):
+            return "Self"
+
+    # ``ellipsis_range`` is the eager counterpart of ``ellipsis_iter``:
+    # Sage's implementation materializes the arithmetic sequence as a
+    # Python list, while the iterator variant intentionally remains generic.
+    if node.name == "ellipsis_range" and re.match(
+        r"^arithmetic sequence determined by\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "list"
+
+    if re.search(r"\bas a python long\b", normalized_rest, re.IGNORECASE):
+        return "int"
+
+    if node.name == "prod" and re.match(
+        r"^the product of the prime moduli\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "'sage.rings.integer.Integer'"
+    if re.match(r"^a block term ordering\b", normalized_rest, re.IGNORECASE):
+        return "'sage.rings.polynomial.term_order.TermOrder'"
+    if re.search(r"\bterm ordering of\b", normalized_rest, re.IGNORECASE):
+        return "'sage.rings.polynomial.term_order.TermOrder'"
+    if not re.search(r"\b(?:or|either|if|depending|unless|otherwise)\b", normalized_rest, re.IGNORECASE):
+        if re.match(r"^a list\b", normalized_rest, re.IGNORECASE):
+            return "list"
+        if re.match(r"^a tuple\b", normalized_rest, re.IGNORECASE):
+            return "tuple"
+        if re.match(r"^(?:an?|the) integer\b", normalized_rest, re.IGNORECASE):
+            return "'sage.rings.integer.Integer'"
+    if re.match(r"^format string\b", normalized_rest, re.IGNORECASE):
+        return "str"
 
     # ``whether or not`` is one boolean predicate, not a heterogeneous
     # ``or`` union.  Handle it before the generic union guard below; otherwise
@@ -2747,7 +2879,10 @@ def _doc_summary_class_role_annotation(
     :class:`Expression``` are deliberately excluded because the role names an
     input rather than the result.
     """
-    if not class_index or ":class:`" not in summary:
+    if not class_index or (
+        ":class:" not in summary
+        and not re.search(r"\b(?:object|instance|form)\b", summary, re.IGNORECASE)
+    ):
         return None
     if not re.match(
         r"^(?:return|returns|construct|constructs|create|creates|build|builds|convert|converts)\s+",
@@ -2762,7 +2897,67 @@ def _doc_summary_class_role_annotation(
     prefix = summary[:role_start].casefold()
     if re.search(r"\b(?:for|from|this|given|input|support)\s+(?:an?\s+)?$", prefix):
         return None
-    return _doc_output_class_annotation(summary, class_index)
+    annotation = _doc_output_class_annotation(summary, class_index)
+    if annotation is not None:
+        return annotation
+
+    # Some generated Sage summaries use a plain class name followed by an
+    # explicit object/instance marker instead of a Sphinx class role.  This is
+    # still a concrete result contract, but only when the marker is present;
+    # ordinary prose must remain fail-closed.
+    result = re.sub(
+        r"^(?:return|returns|construct|constructs|create|creates|build|builds|convert|converts)\s+",
+        "",
+        summary,
+        flags=re.IGNORECASE,
+    )
+    if not re.search(r"\b(?:object|instance|form)\b", result, re.IGNORECASE):
+        return None
+    annotation = _doc_explicit_type_annotation(result, class_index, None)
+    if annotation is None:
+        return None
+    terminal = annotation.rsplit(".", 1)[-1].strip("'").casefold()
+    # These names describe external CAS/interpreter wrappers, not a stable
+    # Sage value class that should be exposed as a return annotation.
+    if terminal in {
+        "axiom",
+        "gp",
+        "magma",
+        "maxima",
+        "pari",
+        "python",
+        "sage",
+        "scilab",
+        "singular",
+        "sympy",
+    }:
+        return None
+    return annotation
+
+
+def _doc_self_preserving_summary_annotation(summary: str, owner_name: str | None) -> str | None:
+    """Resolve summaries that explicitly promise a same-class result."""
+    if owner_name is None:
+        return None
+    normalized = summary.replace(chr(96), "")
+    if re.search(r"\bsame class as self\b", normalized, re.IGNORECASE):
+        return "Self"
+    if re.search(r"\bnew instance of self\b", normalized, re.IGNORECASE):
+        return "Self"
+    if "deepcopy" not in normalized.casefold() and re.search(
+        r"\b(?:exact\s+)?copy of (?:itself|[^.]*self)\b",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return "Self"
+    match = re.search(
+        r"\bnew\s+(?:an?\s+)?([A-Z][A-Za-z0-9_]*)\s+equivalent to self\b",
+        normalized,
+        re.IGNORECASE,
+    )
+    if match and match.group(1).casefold() == owner_name.casefold():
+        return "Self"
+    return None
 
 
 def _doc_numeric_self_summary_annotation(summary: str, owner_name: str | None) -> str | None:
@@ -2956,6 +3151,9 @@ def _doc_output_annotation(
     summary = raw_summary.lower()
     if node.name.startswith("_test_"):
         return "None"
+    self_preserving_annotation = _doc_self_preserving_summary_annotation(raw_summary, owner_name)
+    if self_preserving_annotation is not None:
+        return self_preserving_annotation
     summary_class_annotation = _doc_summary_class_role_annotation(raw_summary, class_index)
     if summary_class_annotation is not None:
         return summary_class_annotation
@@ -3002,8 +3200,21 @@ def _doc_output_annotation(
         )
         if parenthesized_head:
             type_head = parenthesized_head.group(1)
+        if type_head in {"iterator", "python iterator"}:
+            # The element parameter is intentionally unspecified; exposing
+            # the stable iterator protocol still gives callers ``__next__``
+            # and avoids collapsing the result to UNKNOWN.
+            return "Iterator"
         if type_head in {"integer", "sage integer"}:
             return "'sage.rings.integer.Integer'"
+        if re.match(r"^(?:an?\s+|the\s+)?integer\s+[a-z_]\w*\b", type_head) and not re.search(
+            r"\b(?:or|either|if|depending|unless|otherwise)\b",
+            output,
+            re.IGNORECASE,
+        ):
+            return "'sage.rings.integer.Integer'"
+        if re.match(r"^(?:an?\s+|the\s+)?python\s+long\b", type_head):
+            return "int"
         if type_head in {"bool", "boolean"} and not node.name.startswith(
             ("__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__")
         ):
@@ -3069,20 +3280,44 @@ def _doc_output_annotation(
         pair_optional_contract = bool(
             re.match(r"^either integers?\b.*\bor\s+(?:`{1,2})?none(?:`{1,2})?\b", output)
         )
+        optional_container_contract = re.match(
+            r"^(?:a\s+|an\s+|the\s+)?(?P<kind>list|tuple|pair|set|dictionary|dict)\b"
+            r".*\b(?:or|either)\b\s*(?:`{1,2})?(?:none|nothing)(?:`{1,2})?\b",
+            output,
+            re.IGNORECASE,
+        )
         # A collection whose *elements* have alternatives still has one
         # unambiguous outer result (for example ``a list of 0, 1 or 2
         # pairs``).  This is different from ``a list or tuple``.
         container_element_alternatives = bool(
             re.match(r"^(?:a|an|the)\s+(?:list|tuple|set|dictionary|dict)\s+of\b", output)
         )
+        atomic_container_prefix = bool(
+            re.match(r"^(?:list|tuple|set|dictionary|dict)\b", output)
+            and not re.search(
+                r"\bor\s+(?:a\s+|an\s+|the\s+)?(?:list|tuple|set|dictionary|dict|none|integer|boolean)\b",
+                output,
+            )
+        )
         if re.search(r"\b(?:or|either)\b", output) and not (
             numeric_integer_alternatives
             or same_integer_alternative
             or prime_integer_alternatives
             or container_element_alternatives
+            or atomic_container_prefix
             or pair_optional_contract
+            or optional_container_contract
         ):
             return None
+        if optional_container_contract:
+            return {
+                "list": "list | None",
+                "tuple": "tuple | None",
+                "pair": "tuple | None",
+                "set": "set | None",
+                "dictionary": "dict | None",
+                "dict": "dict | None",
+            }[optional_container_contract.group("kind").casefold()]
         if output.startswith(("none if", "nothing if")):
             return None
 
@@ -3344,6 +3579,9 @@ def annotate_doc_output_returns(path: Path, class_index: dict[str, tuple[str, ..
         text = text[:offset] + f" -> {annotation}" + text[offset:]
     if edits:
         path.write_text(text, encoding="utf-8")
+        for typing_name, marker in (("Self", "Self"), ("Iterator", "Iterator")):
+            if any(annotation == marker or marker + "[" in annotation for _, annotation, _ in edits):
+                ensure_typing_name(path, typing_name)
     return [name for _, _, name in sorted(edits)]
 
 

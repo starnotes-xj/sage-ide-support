@@ -76,6 +76,15 @@ Gradle、索引和 ZIP 静态证据不能替代上述 fresh PyCharm GUI smoke。
 
 本文件已压缩为当前边界、可复用决策、最新证据和下一步；旧轮次的重复 ZIP、重复计数和已解决堆栈不再逐轮保留。
 
+## 14. 继续收敛迭代器、因式分解与有限域元素合同（2026-08-29）
+
+- `annotate_stubs.py` 新增三类仅由源码摘要触发的通用合同：明确“iterator/iterate over”只确定稳定的 Python `Iterator` 外层，不猜迭代元素；明确返回多项式因式分解的摘要映射到 `sage.structure.factorization.Factorization`；明确商与余数的摘要映射到 `tuple`。文档只写“元素”时仍不推断元素参数类型。
+- 有限域元素实现（`FiniteField_*Element`、`FiniteFieldElement_*`、`IntegerMod_{int,int64,gmp}`）的 `_add_`/`_sub_`/`_mul_`/`_div_`、乘法逆元和位移摘要，在运行时核对返回同一具体实现后映射为 `Self`；多项式逆元和有限域同态逆映射继续保持 UNKNOWN，避免父对象变化被误判。
+- `annotate_doc_output_returns` 会为本轮文档推导出的 `Self`/`Iterator` 自动补齐 typing 导入；新增迭代器、因式分解、商余数和有限域元素回归测试，注解重复执行保持幂等。
+- WSL Sage 10.9 核对：`iter(f)` 为 `list_iterator`、`f.factor()` 为 `sage.structure.factorization.Factorization`、`f.quo_rem(x)` 为 `tuple`、有限域加减乘除/逆元均返回原有限域元素实现。
+- fresh staging 生成：`2,843` 源文件、`84,767` entries、`52,347` signatures、`96` diagnostics、coverage `1.0`、missing `0`（generator 报告保留 1 个既有 conflicts gate warning）；合同审计 `UNKNOWN=29,190`、`TYPE_VARIABLE=853`、`CONCRETE=4,549`、`BROAD_BUILTIN=12,001`、`NONE=4,688`、`UNION_OR_OPTIONAL=480`、`DYNAMIC=17`、`STRUCTURAL_BASE=44`。UNKNOWN 从第 13 节记录的 `29,879` 降至 `29,190`。
+- 验证：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'` 共 `121` 项通过；`compileall`、`git diff --check` 和 staging `generate.py`/`audit_contracts.py` 均退出码 `0`。本轮未重新打包/安装 ZIP，未执行 fresh PyCharm GUI smoke；剩余 UNKNOWN 仍集中在动态父对象、条件联合和外部 CAS 接口。
+
 ## 10. 继续收敛 UNKNOWN（2026-08-29）
 
 - 基于 Sage 10.9/Python 3.13 WSL 实际运行结果，继续补齐 CTF 常用后端合同：`Matrix_integer_dense`/`Matrix_rational_dense` 的具体线性代数、负幂联合、Smith 变换条件分支、辛基/饱和/NTL 导出、行列向量和多项式特征值；`Polynomial_zmod_flint` 的模元素求值、resultant、small roots、分解、重构、组合；ZZ/QQ FLINT 多项式的算术、伪除法、根区间、Hensel lift、分子/分母和 Galois 测试。

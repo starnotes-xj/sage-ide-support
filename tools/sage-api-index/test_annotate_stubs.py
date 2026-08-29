@@ -1089,7 +1089,7 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def render(value) -> str:", patched)
             self.assertIn("def maybe(self):", patched)
 
-    def test_documented_atomic_numeric_and_container_forms_stay_fail_closed_on_unions(self):
+    def test_documented_atomic_numeric_and_container_forms_keep_safe_optional_unions(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             stub = root / "sage" / "outputs.pyi"
@@ -1115,7 +1115,7 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def rational_value() -> 'sage.rings.rational.Rational':", patched)
             self.assertIn("def integer_value() -> 'sage.rings.integer.Integer':", patched)
             self.assertIn("def list_value() -> list:", patched)
-            self.assertIn("def mixed_value():", patched)
+            self.assertIn("def mixed_value() -> list | None:", patched)
 
     def test_inline_code_result_words_and_rich_comparison_fail_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1246,10 +1246,17 @@ class AnnotateStubsTest(unittest.TestCase):
             class_stub = root / "sage" / "combinat" / "pbw.pyi"
             user_stub = root / "sage" / "combinat" / "factory.pyi"
             class_stub.parent.mkdir(parents=True)
-            class_stub.write_text("class PBWDatum: ...\nclass Expression: ...\n", encoding="utf-8")
+            class_stub.write_text(
+                "class PBWDatum: ...\n"
+                "class Expression: ...\n"
+                "class SBox: ...\n",
+                encoding="utf-8",
+            )
             user_stub.write_text(
                 "def make_pbw():\n"
                 "    \"\"\"Return a new :class:`PBWDatum` equivalent to ``self``.\"\"\"\n"
+                "def make_sbox():\n"
+                "    \"\"\"Return SBox object for self.\"\"\"\n"
                 "def check_value(x):\n"
                 "    \"\"\"Check whether ``x`` is valid or reducible.\n\n"
                 "    The implementation may use one of several algorithms or\n"
@@ -1267,6 +1274,7 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             patched = user_stub.read_text(encoding="utf-8")
             self.assertIn("def make_pbw() -> 'sage.combinat.pbw.PBWDatum':", patched)
+            self.assertIn("def make_sbox() -> 'sage.combinat.pbw.SBox':", patched)
             self.assertIn("def check_value(x) -> bool:", patched)
             # The class role names an input here, not the generated string.
             self.assertIn("def generate_code(tree):", patched)
@@ -1316,7 +1324,23 @@ class AnnotateStubsTest(unittest.TestCase):
                 "\n"
                 "class ComplexBall:\n"
                 "    def arg(self):\n"
-                "        \"\"\"Return the argument of this complex ball.\"\"\"\n",
+                "        \"\"\"Return the argument of this complex ball.\"\"\"\n"
+                "\n"
+                "class PBWDatum:\n"
+                "    def convert(self):\n"
+                "        \"\"\"Return a new PBWDatum equivalent to self.\"\"\"\n"
+                "\n"
+                "class Tensor:\n"
+                "    def new_instance(self):\n"
+                "        \"\"\"Create an instance of the same class as self.\"\"\"\n"
+                "\n"
+                "class Maybe:\n"
+                "    def transform(self):\n"
+                "        \"\"\"Return a new object based on self.\"\"\"\n"
+                "\n"
+                "class Graph:\n"
+                "    def copy_undirected(self):\n"
+                "        \"\"\"Return a copy of itself.\"\"\"\n",
                 encoding="utf-8",
             )
             command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
@@ -1327,6 +1351,155 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def log(self) -> Self:", patched)
             self.assertIn("def magnitude(self):", patched)
             self.assertIn("def arg(self):", patched)
+            self.assertIn("def convert(self) -> Self:", patched)
+            self.assertIn("def new_instance(self) -> Self:", patched)
+            self.assertIn("def transform(self):", patched)
+            self.assertIn("def copy_undirected(self) -> Self:", patched)
+
+    def test_arithmetic_sequence_and_integer_output_contracts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            srange_stub = root / "sage" / "arith" / "srange.pyi"
+            multi_stub = root / "sage" / "arith" / "multi_modular.pyi"
+            srange_stub.parent.mkdir(parents=True)
+            srange_stub.write_text(
+                "def ellipsis_range(*args, step=None):\n"
+                "    \"\"\"Return arithmetic sequence determined by the numeric arguments.\"\"\"\n"
+                "def tuple_summary():\n"
+                "    \"\"\"Return a tuple of values.\"\"\"\n"
+                "def integer_summary():\n"
+                "    \"\"\"Return an integer result.\"\"\"\n",
+                encoding="utf-8",
+            )
+            list_stub = root / "sage" / "combinat" / "words.pyi"
+            list_stub.parent.mkdir(parents=True, exist_ok=True)
+            list_stub.write_text(
+                "class Word:\n"
+                "    def lengths(self):\n"
+                "        \"\"\"OUTPUT: list; lengths of the palindrome (or f-palindrome).\"\"\"\n"
+                "def solve():\n"
+                "    \"\"\"OUTPUT: a tuple (x, y) of integers, or None\"\"\"\n",
+                encoding="utf-8",
+            )
+            multi_stub.write_text(
+                "class MultiModularBasis_base:\n"
+                "    def crt(self, b):\n"
+                "        \"\"\"OUTPUT:\\n\\n        Integer z where z is congruent to b.\"\"\"\n"
+                "    def __getitem__(self, ix):\n"
+                "        \"\"\"Return the moduli stored at index ix as a Python long.\"\"\"\n"
+                "    def varformatstr(self, name):\n"
+                "        \"\"\"Return format string for a given name.\"\"\"\n"
+                "    def block_order(self):\n"
+                "        \"\"\"Return a block term ordering for the equation systems.\"\"\"\n"
+                "    def term_order(self):\n"
+                "        \"\"\"Return the term ordering of self.\"\"\"\n"
+                "    def prod(self):\n"
+                "        \"\"\"Return the product of the prime moduli.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(
+                "def ellipsis_range(*args, step=None) -> list:",
+                srange_stub.read_text(encoding="utf-8"),
+            )
+            srange_text = srange_stub.read_text(encoding="utf-8")
+            self.assertIn("def tuple_summary() -> tuple:", srange_text)
+            self.assertIn("def integer_summary() -> 'sage.rings.integer.Integer':", srange_text)
+            list_text = list_stub.read_text(encoding="utf-8")
+            self.assertIn("def lengths(self) -> list:", list_text)
+            self.assertIn("def solve() -> tuple | None:", list_text)
+            patched = multi_stub.read_text(encoding="utf-8")
+            self.assertIn("def crt(self, b) -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def __getitem__(self, ix) -> int:", patched)
+            self.assertIn("def varformatstr(self, name) -> str:", patched)
+            self.assertIn("def block_order(self) -> 'sage.rings.polynomial.term_order.TermOrder':", patched)
+            self.assertIn("def term_order(self) -> 'sage.rings.polynomial.term_order.TermOrder':", patched)
+            self.assertIn("def prod(self) -> 'sage.rings.integer.Integer':", patched)
+
+    def test_iterator_factorization_division_and_element_inverse_contracts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "rings" / "polynomial" / "contracts.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class PolynomialElement:\n"
+                "    def __iter__(self):\n"
+                "        \"\"\"Iterate over self.\"\"\"\n"
+                "    def factor(self):\n"
+                "        \"\"\"Return the factorization of this polynomial.\"\"\"\n"
+                "    def compute_factor(self):\n"
+                "        \"\"\"Compute the irreducible factorization of this polynomial.\"\"\"\n"
+                "    def quo_rem(self, other):\n"
+                "        \"\"\"Return quotient and remainder of self and other.\"\"\"\n"
+                "    def __neg__(self):\n"
+                "        \"\"\"Return -self.\"\"\"\n"
+                "    def __invert__(self):\n"
+                "        \"\"\"Return the multiplicative inverse of self.\"\"\"\n"
+                "def iter_points():\n"
+                "    \"\"\"Return an iterator over points.\"\"\"\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("from typing import Self, Iterator", patched)
+            self.assertIn("def __iter__(self) -> Iterator:", patched)
+            self.assertIn("def factor(self) -> 'sage.structure.factorization.Factorization':", patched)
+            self.assertIn("def compute_factor(self) -> 'sage.structure.factorization.Factorization':", patched)
+            self.assertIn("def quo_rem(self, other) -> tuple:", patched)
+            self.assertIn("def __neg__(self) -> Self:", patched)
+            self.assertIn("def __invert__(self):", patched)
+            self.assertIn("def iter_points() -> Iterator:", patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
+
+    def test_element_arithmetic_summaries_preserve_concrete_field_elements(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "rings" / "finite_rings" / "elements.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class FiniteField_givaroElement:\n"
+                "    def _add_(self, other):\n"
+                "        \"\"\"Add two elements.\"\"\"\n"
+                "    def _sub_(self, other):\n"
+                "        \"\"\"Subtract two elements.\"\"\"\n"
+                "    def _mul_(self, other):\n"
+                "        \"\"\"Multiply two elements.\"\"\"\n"
+                "    def _div_(self, other):\n"
+                "        \"\"\"Divide two elements.\"\"\"\n"
+                "    def __invert__(self):\n"
+                "        \"\"\"Return the multiplicative inverse of an element.\"\"\"\n"
+                "    def __lshift__(self, k):\n"
+                "        \"\"\"Perform a left shift by k bits.\"\"\"\n"
+                "class FiniteFieldElement_pari_ffelt:\n"
+                "    def __invert__(self):\n"
+                "        \"\"\"Return the multiplicative inverse of self.\"\"\"\n"
+                "class FiniteFieldHomomorphism_generic:\n"
+                "    def inverse(self):\n"
+                "        \"\"\"Return the inverse of this embedding.\"\"\"\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            for method in ("_add_", "_sub_", "_mul_", "_div_", "__invert__", "__lshift__"):
+                self.assertIn(f"def {method}", patched)
+            self.assertEqual(7, patched.count("-> Self:"))
+            self.assertIn("def inverse(self):", patched)
+            ast.parse(patched)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(patched, stub.read_text(encoding="utf-8"))
 
     def test_sage_test_hooks_return_none_even_without_docstrings(self):
         with tempfile.TemporaryDirectory() as temporary:
