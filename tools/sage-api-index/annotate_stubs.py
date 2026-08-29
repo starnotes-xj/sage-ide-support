@@ -1502,6 +1502,22 @@ PROTOCOL_RETURNS: dict[str, str] = {
     # omitted the return because the concrete Sage element is irrelevant to
     # the protocol result consumed by Python/PyCharm.
     "__contains__": "bool",
+    # Mutable-container hooks are specified by Python to perform the update
+    # in place and return no value.  Sage implementations follow that
+    # protocol even when the stored element/parent is dynamic, so this does
+    # not guess an element type or widen the receiver.
+    "__setitem__": "None",
+    "__delitem__": "None",
+    # Descriptor and attribute mutation hooks also signal completion through
+    # ``None``; their target/value types are intentionally left untouched.
+    "__set__": "None",
+    "__delete__": "None",
+    "__setattr__": "None",
+    "__setslice__": "None",
+    # These metaclass hooks are Python predicates, independent of the Sage
+    # class being inspected.
+    "__instancecheck__": "bool",
+    "__subclasscheck__": "bool",
     "__nonzero__": "bool",
     "__int__": "int",
     "__float__": "float",

@@ -26,6 +26,14 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    ): ...\n"
                 "    def __len__(self): ...\n"
                 "    def __contains__(self, value): ...\n"
+                "    def __setitem__(self, key, value): ...\n"
+                "    def __delitem__(self, key): ...\n"
+                "    def __set__(self, instance, value): ...\n"
+                "    def __delete__(self, instance): ...\n"
+                "    def __setattr__(self, name, value): ...\n"
+                "    def __setslice__(self, i, j, sequence): ...\n"
+                "    def __instancecheck__(self, instance): ...\n"
+                "    def __subclasscheck__(self, subclass): ...\n"
                 "    def __int__(self): ...\n"
                 "    def __float__(self): ...\n"
                 "    def __complex__(self): ...\n"
@@ -59,6 +67,14 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def __init__(self) -> None: ...", patched)
             self.assertIn("def __len__(self) -> int: ...", patched)
             self.assertIn("def __contains__(self, value) -> bool: ...", patched)
+            self.assertIn("def __setitem__(self, key, value) -> None: ...", patched)
+            self.assertIn("def __delitem__(self, key) -> None: ...", patched)
+            self.assertIn("def __set__(self, instance, value) -> None: ...", patched)
+            self.assertIn("def __delete__(self, instance) -> None: ...", patched)
+            self.assertIn("def __setattr__(self, name, value) -> None: ...", patched)
+            self.assertIn("def __setslice__(self, i, j, sequence) -> None: ...", patched)
+            self.assertIn("def __instancecheck__(self, instance) -> bool: ...", patched)
+            self.assertIn("def __subclasscheck__(self, subclass) -> bool: ...", patched)
             self.assertIn("def __int__(self) -> int: ...", patched)
             self.assertIn("def __float__(self) -> float: ...", patched)
             self.assertIn("def __complex__(self) -> complex: ...", patched)

@@ -90,3 +90,10 @@ Gradle、索引和 ZIP 静态证据不能替代上述 fresh PyCharm GUI smoke。
 - 追加 3 个回归测试，完整索引测试由 `114` 增至 `117`，并验证重复执行、AST、`compileall` 和 `git diff --check`。
 - 额外将 Sage `TestSuite` 的 `_test_*` 钩子按“失败抛异常、成功返回 `None`”的框架合同批量收敛（含无 docstring 方法）。重新生成 staging 索引：`2,843` 源文件、`84,508` entries、`52,743` callable、`52,347` signatures；`UNKNOWN=30,139`，相对第 10 节 `30,652` 再减少 `513`。返回分类为 `CONCRETE=3,950`、`TYPE_VARIABLE=617`、`BROAD_BUILTIN=11,968`、`UNION_OR_OPTIONAL=477`、`NONE=4,608`、`DYNAMIC=16`、`STRUCTURAL_BASE=44`。
 - 该轮未重新打包 ZIP 或执行 PyCharm GUI smoke；上述数字是 fresh 生成与 `audit_contracts.py` 的实际结果，不能替代插件安装验收。剩余 UNKNOWN 仍主要来自父对象动态选择、条件联合返回和外部 CAS 接口。
+
+## 12. 协议钩子批量收敛（2026-08-29）
+
+- 在上一节的文档驱动规则之后，继续按 Python/Sage 可证明的数据模型协议批量收敛：可变容器的 `__setitem__`/`__delitem__`、描述符/属性的 `__set__`/`__delete__`/`__setattr__`/`__setslice__` 统一为 `None`；元类 `__instancecheck__`/`__subclasscheck__` 统一为 `bool`。这些合同不读取动态元素类型，也不把 receiver 降为公共基类。
+- 完整索引测试仍为 `117` 项通过，`compileall` 与 `git diff --check` 通过；协议测试覆盖多行签名、幂等重复执行及上述 8 个钩子。
+- 重新生成 staging 索引：`2,843` 源文件、`84,508` entries、`52,743` callable、`52,347` signatures；`UNKNOWN=30,057`，相对第 10 节 `30,652` 再减少 `595`（本轮第 11 节规则减少 `513`，本节协议钩子再减少 `82`）。当前分类为 `CONCRETE=3,950`、`TYPE_VARIABLE=617`、`BROAD_BUILTIN=11,970`、`UNION_OR_OPTIONAL=477`、`NONE=4,688`、`DYNAMIC=16`、`STRUCTURAL_BASE=44`。
+- 该轮仍未重新打包 ZIP 或执行 PyCharm GUI smoke；索引审计数字不能替代 fresh 安装验收。剩余 UNKNOWN 继续集中在父对象动态选择、条件/联合返回和 PARI/Magma/Singular 等外部 CAS 接口，未使用公共基类或 `Any` 猜测。
