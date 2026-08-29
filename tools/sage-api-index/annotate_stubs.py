@@ -44,6 +44,15 @@ PRIME_FIELD_ELEMENT_UNION = (
     "sage.rings.finite_rings.integer_mod.IntegerMod_int64 | "
     "sage.rings.finite_rings.integer_mod.IntegerMod_gmp'"
 )
+INTEGER_MOD_ELEMENT_UNION = PRIME_FIELD_ELEMENT_UNION
+POLYNOMIAL_MOD_P_ELEMENT_UNION = (
+    "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint | "
+    "sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p'"
+)
+FINITE_FIELD_POLYNOMIAL_ELEMENT_UNION = (
+    "'sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX | "
+    "sage.rings.polynomial.polynomial_element_generic.Polynomial_generic_dense_field'"
+)
 POLYNOMIAL_POWER_UNION = "Self | 'sage.rings.fraction_field_element.FractionFieldElement'"
 INTEGER_MATRIX_POWER_UNION = "Self | 'sage.matrix.matrix_rational_dense.Matrix_rational_dense'"
 FINITE_FIELD_UNION = (
@@ -56,9 +65,52 @@ FINITE_FIELD_MORPHISM_UNION = (
     "'sage.categories.morphism.IdentityMorphism | "
     "sage.rings.finite_rings.hom_finite_field.FiniteFieldHomomorphism_generic'"
 )
+# Cardinality/size metrics are not all represented by one Python/Sage scalar
+# in Sage: finite objects normally return ``Integer`` while infinite parents
+# return ``PlusInfinity``.  Keep the union explicit instead of collapsing to
+# the abstract ``Element``/``Number`` bases.  ``int`` is included for
+# combinatorial implementations which return a native Python count.
+CARDINALITY_RETURN_UNION = (
+    "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity'"
+)
+ORDER_RETURN_UNION = (
+    "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity | None'"
+)
+# Matrix2 exposes several base-ring-valued helpers without making the matrix
+# parent a generic class.  Preserve the concrete scalar implementations that
+# Sage 10.9 uses for the common CTF rings instead of falling back to UNKNOWN;
+# specialised matrix subclasses below still narrow these unions further.
+MATRIX_SCALAR_UNION = (
+    "'sage.rings.integer.Integer | sage.rings.rational.Rational | "
+    "sage.rings.real_mpfr.RealNumber | sage.rings.real_double.RealDoubleElement | "
+    "sage.rings.complex_mpfr.ComplexNumber | sage.rings.complex_double.ComplexDoubleElement | "
+    "sage.rings.finite_rings.integer_mod.IntegerMod_int | "
+    "sage.rings.finite_rings.integer_mod.IntegerMod_int64 | "
+    "sage.rings.finite_rings.integer_mod.IntegerMod_gmp | "
+    "sage.rings.finite_rings.element_givaro.FiniteField_givaroElement | "
+    "sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement | "
+    "sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt | "
+    "sage.symbolic.expression.Expression'"
+)
+MATRIX_POLYNOMIAL_UNION = (
+    "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint | "
+    "sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint | "
+    "sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint | "
+    "sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p | "
+    "sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX | "
+    "sage.rings.polynomial.polynomial_element_generic.Polynomial_generic_dense_field'"
+)
 
 # ADD: member name -> annotation expression for unannotated defs.
 CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
+    "sage/features/all.pyi": {
+        None: {
+            # The package-level enumerator is a generator; individual
+            # feature modules use a materialized list and are handled by the
+            # generic ``all_features`` contract below.
+            "all_features": "Iterator",
+        },
+    },
     "sage/arith/misc.pyi": {
         # These helpers have a stable Python outer result independent of the
         # complex-number implementation they sort.  The element types vary,
@@ -502,31 +554,6 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "__iter__": "Self",
         },
     },
-    "sage/schemes/elliptic_curves/ell_point.pyi": {
-        "EllipticCurvePoint": {
-            "curve": "'sage.schemes.elliptic_curves.ell_generic.EllipticCurve_generic'",
-            # Point addition, negation, subtraction and scalar action stay on
-            # the same curve and preserve the concrete point implementation.
-            "_add_": "Self",
-            "_neg_": "Self",
-            "_sub_": "Self",
-            "_acted_upon_": "Self",
-        },
-        "EllipticCurvePoint_finite_field": {
-            # The finite-field order algorithm returns a Sage Integer for
-            # both PARI and the inherited generic-small paths.
-            "_compute_order": "'sage.rings.integer.Integer'",
-        },
-        "EllipticCurvePoint_field": {
-            # Coordinate conversion is a stable Python tuple for every field
-            # implementation; the coordinate element classes themselves are
-            # intentionally left parent-dependent.
-            "__tuple__": "tuple",
-            "_neg_": "Self",
-            "_divide_out": "tuple[Self, 'sage.rings.integer.Integer']",
-            "__pari__": "'cypari2.gen.Gen'",
-        },
-    },
     "sage/schemes/elliptic_curves/ell_finite_field.pyi": {
         None: {
             "curves_with_j_0": "list['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field']",
@@ -606,6 +633,48 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "matrix_window": "'sage.matrix.matrix_window.MatrixWindow'",
             "subdivision": "Self",
             "decomposition_of_subspace": "'sage.structure.sequence.Sequence_generic'",
+            # These exact-field transforms construct the same matrix parent
+            # as the receiver.  Keeping ``Self`` here exposes the concrete
+            # dense/sparse implementation selected by the caller.
+            "permutation_normal_form": "Self",
+            "zigzag_form": "Self",
+            "krylov_matrix": "Self",
+            "is_similar": "bool",
+            "kernel_on": "'sage.modules.free_module.FreeModule_submodule_field_with_category'",
+            "integer_kernel": "'sage.modules.free_module.FreeModule_submodule_pid_with_category'",
+            "image": "'sage.modules.free_module.FreeModule_submodule_pid_with_category | sage.modules.free_module.FreeModule_submodule_field_with_category'",
+            "det": MATRIX_SCALAR_UNION,
+            "determinant": MATRIX_SCALAR_UNION,
+            "trace": MATRIX_SCALAR_UNION,
+            "trace_of_product": MATRIX_SCALAR_UNION,
+            "subdivision_entry": MATRIX_SCALAR_UNION,
+            "norm": "'sage.rings.real_mpfr.RealNumber | sage.rings.real_double.RealDoubleElement'",
+            "pfaffian": MATRIX_SCALAR_UNION,
+            "quantum_determinant": MATRIX_SCALAR_UNION,
+            "wiedemann": MATRIX_POLYNOMIAL_UNION,
+            "inverse_positive_definite": "Self | 'sage.matrix.matrix_rational_dense.Matrix_rational_dense' | 'sage.matrix.matrix_generic_dense.Matrix_generic_dense' | 'sage.matrix.matrix_complex_double_dense.Matrix_complex_double_dense'",
+            "fitting_ideal": "'sage.rings.ideal.Ideal_pid | sage.rings.quotient_ring.QuotientRingIdeal_principal'",
+        },
+    },
+    "sage/matrix/matrix_polynomial_dense.pyi": {
+        "Matrix_polynomial_dense": {
+            # The series solvers preserve the input shape: a polynomial
+            # vector produces a polynomial vector, while a polynomial matrix
+            # produces a matrix in this concrete implementation.  The union
+            # is the implementation-safe fallback; literal overloads below
+            # let PyCharm select the branch from the argument type.
+            "solve_left_series_trunc": "'sage.modules.free_module_element.FreeModuleElement' | Self",
+            "solve_right_series_trunc": "'sage.modules.free_module_element.FreeModuleElement' | Self",
+            "inverse_series_trunc": "Self",
+            "hermite_form": "Self | tuple[Self, Self]",
+            "popov_form": "Self | tuple[Self, Self]",
+            "weak_popov_form": "Self | tuple[Self, Self]",
+            "reduced_form": "Self | tuple[Self, Self]",
+            "minimal_approximant_basis": "Self",
+            "minimal_interpolant_basis": "Self",
+            "minimal_kernel_basis": "Self",
+            "minimal_relation_basis": "Self",
+            "basis_completion": "Self",
         },
     },
     "sage/matrix/matrix0.pyi": {
@@ -626,10 +695,26 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     "sage/matrix/matrix_modn_sparse.pyi": {
         "Matrix_modn_sparse": {
             "determinant": PRIME_FIELD_ELEMENT_UNION,
+            "det": PRIME_FIELD_ELEMENT_UNION,
+            "trace": PRIME_FIELD_ELEMENT_UNION,
+            "trace_of_product": PRIME_FIELD_ELEMENT_UNION,
+            "__invert__": "Self",
+            "inverse": "Self",
             "matrix_from_columns": "Self",
             "matrix_from_rows": "Self",
             "rank": "int",
             "swap_rows": "None",
+            "transpose": "Self",
+        },
+    },
+    "sage/matrix/matrix_modn_dense_float.pyi": {
+        "Matrix_modn_dense_float": {
+            "determinant": PRIME_FIELD_ELEMENT_UNION,
+            "det": PRIME_FIELD_ELEMENT_UNION,
+            "trace": PRIME_FIELD_ELEMENT_UNION,
+            "trace_of_product": PRIME_FIELD_ELEMENT_UNION,
+            "__invert__": "Self",
+            "inverse": "Self",
             "transpose": "Self",
         },
     },
@@ -683,6 +768,10 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "transpose": "Self",
             "antitranspose": "Self",
             "determinant": "'sage.rings.integer.Integer'",
+            "det": "'sage.rings.integer.Integer'",
+            "trace": "'sage.rings.integer.Integer'",
+            "trace_of_product": "'sage.rings.integer.Integer'",
+            "inverse_positive_definite": "'sage.matrix.matrix_rational_dense.Matrix_rational_dense'",
             "charpoly": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
             "minpoly": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
             "frobenius_form": "Self",
@@ -716,6 +805,10 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "transpose": "Self",
             "antitranspose": "Self",
             "determinant": "'sage.rings.rational.Rational'",
+            "det": "'sage.rings.rational.Rational'",
+            "trace": "'sage.rings.rational.Rational'",
+            "trace_of_product": "'sage.rings.rational.Rational'",
+            "inverse_positive_definite": "Self",
             "charpoly": "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'",
             "minpoly": "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'",
             "rank": "int",
@@ -744,24 +837,126 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "order": "'sage.rings.integer.Integer'",
             "gen": "'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp'",
             "__iter__": "Iterator['sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp']",
+            "random_element": INTEGER_MOD_ELEMENT_UNION,
+            "from_integer": INTEGER_MOD_ELEMENT_UNION,
+            "prime_subfield": "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn'",
+            "subfield": "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn'",
+            "polynomial": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+            "polynomial_ring": "'sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p'",
+            "extension": FINITE_FIELD_UNION,
         },
     },
     "sage/rings/finite_rings/finite_field_givaro.pyi": {
         "FiniteField_givaro": {
             "gen": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
             "__iter__": "Iterator['sage.rings.finite_rings.element_givaro.FiniteField_givaroElement']",
+            "random_element": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
+            "from_integer": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
+            "prime_subfield": "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn'",
+            "subfield": "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn'",
+            "polynomial": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+            "polynomial_ring": "'sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p'",
+            "extension": FINITE_FIELD_UNION,
         },
     },
     "sage/rings/finite_rings/finite_field_ntl_gf2e.pyi": {
         "FiniteField_ntl_gf2e": {
             "gen": "'sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement'",
             "__iter__": "Iterator['sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement']",
+            "random_element": "'sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement'",
+            "from_integer": "'sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement'",
+            "prime_subfield": "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn'",
+            "subfield": "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn'",
+            "polynomial": "'sage.rings.polynomial.polynomial_gf2x.Polynomial_GF2X'",
+            "polynomial_ring": "'sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p'",
+            "extension": FINITE_FIELD_UNION,
         },
     },
     "sage/rings/finite_rings/finite_field_pari_ffelt.pyi": {
         "FiniteField_pari_ffelt": {
             "gen": "'sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt'",
             "__iter__": "Iterator['sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt']",
+            "random_element": "'sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt'",
+            "from_integer": "'sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt'",
+            "prime_subfield": "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn'",
+            "subfield": "'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn'",
+            "polynomial": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+            "polynomial_ring": "'sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p'",
+            "extension": FINITE_FIELD_UNION,
+        },
+    },
+    "sage/rings/finite_rings/element_givaro.pyi": {
+        "FiniteField_givaroElement": {
+            "_integer_": "'sage.rings.integer.Integer'",
+            "_vector_": "'sage.modules.vector_mod2_dense.Vector_mod2_dense | sage.modules.vector_modn_dense.Vector_modn_dense'",
+        },
+    },
+    "sage/rings/finite_rings/element_ntl_gf2e.pyi": {
+        "FiniteField_ntl_gf2eElement": {
+            "_integer_": "'sage.rings.integer.Integer'",
+            "_vector_": "'sage.modules.vector_mod2_dense.Vector_mod2_dense'",
+            "trace": "'sage.rings.finite_rings.integer_mod.IntegerMod_int'",
+        },
+    },
+    "sage/rings/finite_rings/element_pari_ffelt.pyi": {
+        "FiniteFieldElement_pari_ffelt": {
+            "_add_": "Self",
+            "_sub_": "Self",
+            "_mul_": "Self",
+            "_div_": "Self",
+            "__neg__": "Self",
+            "__pos__": "Self",
+            "__invert__": "Self",
+            "__pow__": "Self",
+            "pth_power": "Self",
+            "_integer_": "'sage.rings.integer.Integer'",
+            "polynomial": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+            "charpoly": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+            "minpoly": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+        },
+    },
+    "sage/rings/finite_rings/hom_finite_field.pyi": {
+        "FiniteFieldHomomorphism_generic": {
+            # ``section()`` constructs the concrete finite-field section
+            # wrapper; it is not the abstract ``Section`` base.  The inverse
+            # relation is explicit in Sage's docstring and runtime type.
+            "section": "'sage.rings.finite_rings.hom_finite_field.SectionFiniteFieldHomomorphism_generic'",
+        },
+        "FrobeniusEndomorphism_finite_field": {
+            # Frobenius powers and inverses remain endomorphisms of the same
+            # concrete finite-field map.  ``order()`` is a Sage Integer in
+            # Sage 10.9 (the generic metric fallback handles other classes).
+            "__pow__": "Self",
+            "inverse": "Self",
+            "order": "'sage.rings.integer.Integer'",
+        },
+    },
+    "sage/rings/finite_rings/hom_prime_finite_field.pyi": {
+        "FrobeniusEndomorphism_prime": {
+            "__pow__": "Self",
+        },
+    },
+    "sage/rings/morphism.pyi": {
+        "FrobeniusEndomorphism_generic": {
+            "__pow__": "Self",
+        },
+    },
+    "sage/rings/padics/morphism.pyi": {
+        "FrobeniusEndomorphism_padics": {
+            "__pow__": "Self",
+        },
+    },
+    "sage/rings/complex_mpfr.pyi": {
+        "ComplexNumber": {
+            # Both index branches (real and imaginary component) use Sage's
+            # concrete RealNumber implementation; the conditional index does
+            # not change the result family.
+            "__getitem__": "'sage.rings.real_mpfr.RealNumber'",
+        },
+    },
+    "sage/rings/complex_interval.pyi": {
+        "ComplexIntervalFieldElement": {
+            "__getitem__": "'sage.rings.real_mpfi.RealIntervalFieldElement'",
         },
     },
     "sage/rings/polynomial/polynomial_ring.pyi": {
@@ -769,10 +964,18 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "gen": "'sage.rings.polynomial.polynomial_element.Polynomial'",
         },
         "PolynomialRing_dense_mod_p": {
-            # Ordinary GF(p)[x] uses FLINT in Sage 10.9; this replaces the
-            # historical NTL-only declaration when the generated stub has
-            # already been curated once.
-            "gen": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+            # The parent class is shared by FLINT and NTL implementations;
+            # the concrete element is selected by ``implementation=``.
+            "gen": POLYNOMIAL_MOD_P_ELEMENT_UNION,
+            "random_element": POLYNOMIAL_MOD_P_ELEMENT_UNION,
+        },
+        "PolynomialRing_dense_finite_field": {
+            "random_element": FINITE_FIELD_POLYNOMIAL_ELEMENT_UNION,
+        },
+    },
+    "sage/rings/finite_rings/integer_mod_ring.pyi": {
+        "IntegerModRing_generic": {
+            "random_element": INTEGER_MOD_ELEMENT_UNION,
         },
     },
     "sage/rings/integer_ring.pyi": {
@@ -783,6 +986,7 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "__iter__": "Iterator['sage.rings.integer.Integer']",
             "__call__": "'sage.rings.integer.Integer'",
             "gen": "'sage.rings.integer.Integer'",
+            "random_element": "'sage.rings.integer.Integer'",
         },
     },
     "sage/rings/rational_field.pyi": {
@@ -790,6 +994,7 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "__iter__": "Iterator['sage.rings.rational.Rational']",
             "range_by_height": "Iterator['sage.rings.rational.Rational']",
             "gen": "'sage.rings.rational.Rational'",
+            "random_element": "'sage.rings.rational.Rational'",
         },
     },
     "sage/rings/finite_rings/element_base.pyi": {
@@ -800,16 +1005,51 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # rather than collapsing to a parent class.
             "__getitem__": "'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp'",
             "__iter__": "Iterator['sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp']",
+            "_vector_": "'sage.modules.vector_mod2_dense.Vector_mod2_dense | sage.modules.vector_modn_dense.Vector_modn_dense'",
+            "norm": INTEGER_MOD_ELEMENT_UNION,
+            "trace": INTEGER_MOD_ELEMENT_UNION,
+            "pth_power": "Self",
+            "pth_root": "Self",
+            "conjugate": "Self",
         },
     },
-    "sage/rings/polynomial/polynomial_integer_dense_flint.pyi": {
-        "Polynomial_integer_dense_flint": {
-            "factor": "'sage.structure.factorization.Factorization'",
+    "sage/rings/finite_rings/integer_mod.pyi": {
+        "IntegerMod_abstract": {
+            # Prime-modulus residue elements implement norm/trace as the
+            # identity, so Self keeps IntegerMod_int/int64/gmp concrete.
+            "norm": "Self",
+            "trace": "Self",
         },
     },
-    "sage/rings/polynomial/polynomial_zmod_flint.pyi": {
-        "Polynomial_zmod_flint": {
-            "factor": "'sage.structure.factorization.Factorization'",
+    "sage/schemes/elliptic_curves/ell_point.pyi": {
+        "EllipticCurvePoint": {
+            "curve": "'sage.schemes.elliptic_curves.ell_generic.EllipticCurve_generic'",
+            # Point addition, negation, subtraction and scalar action stay on
+            # the same curve and preserve the concrete point implementation.
+            "_add_": "Self",
+            "_neg_": "Self",
+            "_sub_": "Self",
+            "_acted_upon_": "Self",
+        },
+        "EllipticCurvePoint_field": {
+            # Coordinate conversion is a stable Python tuple for every field
+            # implementation; the coordinate element classes themselves are
+            # intentionally left parent-dependent.
+            "__tuple__": "tuple",
+            "_neg_": "Self",
+            "_divide_out": "tuple[Self, 'sage.rings.integer.Integer']",
+            "__pari__": "'cypari2.gen.Gen'",
+        },
+        "EllipticCurvePoint_finite_field": {
+            # These methods are implemented directly by the finite-field
+            # point class.  Annotate the existing documented definitions so
+            # the generated stub has one authoritative declaration rather
+            # than a duplicate insertion.
+            "curve": "'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field'",
+            "_acted_upon_": "'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field'",
+            # The finite-field order algorithm returns a Sage Integer for
+            # both PARI and the inherited generic-small paths.
+            "_compute_order": "'sage.rings.integer.Integer'",
         },
     },
     "sage/rings/rational.pyi": {
@@ -830,6 +1070,19 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "quo_rem": "tuple[Self, Self]",
         },
     },
+    "sage/rings/polynomial/multi_polynomial.pyi": {
+        "MPolynomial": {
+            # ``root`` selects a predicate-only result or the pair carrying a
+            # square root.  The union keeps the implementation signature safe;
+            # literal overloads below recover branch-specific completion.
+            "is_square": "bool | tuple[bool, Self | None]",
+        },
+    },
+    "sage/rings/polynomial/laurent_polynomial_mpair.pyi": {
+        "LaurentPolynomial_mpair": {
+            "is_square": "bool | tuple[bool, Self | None]",
+        },
+    },
     "sage/rings/polynomial/polynomial_zmod_flint.pyi": {
         "Polynomial_zmod_flint": {
             # GF(p)[x] evaluation/resultants produce the concrete modular
@@ -837,6 +1090,7 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # implementation.  Rational reconstruction returns a pair of
             # polynomials in the same parent.
             "__call__": PRIME_FIELD_ELEMENT_UNION,
+            "factor": "'sage.structure.factorization.Factorization'",
             "resultant": PRIME_FIELD_ELEMENT_UNION,
             "small_roots": "list['sage.rings.integer.Integer']",
             "__pow__": POLYNOMIAL_POWER_UNION,
@@ -852,10 +1106,13 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     "sage/rings/polynomial/polynomial_modn_dense_ntl.pyi": {
         "Polynomial_dense_mod_p": {
             "__pow__": "'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p | sage.rings.fraction_field_element.FractionFieldElement'",
+            "resultant": PRIME_FIELD_ELEMENT_UNION,
+            "discriminant": PRIME_FIELD_ELEMENT_UNION,
         },
     },
     "sage/rings/polynomial/polynomial_integer_dense_flint.pyi": {
         "Polynomial_integer_dense_flint": {
+            "factor": "'sage.structure.factorization.Factorization'",
             "_add_": "Self",
             "_sub_": "Self",
             "_neg_": "Self",
@@ -949,7 +1206,7 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     },
     "sage/rings/polynomial/polynomial_ring.pyi": {
         "PolynomialRing_dense_mod_p": {
-            "gen": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+            "gen": POLYNOMIAL_MOD_P_ELEMENT_UNION,
         },
     },
     "sage/matrix/matrix0.pyi": {
@@ -1293,6 +1550,25 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
                 "def decomposition(self, algorithm='spin', is_diagonalizable=False, dual: Literal[False] = False) -> 'sage.structure.sequence.Sequence_generic': ...",
                 "def decomposition(self, algorithm='spin', is_diagonalizable=False, dual: Literal[True] = True) -> tuple['sage.structure.sequence.Sequence_generic', 'sage.structure.sequence.Sequence_generic']: ...",
             ),
+            # The translated matrix2 docs make the output flag explicit.  The
+            # false branch is the concrete basis matrix; the true branch
+            # carries the row-profile tuples alongside it.
+            "krylov_basis": (
+                "def krylov_basis(self, M, shifts=None, degrees=None, output_rows: Literal[False] = False, algorithm=None) -> Self: ...",
+                "def krylov_basis(self, M, shifts=None, degrees=None, output_rows: Literal[True] = True, algorithm=None) -> tuple[Self, tuple[tuple[int, int, int], ...]]: ...",
+            ),
+            "krylov_kernel_basis": (
+                "def krylov_kernel_basis(self, M, shifts=None, degrees=None, output_rows: Literal[False] = False, var=None, basis_algorithm=None) -> Self: ...",
+                "def krylov_kernel_basis(self, M, shifts=None, degrees=None, output_rows: Literal[True] = True, var=None, basis_algorithm=None) -> tuple[Self, tuple[tuple[int, int, int], ...]]: ...",
+            ),
+            "cyclic_subspace": (
+                "def cyclic_subspace(self, v, var: Literal[None] = None, basis='echelon') -> 'sage.modules.free_module.FreeModule_submodule_field_with_category': ...",
+                "def cyclic_subspace(self, v, var: str, basis='echelon') -> tuple['sage.rings.polynomial.polynomial_element.Polynomial', 'sage.modules.free_module.FreeModule_submodule_field_with_category']: ...",
+            ),
+            "find": (
+                "def find(self, f, indices: Literal[False] = False) -> 'sage.matrix.matrix_modn_dense_float.Matrix_modn_dense_float': ...",
+                "def find(self, f, indices: Literal[True] = True) -> dict: ...",
+            ),
         },
     },
     "sage/matrix/matrix_integer_dense.pyi": {
@@ -1364,6 +1640,61 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             ),
         },
     },
+    "sage/matrix/matrix_polynomial_dense.pyi": {
+        "Matrix_polynomial_dense": {
+            "solve_left_series_trunc": (
+                "def solve_left_series_trunc(self, B: 'sage.modules.free_module_element.FreeModuleElement', d) -> 'sage.modules.free_module_element.FreeModuleElement': ...",
+                "def solve_left_series_trunc(self, B: 'sage.matrix.matrix2.Matrix', d) -> Self: ...",
+            ),
+            "solve_right_series_trunc": (
+                "def solve_right_series_trunc(self, B: 'sage.modules.free_module_element.FreeModuleElement', d) -> 'sage.modules.free_module_element.FreeModuleElement': ...",
+                "def solve_right_series_trunc(self, B: 'sage.matrix.matrix2.Matrix', d) -> Self: ...",
+            ),
+            "hermite_form": (
+                "def hermite_form(self, include_zero_rows: bool = True, transformation: Literal[False] = False) -> Self: ...",
+                "def hermite_form(self, include_zero_rows: bool = True, transformation: Literal[True] = True) -> tuple[Self, Self]: ...",
+            ),
+            "popov_form": (
+                "def popov_form(self, transformation: Literal[False] = False, shifts=None, row_wise: bool = True, include_zero_vectors: bool = True) -> Self: ...",
+                "def popov_form(self, transformation: Literal[True], shifts=None, row_wise: bool = True, include_zero_vectors: bool = True) -> tuple[Self, Self]: ...",
+            ),
+            "weak_popov_form": (
+                "def weak_popov_form(self, transformation: Literal[False] = False, shifts=None, row_wise: bool = True, ordered: bool = False, include_zero_vectors: bool = True) -> Self: ...",
+                "def weak_popov_form(self, transformation: Literal[True], shifts=None, row_wise: bool = True, ordered: bool = False, include_zero_vectors: bool = True) -> tuple[Self, Self]: ...",
+            ),
+            "reduced_form": (
+                "def reduced_form(self, transformation: Literal[False] | None = None, shifts=None, row_wise: bool = True, include_zero_vectors: bool = True) -> Self: ...",
+                "def reduced_form(self, transformation: Literal[True], shifts=None, row_wise: bool = True, include_zero_vectors: bool = True) -> tuple[Self, Self]: ...",
+            ),
+        },
+    },
+    "sage/rings/polynomial/polynomial_element.pyi": {
+        "Polynomial": {
+            # Polynomial indexing is conditional: an integer selects a
+            # coefficient from the (dynamic) base ring, while a slice creates
+            # another polynomial in the same parent.  Keep the scalar branch
+            # unresolved and expose the precise slice branch to PyCharm.
+            "__getitem__": (
+                "def __getitem__(self, key: slice) -> Self: ...",
+            ),
+        },
+    },
+    "sage/rings/polynomial/multi_polynomial.pyi": {
+        "MPolynomial": {
+            "is_square": (
+                "def is_square(self, root: Literal[False] = False) -> bool: ...",
+                "def is_square(self, root: Literal[True]) -> tuple[bool, Self | None]: ...",
+            ),
+        },
+    },
+    "sage/rings/polynomial/laurent_polynomial_mpair.pyi": {
+        "LaurentPolynomial_mpair": {
+            "is_square": (
+                "def is_square(self, root: Literal[False] = False) -> bool: ...",
+                "def is_square(self, root: Literal[True]) -> tuple[bool, Self | None]: ...",
+            ),
+        },
+    },
 }
 
 # Module-level TypeVars used by the contracts above.  The declaration is kept
@@ -1396,6 +1727,7 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "def gen(self, i: int) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
             "def __getitem__(self, n) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
             "def __iter__(self) -> Iterator['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field']: ...",
+            "def random_point(self, *args, **kwargs) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
             f"def base_ring(self) -> {FINITE_FIELD_UNION}: ...",
             f"def a1(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
             f"def a2(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
@@ -1414,8 +1746,6 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "sage/schemes/elliptic_curves/ell_point.pyi": {
         "EllipticCurvePoint_finite_field": (
-            "def curve(self) -> 'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field': ...",
-            "def _acted_upon_(self, other, side) -> 'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field': ...",
             f"def __getitem__(self, n) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
             f"def __iter__(self) -> Iterator[{FINITE_FIELD_ELEMENT_UNION}]: ...",
             f"def x(self) -> {FINITE_FIELD_ELEMENT_UNION}: ...",
@@ -1437,6 +1767,7 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     "sage/rings/finite_rings/finite_field_prime_modn.pyi": {
         "FiniteField_prime_modn": (
             "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp': ...",
+            "def random_element(self, *args, **kwds) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp': ...",
         ),
     },
     "sage/rings/finite_rings/finite_field_givaro.pyi": {
@@ -1448,17 +1779,23 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "FiniteField_ntl_gf2e": (
             "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement': ...",
             "def __iter__(self) -> Iterator['sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement']: ...",
+            "def random_element(self, *args, **kwds) -> 'sage.rings.finite_rings.element_ntl_gf2e.FiniteField_ntl_gf2eElement': ...",
         ),
     },
     "sage/rings/finite_rings/finite_field_pari_ffelt.pyi": {
         "FiniteField_pari_ffelt": (
             "def __call__(self, x=0, *args, **kwds) -> 'sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt': ...",
             "def __iter__(self) -> Iterator['sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt']: ...",
+            "def random_element(self, *args, **kwds) -> 'sage.rings.finite_rings.element_pari_ffelt.FiniteFieldElement_pari_ffelt': ...",
         ),
     },
     "sage/rings/polynomial/polynomial_ring.pyi": {
         "PolynomialRing_dense_finite_field": (
-            "def gen(self, n=0) -> 'sage.rings.polynomial.polynomial_element_generic.Polynomial_generic_dense_field': ...",
+            f"def gen(self, n=0) -> {FINITE_FIELD_POLYNOMIAL_ELEMENT_UNION}: ...",
+            f"def random_element(self, degree=(-1, 2), monic=False, *args, **kwds) -> {FINITE_FIELD_POLYNOMIAL_ELEMENT_UNION}: ...",
+        ),
+        "PolynomialRing_dense_mod_p": (
+            f"def random_element(self, degree=(-1, 2), monic=False, *args, **kwds) -> {POLYNOMIAL_MOD_P_ELEMENT_UNION}: ...",
         ),
     },
     "sage/rings/polynomial/polynomial_modn_dense_ntl.pyi": {
@@ -1479,11 +1816,24 @@ CURATED_INSERTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
+# Earlier staging passes inserted forwarding declarations for methods that
+# later proved to be implemented directly by the concrete class.  Remove only
+# those known forwarding lines and keep the documented implementation (which
+# is annotated by ``CURATED_ANNOTATIONS`` above).  This is intentionally
+# explicit; broad duplicate removal could discard legitimate overloads.
+CURATED_FORWARDING_CLEANUPS: dict[str, dict[str, tuple[str, ...]]] = {
+    "sage/schemes/elliptic_curves/ell_point.pyi": {
+        "EllipticCurvePoint_finite_field": ("curve", "_acted_upon_"),
+    },
+}
+
 # Python's data-model methods have a language-level result contract that does
 # not depend on a Sage class.  These are intentionally handled separately from
 # CURATED_ANNOTATIONS: the pass applies to every Sage class with a missing
 # annotation, while leaving an existing Sage-specific annotation untouched.
-# Rich comparisons, __getitem__, arithmetic and __call__ are *not* included;
+# Rich comparisons are included as ``bool`` because Sage's ``_richcmp_`` hook
+# is the implementation-level predicate consumed by Python's comparison
+# protocol.  ``__getitem__``, arithmetic and ``__call__`` remain excluded;
 # Sage is allowed to return NotImplemented, symbolic values, or a different
 # parent there, so inventing a return type would violate the fail-closed rule.
 PROTOCOL_RETURNS: dict[str, str] = {
@@ -1527,6 +1877,25 @@ PROTOCOL_RETURNS: dict[str, str] = {
     "__len__": "int",
     "__index__": "int",
     "__hash__": "int",
+    # Sage's internal rich-comparison hook feeds the Python comparison
+    # protocol and returns the predicate result (the public ``__eq__``/
+    # ordering methods may still be symbolic and are intentionally separate).
+    "_richcmp_": "bool",
+    # ``reversed()`` consumes an iterator, and context managers may return a
+    # truthy suppression flag (or ``None``) from ``__exit__``.  These are
+    # Python protocol contracts, independent of the Sage object being held.
+    "__reversed__": "Iterator",
+    "__exit__": "bool | None",
+    # Legacy pickle hooks and NumPy's array protocol have fixed outer
+    # containers even though their contents depend on the concrete object.
+    "__getinitargs__": "tuple",
+    "__array_interface__": "dict",
+    # Optional gmpy2 conversion hooks return the corresponding gmpy2 scalar
+    # when the optional dependency is installed.  Keep the external type
+    # quoted so importing a stub never makes gmpy2 mandatory.
+    "__mpz__": "'gmpy2.mpz'",
+    "__mpfr__": "'gmpy2.mpfr'",
+    "__mpc__": "'gmpy2.mpc'",
     # Cython's deallocator and pickle state hook follow the same no-result
     # protocol as Python's ``__del__``/``__setstate__`` methods.
     "__dealloc__": "None",
@@ -1840,7 +2209,7 @@ DOC_SUMMARY_COLLECTION_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 _DEF_RE = re.compile(r"^(?P<indent>\s*)def\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
-_RETURN_RE = re.compile(r"\s*->\s*(.+):\s*$")
+_RETURN_RE = re.compile(r"\s*->\s*(.+?)(:\s*(?:\.\.\.)?)\s*$")
 _DOC_SECTION_RE = re.compile(r"^[A-Z][A-Z0-9 _-]{2,}::?\s*$")
 
 
@@ -1931,7 +2300,10 @@ def annotate_replace(path: Path, members: dict[str, str], class_name: str | None
             continue
         if match.group(1).strip() == members[member]:
             continue
-        lines[index] = stripped[: match.start(1)].rstrip() + " " + members[member] + ":\n"
+        # Keep a generated one-line ``...`` body intact while retargeting the
+        # return expression.  Older versions only matched body-ending ``:``
+        # declarations, so stale FLINT/NTL contracts could survive reruns.
+        lines[index] = stripped[: match.start(1)] + members[member] + stripped[match.end(1) :] + "\n"
         edited.append(member)
     path.write_text("".join(lines), encoding="utf-8")
     return edited
@@ -1987,7 +2359,13 @@ def annotate_overloads(path: Path, members: dict[str, tuple[str, ...]], class_na
         detected_class = _class_name(line)
         if detected_class is not None:
             current_class = detected_class
-        if current_class == class_name and line.strip() == "@overload":
+        # A module-level function can appear after a class declaration (for
+        # example ``matrix`` follows ``matrix.options``).  The lightweight
+        # line walker does not reset ``current_class`` on dedent, so derive the
+        # effective scope from indentation before cleaning module overloads.
+        line_indent = len(line) - len(line.lstrip())
+        effective_class = current_class if line_indent else None
+        if effective_class == class_name and line.strip() == "@overload":
             cursor = index
             while cursor < len(lines) and lines[cursor].strip() == "@overload":
                 cursor += 1
@@ -2266,6 +2644,42 @@ def annotate_insertions(path: Path, classes: dict[str, tuple[str, ...]]) -> list
     no-op string expression.
     """
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    # A subclass insertion may replace an older generated declaration after
+    # a runtime probe discovers another implementation (for example FLINT vs
+    # NTL polynomials).  Remove only one-line ``...`` declarations belonging
+    # to this insertion class, retaining documented method bodies.  This also
+    # collapses duplicates left by an older annotator version while keeping
+    # the operation idempotent for the current declaration.
+    filtered: list[str] = []
+    current_class: str | None = None
+    kept_declarations: set[tuple[str, str]] = set()
+    desired_by_class: dict[str, dict[str, set[str]]] = {}
+    for class_name, declarations in classes.items():
+        member_map: dict[str, set[str]] = {}
+        for declaration in declarations:
+            match = re.match(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", declaration)
+            if match:
+                member_map.setdefault(match.group(1), set()).add(declaration)
+        desired_by_class[class_name] = member_map
+    for line in lines:
+        detected_class = _class_name(line)
+        if detected_class is not None:
+            current_class = detected_class
+        match = _DEF_RE.match(line)
+        if (
+            current_class in desired_by_class
+            and match is not None
+            and line.strip().endswith("...")
+            and match.group("name") in desired_by_class[current_class]
+        ):
+            normalized = line.strip()
+            desired = desired_by_class[current_class][match.group("name")]
+            key = (current_class, normalized)
+            if normalized not in desired or key in kept_declarations:
+                continue
+            kept_declarations.add(key)
+        filtered.append(line)
+    lines = filtered
     inserted: list[str] = []
     for class_name, declarations in classes.items():
         class_index = next(
@@ -2303,9 +2717,76 @@ def annotate_insertions(path: Path, classes: dict[str, tuple[str, ...]]) -> list
         inserted.extend(declaration.split("(", 1)[0].removeprefix("def ") for declaration in missing)
     if inserted:
         path.write_text("".join(lines), encoding="utf-8")
-        if any("Iterator[" in declaration for declarations in classes.values() for declaration in declarations):
+        if any("Iterator" in declaration for declarations in classes.values() for declaration in declarations):
             ensure_typing_name(path, "Iterator")
     return inserted
+
+
+def cleanup_forwarding_declarations(
+    path: Path,
+    classes: dict[str, tuple[str, ...]],
+) -> list[str]:
+    """Remove stale one-line forwarders when a real method body exists.
+
+    A previous pass may have inserted ``def method(...) -> T: ...`` for an
+    inherited method, then a later source refresh may expose a concrete method
+    body in the same subclass.  Keeping both declarations makes IDE lookup
+    order-dependent.  The cleanup is AST-scoped to the explicit class/member
+    map above and never touches legitimate overload blocks.
+    """
+    text = path.read_text(encoding="utf-8")
+    try:
+        tree = ast.parse(text, filename=str(path), type_comments=True)
+    except SyntaxError:
+        return []
+    targets = {
+        class_name: {
+            (match.group(1) if match is not None else declaration)
+            for declaration in declarations
+            if (match := re.match(r"def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", declaration))
+            or declaration.isidentifier()
+        }
+        for class_name, declarations in classes.items()
+    }
+    remove_lines: set[int] = set()
+    removed: list[str] = []
+    for cls in [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]:
+        names = targets.get(cls.name)
+        if not names:
+            continue
+        methods = [
+            node
+            for node in cls.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names
+        ]
+        has_real_body = any(
+            not (
+                len(node.body) == 1
+                and isinstance(node.body[0], ast.Expr)
+                and isinstance(node.body[0].value, ast.Constant)
+                and node.body[0].value.value is Ellipsis
+            )
+            for node in methods
+        )
+        if not has_real_body:
+            continue
+        for node in methods:
+            if (
+                len(node.body) == 1
+                and isinstance(node.body[0], ast.Expr)
+                and isinstance(node.body[0].value, ast.Constant)
+                and node.body[0].value.value is Ellipsis
+                and node.lineno == node.end_lineno
+            ):
+                remove_lines.add(node.lineno - 1)
+                removed.append(node.name)
+    if not remove_lines:
+        return []
+    path.write_text(
+        "".join(line for index, line in enumerate(text.splitlines(keepends=True)) if index not in remove_lines),
+        encoding="utf-8",
+    )
+    return removed
 
 
 def _line_offsets(text: str) -> list[int]:
@@ -2383,6 +2864,8 @@ def annotate_protocol_returns(path: Path) -> list[str]:
         path.write_text(text, encoding="utf-8")
         if any(annotation == "Self" for _, annotation, _ in edits):
             ensure_typing_name(path, "Self")
+        if any(annotation == "Iterator" or annotation.startswith("Iterator[") for _, annotation, _ in edits):
+            ensure_typing_name(path, "Iterator")
     return [name for _, _, name in sorted(edits)]
 
 
@@ -2996,6 +3479,196 @@ def _doc_numeric_self_summary_annotation(summary: str, owner_name: str | None) -
     return "Self"
 
 
+def _doc_metric_contract_annotation(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    summary: str,
+    owner_name: str | None = None,
+) -> str | None:
+    """Resolve source-level metric protocols shared by Sage parents.
+
+    ``cardinality()``, ``dimension()``, ``rank()`` and ``order()`` are
+    deliberately *not* receiver-preserving methods: their values depend on
+    the parent and often differ between finite/infinite or native/Sage scalar
+    implementations.  They do, however, have stable mathematical result
+    families.  Encoding those families as explicit unions gives PyCharm a
+    useful, honest completion surface while retaining every runtime branch.
+
+    This is a method-semantic contract, not a class allow-list.  Existing
+    concrete annotations and overloads win because the caller invokes this
+    helper only after those passes have left a return missing.
+    """
+    # A cardinality is a finite Sage Integer or the singleton +Infinity.  A
+    # few combinatorial implementations return a native int, so retain it in
+    # the union.  Explicit infinity-only documentation can be made narrower.
+    if node.name == "cardinality":
+        if re.search(r"(?:\\infty|\binfinity\b|\bplus\s*infinity\b)", summary, re.IGNORECASE):
+            return "'sage.rings.infinity.PlusInfinity'"
+        return CARDINALITY_RETURN_UNION
+
+    # Dimensions are finite Python/Sage integers for concrete spaces and
+    # +Infinity for formal/infinite parents.  The source wording is not
+    # required: a method named ``dimension`` has this protocol by definition.
+    if node.name == "dimension":
+        if re.search(r"(?:\\infty|\binfinity\b|\bplus\s*infinity\b)", summary, re.IGNORECASE):
+            return "'sage.rings.infinity.PlusInfinity'"
+        return CARDINALITY_RETURN_UNION
+
+    # Rank is an integer-valued invariant in Sage's combinatorics and linear
+    # algebra APIs.  Keep the native/Sage alternatives explicit; unlike
+    # cardinality, rank does not use +Infinity in the documented methods.
+    if node.name == "rank":
+        return "'sage.rings.integer.Integer | int'"
+
+    # Parent characteristics and generator/axis counts use either Sage's
+    # Integer wrapper or a native Python count depending on the Cython/backend
+    # implementation.  Both are stable scalar contracts and do not depend on
+    # the receiver's concrete element parent.
+    if node.name == "characteristic":
+        return "'sage.rings.integer.Integer | int'"
+    if node.name in {"ngens", "nrows", "ncols"}:
+        return "'sage.rings.integer.Integer | int'"
+
+    # Polynomial backends frequently override these methods in Cython without
+    # repeating the base-class return annotation.  Their source contracts are
+    # stable across FLINT/NTL/generic implementations: degree is an integer,
+    # gcd/shift/reverse/truncate stay in the polynomial parent, and Euclidean
+    # division returns quotient/remainder from that same parent.  Restrict the
+    # rule to polynomial owners so unrelated graph/group ``degree`` methods do
+    # not inherit a false scalar contract.
+    if owner_name and "polynomial" in owner_name.casefold():
+        if node.name == "degree":
+            return "'sage.rings.integer.Integer | int'"
+        if node.name in {"derivative", "_derivative_"}:
+            # Univariate and multivariate polynomial derivatives remain in
+            # the receiver's polynomial parent (the variable/argument only
+            # selects the derivation direction).
+            return "Self"
+        if node.name == "gcd":
+            return "Self"
+        if node.name == "quo_rem":
+            return "tuple[Self, Self]"
+        if node.name in {"shift", "reverse", "truncate"}:
+            return "Self"
+        if node.name in {"valuation", "ord"}:
+            # The zero polynomial has +Infinity valuation; nonzero values are
+            # Sage/native integers depending on the backend.
+            return CARDINALITY_RETURN_UNION
+
+    # Several low-level element implementations state the parent condition
+    # explicitly (``Add two ... with the same parent``).  That is enough to
+    # preserve the concrete receiver, even when the class name does not end
+    # in ``Element`` (for example ``MPComplexNumber`` or ``LaurentSeries``).
+    # Precision lifts carry the same parent guarantee and are likewise
+    # receiver-preserving.  Rich-comparison hooks are excluded: their result
+    # is a predicate, not another element.
+    if re.search(r"\bsame parent(?:s)?\b", summary, re.IGNORECASE):
+        if node.name in {"_add_", "_sub_", "_mul_", "_div_", "_lmul_", "_rmul_", "lift_to_precision"}:
+            return "Self"
+
+    # Concrete polynomial backends repeat the arithmetic protocol in several
+    # Cython classes and often omit the inherited annotation.  These internal
+    # operations are parent-preserving; public ``__mul__``/``__call__`` remain
+    # unresolved because their operand can select a vector or scalar branch.
+    if owner_name and "polynomial" in owner_name.casefold() and not owner_name.casefold().endswith("ring"):
+        if node.name in {
+            "_add_", "_sub_", "_mul_", "_lmul_", "_rmul_", "_neg_",
+            "__neg__", "__pos__", "__lshift__", "__rshift__", "__mod__",
+            "_mod_", "__floordiv__", "_floordiv_",
+        }:
+            return "Self"
+        if node.name == "__pow__":
+            return POLYNOMIAL_POWER_UNION
+
+    # ``IntegerMod_int*``/``IntegerMod_gmp`` are concrete residue elements,
+    # but their class names do not contain the ``Element`` suffix used by the
+    # generic arithmetic rule below.  Their low-level ring operations always
+    # return the same residue implementation selected by the modulus.
+    if owner_name and owner_name.casefold().startswith("integermod"):
+        if node.name in {"_add_", "_sub_", "_mul_", "_div_", "_neg_", "__neg__", "__pos__"}:
+            return "Self"
+        if node.name == "__pow__":
+            return "Self"
+
+    # Matrix implementations share the same in-place storage protocol for
+    # low-level elementwise arithmetic.  The public multiplication operation
+    # is intentionally excluded because matrix-vector products return a
+    # different parent-dependent family.
+    if owner_name and owner_name.casefold().startswith("matrix"):
+        if node.name in {"_add_", "_sub_", "_lmul_", "_rmul_", "__neg__", "__pos__"}:
+            return "Self"
+        # The matrix0 transformation helpers explicitly document that they
+        # allocate and return a *new matrix*.  Their implementation delegates
+        # construction to the receiver's concrete ``new_matrix`` path, so
+        # ``Self`` preserves the dense/sparse implementation selected by the
+        # caller without collapsing it to matrix0.Matrix.
+        if node.name.startswith("with_") and re.search(
+            r"\bnew\s+matrix\b|新(?:的)?矩阵", summary, re.IGNORECASE
+        ):
+            return "Self"
+
+    # Concrete element arithmetic is implemented after Sage's coercion layer
+    # has selected a common parent, so these low-level operations preserve the
+    # receiver implementation.  Keep the receiver suffix guard: matrix and
+    # other parent-level APIs intentionally have separate overload contracts.
+    # The torsion-quadratic-module ``_mul_`` is an inner product and is
+    # excluded because it returns a scalar rather than another element.
+    if (
+        owner_name
+        and re.search(r"(?:Element|element)$", owner_name)
+        and node.name in {"_add_", "_sub_", "_mul_", "_lmul_", "_rmul_", "_neg_", "__neg__", "__pos__"}
+        and not (owner_name == "TorsionQuadraticModuleElement" and node.name == "_mul_")
+    ):
+        return "Self"
+
+    # Multiplicative inverses and powers of concrete algebra/ring/group
+    # elements preserve the implementation selected by their parent.  Keep
+    # the abstract protocol classes and the two documented exceptions out:
+    # ``Element`` delegates through coercion, while free-module inversion /
+    # powering is explicitly unsupported and cluster-algebra division can
+    # leave the parent.
+    if (
+        owner_name
+        and re.search(r"(?:Element|element)$", owner_name)
+        and owner_name not in {
+            "Element",
+            "RingElement",
+            "AdditiveGroupElement",
+            "MultiplicativeGroupElement",
+            "InfinityElement",
+            "FreeModuleElement",
+            "ClusterAlgebraElement",
+        }
+        and node.name in {"__invert__", "__pow__"}
+    ):
+        return "Self"
+
+    # Conjugation is an involution on Sage's concrete element/group/ideal
+    # implementations.  The module-level combinatorics helper has no
+    # receiver (``owner_name`` is absent) and therefore remains dynamic.
+    if node.name == "conjugate" and owner_name:
+        return "Self"
+
+    # ``list()`` methods in Sage return a materialized Python list.  Keep the
+    # two known interface methods whose names are compatibility shims for
+    # non-Python containers fail-closed; their docs do not promise a Python
+    # list value.
+    if node.name == "list" and owner_name not in {"MPowerSeries", "Singular"}:
+        return "list"
+
+    # Feature modules expose a small list of feature descriptors.  The
+    # package-level ``sage.features.all.all_features`` is the sole generator
+    # variant and is overridden by its curated module contract below.
+    if node.name == "all_features":
+        return "list"
+
+    # Group/element/morphism order can be finite, infinite, or intentionally
+    # unknown (some APIs return ``None`` instead of raising).  This union is
+    # more precise than UNKNOWN and matches Sage's documented alternatives.
+    if node.name == "order":
+        return ORDER_RETURN_UNION
+    return None
+
+
 def _doc_explicit_type_annotation(
     raw_output: str,
     class_index: dict[str, tuple[str, ...]],
@@ -3134,6 +3807,15 @@ def _doc_output_annotation(
         # omitted the docstring entirely.
         if node.name.startswith("_test_"):
             return "None"
+        # Python's data model requires ``__iter__`` to return an iterator.
+        # The yielded element may depend on a dynamic Sage parent, so expose
+        # only the stable outer protocol when no docstring gives a narrower
+        # receiver-specific contract.
+        if node.name == "__iter__":
+            return "Iterator"
+        metric_annotation = _doc_metric_contract_annotation(node, "", owner_name)
+        if metric_annotation is not None:
+            return metric_annotation
         return None
     # Generated Sage docstrings wrap the first summary sentence over several
     # physical lines (``xlcm`` is a representative case).  Join only that
@@ -3163,6 +3845,23 @@ def _doc_output_annotation(
     summary_annotation = _doc_summary_annotation(node, summary, class_index, owner_name)
     if summary_annotation is not None:
         return summary_annotation
+    # Metric/parent contracts are stronger than a translated ``OUTPUT: Any``
+    # label.  Evaluate the restricted backend rules before the per-output
+    # parser can fail closed on unrelated prose (for example a Chinese
+    # description containing the word ``or``).
+    if owner_name and (
+        "polynomial" in owner_name.casefold()
+        or owner_name.casefold().startswith("integermod")
+        or owner_name.casefold().startswith("matrix")
+        # Concrete finite-field and ring elements share the same low-level
+        # parent-preserving arithmetic protocol.  Their class names vary by
+        # backend (for example ``FiniteFieldElement_pari_ffelt``), so include
+        # the stable ``Element`` suffix in this guarded prepass.
+        or re.search(r"(?:Element|element)$", owner_name)
+    ):
+        metric_annotation = _doc_metric_contract_annotation(node, raw_summary, owner_name)
+        if metric_annotation is not None:
+            return metric_annotation
     # Preserve capitalization for Chinese summaries that name a concrete
     # class inline (``MatrixWindow 对象`` or ``Graphics 对象``).  The regular
     # English summary path intentionally lowercases its input for stable
@@ -3200,6 +3899,17 @@ def _doc_output_annotation(
         )
         if parenthesized_head:
             type_head = parenthesized_head.group(1)
+        # Several polynomial and algebra element docstrings state the result
+        # directly as an element of the receiver's parent.  This is stronger
+        # than a public ``Element`` base and is safe to expose as ``Self``;
+        # conditional coefficient/index branches use different wording and
+        # remain fail-closed.
+        parent_output = output.replace("`", "")
+        if owner_name and (
+            re.match(r"^(?:an?|the)\s+element of the same parent\b", parent_output)
+            or re.match(r"^element of the parent of (?:this element|self)\b", parent_output)
+        ):
+            return "Self"
         if type_head in {"iterator", "python iterator"}:
             # The element parameter is intentionally unspecified; exposing
             # the stable iterator protocol still gives callers ``__next__``
@@ -3491,6 +4201,14 @@ def _doc_output_annotation(
             return "bool"
     if re.match(r"^(?:string|latex|\\latex)\s+representation\b", summary, re.IGNORECASE):
         return "str"
+    metric_annotation = _doc_metric_contract_annotation(node, raw_summary, owner_name)
+    if metric_annotation is not None:
+        return metric_annotation
+    # Any remaining ``__iter__`` implementation still satisfies the Python
+    # iterator protocol even when its prose is only an examples block or a
+    # domain-specific description.  Do not guess the yielded element type.
+    if node.name == "__iter__":
+        return "Iterator"
     return None
 
 
@@ -3620,6 +4338,14 @@ def main() -> int:
 
     root = args.stub_root.resolve()
     total = 0
+    for relative, classes in CURATED_FORWARDING_CLEANUPS.items():
+        path = root / relative
+        if not path.is_file():
+            continue
+        removed = cleanup_forwarding_declarations(path, classes)
+        if removed:
+            verify(path)
+            print(f"{relative}: removed stale forwarders {', '.join(removed)}")
     for relative, classes in CURATED_ANNOTATIONS.items():
         path = root / relative
         if not path.is_file():

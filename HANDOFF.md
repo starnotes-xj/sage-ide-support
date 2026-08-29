@@ -37,16 +37,16 @@ Gradle、索引和 ZIP 静态结果不能替代 fresh PyCharm GUI smoke。
 
 ## 5. 当前验证状态（Sage 10.9 / Python 3.13）
 
-- Staging 索引：`2,843` 源文件、`84,767` entries、`52,347` signatures、`96` diagnostics、coverage `1.0`、missing `0`；generator 报告保留 `1` 个既有 conflicts gate warning。
-- 合同审计：`UNKNOWN=29,190`、`CONCRETE=4,549`、`TYPE_VARIABLE=853`、`BROAD_BUILTIN=12,001`、`NONE=4,688`、`UNION_OR_OPTIONAL=480`、`DYNAMIC=17`、`STRUCTURAL_BASE=44`。相对第 13 节记录的 `29,879`，减少 `689`。
-- 通过：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`（`121` 项）、`compileall`、`git diff --check`、staging `generate.py` 和 `audit_contracts.py`。
-- WSL 运行抽样：`iter(f)` 为 `list_iterator`，`f.factor()` 为 `Factorization`，`f.quo_rem(x)` 为 `tuple`；有限域加减乘除/逆元保持具体元素实现。
+- Staging 索引：`2,843` 源文件、`84,969` entries、`52,363` signatures、`104` diagnostics、coverage `1.0`、missing `0`；generator 报告保留 `1` 个既有 conflicts gate warning。
+- 合同审计：`UNKNOWN=27,478`、`CONCRETE=4,844`、`TYPE_VARIABLE=1,414`、`BROAD_BUILTIN=12,216`、`NONE=4,690`、`UNION_OR_OPTIONAL=1,117`、`DYNAMIC=17`、`STRUCTURAL_BASE=45`。本轮补充动态元素/父对象/条件矩阵合同后，相对上一记录再减少 `1,712`。
+- 通过：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`（`125` 项）、`compileall`、`git diff --check`、重复字典键检查、staging `generate.py` 和 `audit_contracts.py`。
+- WSL 运行抽样：矩阵 `find(indices=False/True)` 为具体矩阵/`dict`，`krylov_basis(output_rows=...)` 为矩阵或带行 profile 的元组；有限域 `from_integer`、`prime_subfield`、`polynomial`、元素 `_vector_`/`_integer_` 与 Pari/Givaro/NTL 元素运算均按实现类收窄。
 - 当前索引文件：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.json`。
 
 ## 6. 风险与下一步
 
-- 最新可用 ZIP `G:\sage-build\staging-build6\sage-core-0.1.0-dev-ctf-output-contracts-20260829-r5.zip` 未包含本轮新增合同；本轮未重新打包、安装或执行 PyCharm GUI smoke。
+- 最新可用 ZIP `G:\sage-build\staging-build6\sage-core-0.1.0-dev-ctf-output-contracts-20260829-r5.zip` 未包含本轮新增合同；本轮仍未重新打包、安装或执行 PyCharm GUI smoke。
 - 尚无可用 Windows installer；`verify-upstream-staging.ps1 -FinalCheck` 仍因官方 checkout SHA 为 `3b652e714c12009bb69f0a2d2416dad02259fe5d` 而安全失败，官方 checkout 未修改。
-- 下一步：以当前 staging 索引重建插件 ZIP，安装后验证 `test2.sage` 的类型/补全、Ctrl+Q、`R.<` 编辑体验和运行日志；若失败，只按 fresh `idea.log` 的最小堆栈修复，再重新执行对应 build/test/audit/FinalCheck。
+- 下一步：以当前 staging 索引重建插件 ZIP，安装后验证 `test2.sage` 的类型/补全、Ctrl+Q、`R.<` 编辑体验和运行日志；继续新增合同时必须先用 Sage 源码或 WSL 10.9 运行类型证明，动态工厂无法证明时保持 UNKNOWN。
 
 最近提交：`884362d`（迭代器、因式分解、商余和有限域元素返回合同）。
