@@ -65,6 +65,30 @@ FINITE_FIELD_MORPHISM_UNION = (
     "'sage.categories.morphism.IdentityMorphism | "
     "sage.rings.finite_rings.hom_finite_field.FiniteFieldHomomorphism_generic'"
 )
+MATROID_RETURN_UNION = (
+    "'sage.matroids.circuit_closures_matroid.CircuitClosuresMatroid | "
+    "sage.matroids.graphic_matroid.GraphicMatroid | "
+    "sage.matroids.linear_matroid.BinaryMatroid | "
+    "sage.matroids.linear_matroid.TernaryMatroid | "
+    "sage.matroids.linear_matroid.QuaternaryMatroid | "
+    "sage.matroids.linear_matroid.RegularMatroid'"
+)
+POLYHEDRON_RETURN_UNION = (
+    "'sage.geometry.polyhedron.backend_ppl.Polyhedron_ZZ_ppl | "
+    "sage.geometry.polyhedron.backend_ppl.Polyhedron_QQ_ppl | "
+    "sage.geometry.polyhedron.backend_cdd.Polyhedron_QQ_cdd | "
+    "sage.geometry.polyhedron.backend_cdd_rdf.Polyhedron_RDF_cdd | "
+    "sage.geometry.polyhedron.backend_normaliz.Polyhedron_QQ_normaliz | "
+    "sage.geometry.polyhedron.backend_normaliz.Polyhedron_ZZ_normaliz | "
+    "sage.geometry.polyhedron.backend_polymake.Polyhedron_QQ_polymake | "
+    "sage.geometry.polyhedron.backend_polymake.Polyhedron_ZZ_polymake | "
+    "sage.geometry.polyhedron.backend_field.Polyhedron_field | "
+    "sage.geometry.polyhedron.backend_number_field.Polyhedron_number_field'"
+)
+FINITE_POSET_RETURN_UNION = (
+    "'sage.combinat.posets.posets.FinitePoset | "
+    "sage.combinat.posets.lattices.FiniteLatticePoset'"
+)
 # Cardinality/size metrics are not all represented by one Python/Sage scalar
 # in Sage: finite objects normally return ``Integer`` while infinite parents
 # return ``PlusInfinity``.  Keep the union explicit instead of collapsing to
@@ -99,6 +123,63 @@ MATRIX_POLYNOMIAL_UNION = (
     "sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p | "
     "sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX | "
     "sage.rings.polynomial.polynomial_element_generic.Polynomial_generic_dense_field'"
+)
+# Poset/combinatorics polynomial methods may use the default ``ZZ`` FLINT
+# implementation or a caller-supplied Sage base ring.  Keep the concrete
+# univariate implementations explicit; do not expose ``Polynomial``'s public
+# protocol base as the inferred result.
+POLYNOMIAL_RETURN_UNION = (
+    "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint | "
+    "sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint | "
+    "sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint | "
+    "sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p | "
+    "sage.rings.polynomial.polynomial_zz_pex.Polynomial_ZZ_pEX | "
+    "sage.rings.polynomial.polynomial_element_generic.Polynomial_generic_dense_field'"
+)
+# ``MatrixSpace`` constructs an element using the base ring's selected
+# implementation.  The parent class cannot express that dispatch, so keep
+# the concrete implementation family explicit for methods such as
+# ``identity_matrix``/``random_element``/``from_vector``.  Every member here
+# is an actual Sage matrix implementation (the public ``matrix0.Matrix``
+# protocol bases are intentionally excluded).
+MATRIX_ELEMENT_UNION = (
+    "'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense | "
+    "sage.matrix.matrix_complex_double_dense.Matrix_complex_double_dense | "
+    "sage.matrix.matrix_cyclo_dense.Matrix_cyclo_dense | "
+    "sage.matrix.matrix_double_dense.Matrix_double_dense | "
+    "sage.matrix.matrix_double_sparse.Matrix_double_sparse | "
+    "sage.matrix.matrix_gap.Matrix_gap | "
+    "sage.matrix.matrix_generic_dense.Matrix_generic_dense | "
+    "sage.matrix.matrix_generic_sparse.Matrix_generic_sparse | "
+    "sage.matrix.matrix_gf2e_dense.Matrix_gf2e_dense | "
+    "sage.matrix.matrix_gfpn_dense.Matrix_gfpn_dense | "
+    "sage.matrix.matrix_integer_dense.Matrix_integer_dense | "
+    "sage.matrix.matrix_integer_sparse.Matrix_integer_sparse | "
+    "sage.matrix.matrix_laurent_mpolynomial_dense.Matrix_laurent_mpolynomial_dense | "
+    "sage.matrix.matrix_mod2_dense.Matrix_mod2_dense | "
+    "sage.matrix.matrix_modn_dense_double.Matrix_modn_dense_double | "
+    "sage.matrix.matrix_modn_dense_float.Matrix_modn_dense_float | "
+    "sage.matrix.matrix_modn_sparse.Matrix_modn_sparse | "
+    "sage.matrix.matrix_mpolynomial_dense.Matrix_mpolynomial_dense | "
+    "sage.matrix.matrix_numpy_dense.Matrix_numpy_dense | "
+    "sage.matrix.matrix_numpy_integer_dense.Matrix_numpy_integer_dense | "
+    "sage.matrix.matrix_polynomial_dense.Matrix_polynomial_dense | "
+    "sage.matrix.matrix_rational_dense.Matrix_rational_dense | "
+    "sage.matrix.matrix_rational_sparse.Matrix_rational_sparse | "
+    "sage.matrix.matrix_real_double_dense.Matrix_real_double_dense | "
+    "sage.matrix.matrix_symbolic_dense.Matrix_symbolic_dense | "
+    "sage.matrix.matrix_symbolic_sparse.Matrix_symbolic_sparse'"
+)
+MATRIX_SPACE_MODULE_UNION = (
+    "'sage.modules.free_module.FreeModule_ambient | "
+    "sage.modules.free_module.FreeModule_ambient_domain | "
+    "sage.modules.free_module.FreeModule_ambient_pid | "
+    "sage.modules.free_module.FreeModule_ambient_field'"
+)
+MATRIX_SPACE_SUBMODULE_UNION = (
+    "'sage.modules.free_module.FreeModule_submodule_pid | "
+    "sage.modules.free_module.FreeModule_submodule_field | "
+    "sage.modules.with_basis.subquotient.SubmoduleWithBasis'"
 )
 
 # ADD: member name -> annotation expression for unannotated defs.
@@ -596,11 +677,116 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     "sage/schemes/elliptic_curves/ell_generic.pyi": {
         "EllipticCurve_generic": {
             "a_invariants": "tuple",
+            "b_invariants": "tuple",
+            "c_invariants": "tuple",
+            "is_exact": "bool",
+            "is_on_curve": "bool",
+            "is_isomorphic": "bool",
+            "isomorphisms": "list['sage.schemes.elliptic_curves.weierstrass_morphism.WeierstrassIsomorphism']",
+            "isomorphism": "'sage.schemes.elliptic_curves.weierstrass_morphism.WeierstrassIsomorphism'",
+            "isomorphism_to": "'sage.schemes.elliptic_curves.weierstrass_morphism.WeierstrassIsomorphism'",
+            "frobenius_isogeny": "'sage.schemes.elliptic_curves.hom_frobenius.EllipticCurveHom_frobenius'",
+            "plot": "'sage.plot.graphics.Graphics'",
             # The generic curve API constructs a point on the curve.  More
             # specific curve classes override this below, so this remains
             # sound for non-finite base rings as well.
             "__call__": "'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint'",
             "gen": "'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint'",
+        },
+    },
+    "sage/schemes/elliptic_curves/ell_rational_field.pyi": {
+        "EllipticCurve_rational_field": {
+            # The rational-curve implementation exposes stable scalar and
+            # container results used by common CTF/EC workflows.  Methods
+            # that change the coefficient field are intentionally omitted.
+            "_set_rank": "None",
+            "_set_torsion_order": "None",
+            "_set_cremona_label": "None",
+            "_set_conductor": "None",
+            "_set_modular_degree": "None",
+            "_set_gens": "None",
+            "lmfdb_page": "str",
+            "is_p_integral": "bool",
+            "is_integral": "bool",
+            "conductor": "'sage.rings.integer.Integer'",
+            "Np": "'sage.rings.integer.Integer'",
+            "aplist": "list['sage.rings.integer.Integer | int']",
+            "anlist": "list['sage.rings.integer.Integer | int']",
+            "q_expansion": "'sage.rings.power_series_poly.PowerSeries_poly'",
+            "analytic_rank": "'sage.rings.integer.Integer | tuple[sage.rings.integer.Integer, sage.rings.real_mpfr.RealNumber]'",
+            "analytic_rank_upper_bound": "'sage.rings.integer.Integer'",
+            "three_selmer_rank": "'sage.rings.integer.Integer'",
+            "rank": "'sage.rings.integer.Integer'",
+            "gens": "list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field']",
+            "gens_certain": "bool",
+            "ngens": "int",
+            "regulator": "'sage.rings.real_mpfr.RealNumber'",
+            "minimal_model": "Self",
+            "is_minimal": "bool",
+            "is_p_minimal": "bool",
+            "tamagawa_number": "'sage.rings.integer.Integer'",
+            "tamagawa_number_old": "'sage.rings.integer.Integer'",
+            "tamagawa_exponent": "'sage.rings.integer.Integer'",
+            "tamagawa_product": "'sage.rings.integer.Integer'",
+            "real_components": "int",
+            "has_good_reduction_outside_S": "bool",
+            "selmer_rank": "'sage.rings.integer.Integer | cypari2.gen.Gen'",
+            "rank_bound": "'sage.rings.integer.Integer | cypari2.gen.Gen'",
+            "an": "'sage.rings.integer.Integer'",
+            "ap": "'sage.rings.integer.Integer'",
+            "modular_degree": "'sage.rings.integer.Integer'",
+            "congruence_number": "'sage.rings.integer.Integer'",
+            "cremona_label": "str",
+            "reduction": "'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field'",
+            "torsion_order": "'sage.rings.integer.Integer'",
+            "torsion_points": "list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field']",
+            "root_number": "'sage.rings.integer.Integer'",
+            "has_cm": "bool",
+            "cm_discriminant": "'sage.rings.integer.Integer'",
+            "has_rational_cm": "bool",
+            "quadratic_twist": "Self",
+            "minimal_quadratic_twist": "Self",
+            "is_isogenous": "bool",
+            "isogeny_degree": "'sage.rings.integer.Integer'",
+            "optimal_curve": "Self",
+            "manin_constant": "'sage.rings.integer.Integer'",
+            "is_semistable": "bool",
+            "is_ordinary": "bool",
+            "is_good": "bool",
+            "is_supersingular": "bool",
+            "supersingular_primes": "list['sage.rings.integer.Integer']",
+            "ordinary_primes": "list['sage.rings.integer.Integer']",
+            "height": "'sage.rings.real_mpfr.RealNumber'",
+            "faltings_height": "'sage.rings.real_mpfr.RealNumber'",
+            "integral_x_coords_in_interval": "set['sage.rings.integer.Integer']",
+            "integral_points": "list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field']",
+            "S_integral_points": "list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field']",
+            "database_curve": "Self",
+            "two_descent": "bool",
+            "CPS_height_bound": "float",
+            "silverman_height_bound": "float",
+            "antilogarithm": "'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field'",
+            "elliptic_exponential": "'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_field'",
+            "is_local_integral_model": "bool",
+            "local_integral_model": "Self",
+            "global_integral_model": "Self",
+            "integral_short_weierstrass_model": "Self",
+            "point_search": "list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field']",
+            "saturation": "tuple[list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field'], 'sage.rings.integer.Integer', 'sage.rings.real_mpfr.RealNumber']",
+            "isogeny_graph": "'sage.graphs.graph.Graph'",
+            "isogeny_class": "'sage.schemes.elliptic_curves.isogeny_class.IsogenyClass_EC_Rational'",
+            "isogenies_prime_degree": "list['sage.schemes.elliptic_curves.ell_curve_isogeny.EllipticCurveIsogeny']",
+            "kodaira_type": "'sage.schemes.elliptic_curves.kodaira_symbol.KodairaSymbol_class'",
+            "kodaira_type_old": "'sage.schemes.elliptic_curves.kodaira_symbol.KodairaSymbol_class'",
+            "mwrank_curve": "'sage.libs.eclib.interface.mwrank_EllipticCurve'",
+            "modular_form": "'sage.modular.modform.element.ModularFormElement_elliptic_curve'",
+            "newform": "'sage.modular.modform.element.ModularFormElement_elliptic_curve'",
+            "q_eigenform": "'sage.rings.power_series_poly.PowerSeries_poly'",
+            "lseries": "'sage.schemes.elliptic_curves.lseries_ell.Lseries_ell'",
+            "galois_representation": "'sage.schemes.elliptic_curves.gal_reps.GaloisRepresentation'",
+            "modular_symbol_space": "'sage.modular.modsym.subspace.ModularSymbolsSubspace'",
+            "modular_symbol": "'sage.schemes.elliptic_curves.ell_modular_symbols.ModularSymbolECLIB | sage.schemes.elliptic_curves.ell_modular_symbols.ModularSymbolSage | sage.schemes.elliptic_curves.mod_sym_num.ModularSymbolNumerical'",
+            "tate_curve": "'sage.schemes.elliptic_curves.ell_tate_curve.TateCurve'",
         },
     },
     "sage/rings/integer.pyi": {
@@ -677,6 +863,61 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "basis_completion": "Self",
         },
     },
+    "sage/matrix/matrix_double_dense.pyi": {
+        "Matrix_double_dense": {
+            # Real/complex double dense matrices preserve their concrete
+            # matrix implementation for factorisations and matrix functions.
+            # Scalar diagnostics use the RDF/CDF implementation union because
+            # this shared base is used by both backends.
+            "LU": "tuple[Self, Self, Self]",
+            "QR": "tuple[Self, Self]",
+            "SVD": "tuple[Self, Self, Self]",
+            "__invert__": "Self",
+            "cholesky": "Self",
+            "exp": "Self",
+            "round": "Self",
+            "zero_at": "Self",
+            "determinant": "'sage.rings.real_double.RealDoubleElement | sage.rings.complex_double.ComplexDoubleElement'",
+            "condition": "'sage.rings.real_double.RealDoubleElement'",
+            "log_determinant": "'sage.rings.real_double.RealDoubleElement'",
+            "norm": "'sage.rings.real_double.RealDoubleElement'",
+            "eigenvalues": "list['sage.rings.real_double.RealDoubleElement | sage.rings.complex_double.ComplexDoubleElement']",
+        },
+    },
+    "sage/matrix/matrix_complex_ball_dense.pyi": {
+        "Matrix_complex_ball_dense": {
+            "__invert__": "Self",
+            "exp": "Self",
+            "determinant": "'sage.rings.complex_arb.ComplexBall'",
+            "trace": "'sage.rings.complex_arb.ComplexBall'",
+            "charpoly": "'sage.rings.polynomial.polynomial_complex_arb.Polynomial_complex_arb'",
+            "eigenvalues": "'sage.structure.sequence.Sequence_generic'",
+        },
+    },
+    "sage/matrix/matrix_mpolynomial_dense.pyi": {
+        "Matrix_mpolynomial_dense": {
+            "determinant": "'sage.rings.polynomial.multi_polynomial.MPolynomial'",
+            "echelon_form": "Self",
+            "echelonize": "None",
+            "swapped_columns": "Self",
+        },
+    },
+    "sage/matrix/matrix_integer_sparse.pyi": {
+        "Matrix_integer_sparse": {
+            "charpoly": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+            "minpoly": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+            "rational_reconstruction": "'sage.matrix.matrix_rational_dense.Matrix_rational_dense'",
+            "smith_form": "tuple[Self, Self, Self]",
+        },
+    },
+    "sage/matrix/matrix_rational_sparse.pyi": {
+        "Matrix_rational_sparse": {
+            "add_to_entry": "None",
+            "dense_matrix": "'sage.matrix.matrix_rational_dense.Matrix_rational_dense'",
+            "echelon_form": "Self",
+            "set_row_to_multiple_of_row": "None",
+        },
+    },
     "sage/matrix/matrix0.pyi": {
         "Matrix": {
             # matrix0 implements these operations by allocating through the
@@ -749,6 +990,20 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "slice": "tuple['sage.matrix.matrix_mod2_dense.Matrix_mod2_dense', ...]",
             "submatrix": "Self",
             "transpose": "Self",
+        },
+    },
+    "sage/matrix/matrix_gfpn_dense.pyi": {
+        "Matrix_gfpn_dense": {
+            # MeatAxe finite-extension matrices keep the same concrete
+            # implementation for inversion, division, transpose, and kernel
+            # matrix; trace is one element of the Givaro extension field.
+            "__invert__": "Self",
+            "__truediv__": "Self",
+            "left_kernel_matrix": "Self",
+            "transpose": "Self",
+            "trace": "'sage.rings.finite_rings.element_givaro.FiniteField_givaroElement'",
+            "from_filename": "Self",
+            "randomize": "None",
         },
     },
     "sage/matrix/matrix_integer_dense.pyi": {
@@ -952,6 +1207,527 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             # concrete RealNumber implementation; the conditional index does
             # not change the result family.
             "__getitem__": "'sage.rings.real_mpfr.RealNumber'",
+            # Complex arithmetic and analytic functions stay in the same
+            # arbitrary-precision complex implementation.  Component and
+            # magnitude helpers intentionally narrow to the concrete MPFR
+            # real implementation instead of the public ``Number`` base.
+            "_add_": "Self",
+            "_sub_": "Self",
+            "_mul_": "Self",
+            "_div_": "Self",
+            "__pow__": "Self",
+            "__neg__": "Self",
+            "__pos__": "Self",
+            "__invert__": "Self",
+            "conjugate": "Self",
+            "real": "'sage.rings.real_mpfr.RealNumber'",
+            "imag": "'sage.rings.real_mpfr.RealNumber'",
+            "argument": "'sage.rings.real_mpfr.RealNumber'",
+            "arg": "'sage.rings.real_mpfr.RealNumber'",
+            "norm": "'sage.rings.real_mpfr.RealNumber'",
+            "__abs__": "'sage.rings.real_mpfr.RealNumber'",
+            "exp": "Self",
+            "log": "Self",
+            "sqrt": "Self",
+            "nth_root": "Self",
+            "agm": "Self",
+            "dilog": "Self",
+            "gamma": "Self",
+            "gamma_inc": "Self",
+            "zeta": "Self",
+            "arccos": "Self",
+            "arccosh": "Self",
+            "arcsin": "Self",
+            "arcsinh": "Self",
+            "arctan": "Self",
+            "arctanh": "Self",
+            "coth": "Self",
+            "arccoth": "Self",
+            "csc": "Self",
+            "csch": "Self",
+            "arccsch": "Self",
+            "sec": "Self",
+            "sech": "Self",
+            "arcsech": "Self",
+            "cot": "Self",
+            "cos": "Self",
+            "cosh": "Self",
+            "eta": "Self",
+            "sin": "Self",
+            "sinh": "Self",
+            "tan": "Self",
+            "tanh": "Self",
+            "multiplicative_order": "'sage.rings.infinity.PlusInfinity'",
+            "additive_order": "'sage.rings.infinity.PlusInfinity'",
+            "prec": "'sage.rings.integer.Integer'",
+            "__int__": "int",
+            "__float__": "float",
+            "__complex__": "complex",
+            "algebraic_dependency": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+        },
+    },
+    "sage/rings/real_mpfi.pyi": {
+        "RealIntervalFieldElement": {
+            # MPFI interval arithmetic and elementary functions remain in the
+            # interval parent.  Interval bounds/centers deliberately narrow
+            # to MPFR reals, while integer-like predicates/counts retain
+            # their scalar contracts.
+            "__abs__": "Self",
+            "__add__": "Self",
+            "__sub__": "Self",
+            "__mul__": "Self",
+            "__truediv__": "Self",
+            "__neg__": "Self",
+            "__invert__": "Self",
+            "__lshift__": "Self",
+            "__rshift__": "Self",
+            "real": "Self",
+            "imag": "Self",
+            "argument": "Self",
+            "sqrt": "Self",
+            "square_root": "Self",
+            "square": "Self",
+            "exp": "Self",
+            "exp2": "Self",
+            "log2": "Self",
+            "log10": "Self",
+            "sin": "Self",
+            "cos": "Self",
+            "tan": "Self",
+            "gamma": "Self",
+            "zeta": "Self",
+            "factorial": "Self",
+            "floor": "Self",
+            "ceil": "Self",
+            "round": "Self",
+            "trunc": "Self",
+            "frac": "Self",
+            "intersection": "Self",
+            "union": "Self",
+            "max": "Self",
+            "min": "Self",
+            "center": "'sage.rings.real_mpfr.RealNumber'",
+            "lower": "'sage.rings.real_mpfr.RealNumber'",
+            "upper": "'sage.rings.real_mpfr.RealNumber'",
+            "diameter": "'sage.rings.real_mpfr.RealNumber'",
+            "absolute_diameter": "'sage.rings.real_mpfr.RealNumber'",
+            "magnitude": "'sage.rings.real_mpfr.RealNumber'",
+            "mignitude": "'sage.rings.real_mpfr.RealNumber'",
+            "relative_diameter": "'sage.rings.real_mpfr.RealNumber'",
+            "precision": "'sage.rings.integer.Integer'",
+            "multiplicative_order": "'sage.rings.infinity.PlusInfinity'",
+            "algebraic_dependency": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+            "simplest_rational": "'sage.rings.rational.Rational'",
+            "unique_integer": "'sage.rings.integer.Integer'",
+            "unique_sign": "int",
+            "unique_trunc": "'sage.rings.integer.Integer'",
+            "is_int": "bool",
+            "lexico_cmp": "int",
+            "fp_rank_diameter": "'sage.rings.integer.Integer'",
+            "bisection": "tuple[Self, Self]",
+            "alea": "'sage.rings.real_mpfr.RealNumber'",
+        },
+    },
+    "sage/rings/real_arb.pyi": {
+        "RealBall": {
+            "__abs__": "Self",
+            "real": "Self",
+            "imag": "Self",
+            "sqrt": "Self",
+            "rsqrt": "Self",
+            "sqrtpos": "Self",
+            "sqrt1pm1": "Self",
+            "__neg__": "Self",
+            "__invert__": "Self",
+            "__lshift__": "Self",
+            "__rshift__": "Self",
+            "exp": "Self",
+            "expm1": "Self",
+            "log": "Self",
+            "log1p": "Self",
+            "sin": "Self",
+            "cos": "Self",
+            "tan": "Self",
+            "gamma": "Self",
+            "gamma_inc_lower": "Self",
+            "rgamma": "Self",
+            "zeta": "Self",
+            "zetaderiv": "Self",
+            "agm": "Self",
+            "erf": "Self",
+            "erfi": "Self",
+            "lambert_w": "Self",
+            "polylog": "Self",
+            "rising_factorial": "Self",
+            "floor": "Self",
+            "ceil": "Self",
+            "round": "Self",
+            "rad": "Self",
+            "rad_as_ball": "Self",
+            "mid": "'sage.rings.real_mpfr.RealNumber'",
+            "lower": "'sage.rings.real_mpfr.RealNumber'",
+            "upper": "'sage.rings.real_mpfr.RealNumber'",
+            "diameter": "'sage.rings.real_mpfr.RealNumber'",
+            "accuracy": "int",
+            "nbits": "int",
+            "union": "Self",
+        },
+    },
+    "sage/rings/complex_arb.pyi": {
+        "ComplexBall": {
+            "__abs__": "'sage.rings.real_arb.RealBall'",
+            "__lshift__": "Self",
+            "__rshift__": "Self",
+            "real": "'sage.rings.real_arb.RealBall'",
+            "imag": "'sage.rings.real_arb.RealBall'",
+            "arg": "'sage.rings.real_arb.RealBall'",
+            "above_abs": "'sage.rings.real_arb.RealBall'",
+            "below_abs": "'sage.rings.real_arb.RealBall'",
+            "log": "Self",
+            "log1p": "Self",
+            "sqrt": "Self",
+            "rsqrt": "Self",
+            "exp": "Self",
+            "exppii": "Self",
+            "sin": "Self",
+            "cos": "Self",
+            "tan": "Self",
+            "gamma": "Self",
+            "rgamma": "Self",
+            "zeta": "Self",
+            "zetaderiv": "Self",
+            "Chi": "Self",
+            "Ci": "Self",
+            "Ei": "Self",
+            "Li": "Self",
+            "Shi": "Self",
+            "Si": "Self",
+            "above_abs": "Self",
+            "below_abs": "Self",
+            "beta": "Self",
+            "chebyshev_T": "Self",
+            "chebyshev_U": "Self",
+            "log_gamma": "Self",
+            "squash": "Self",
+            "trim": "Self",
+            "max": "Self",
+            "min": "Self",
+            "polylog": "Self",
+            "li": "Self",
+            "lambert_w": "Self",
+            "elliptic_e": "Self",
+            "elliptic_f": "Self",
+            "elliptic_k": "Self",
+            "elliptic_pi": "Self",
+            "elliptic_rf": "Self",
+            "elliptic_rg": "Self",
+            "elliptic_rj": "Self",
+            "elliptic_sigma": "Self",
+            "elliptic_zeta": "Self",
+            "elliptic_e_inc": "Self",
+            "elliptic_pi_inc": "Self",
+            "elliptic_invariants": "tuple[Self, Self]",
+            "elliptic_roots": "tuple[Self, Self, Self]",
+            "eisenstein": "list[Self]",
+            "gegenbauer_C": "Self",
+            "hermite_H": "Self",
+            "hypergeometric": "Self",
+            "laguerre_L": "Self",
+            "legendre_P": "Self",
+            "legendre_Q": "Self",
+            "log_barnes_g": "Self",
+            "modular_delta": "Self",
+            "modular_eta": "Self",
+            "modular_j": "Self",
+            "modular_lambda": "Self",
+            "pow": "Self",
+            "psi": "Self",
+            "rising_factorial": "Self",
+            "erf": "Self",
+            "erfc": "Self",
+            "airy": "Self",
+            "airy_ai": "Self",
+            "airy_ai_prime": "Self",
+            "airy_bi": "Self",
+            "airy_bi_prime": "Self",
+            "bessel_I": "Self",
+            "bessel_J": "Self",
+            "bessel_K": "Self",
+            "bessel_Y": "Self",
+            "bessel_J_Y": "tuple[Self, Self]",
+            "round": "Self",
+            "trim": "Self",
+            "union": "Self",
+            "diameter": "'sage.rings.real_mpfr.RealNumber'",
+            "nbits": "int",
+            "accuracy": "int",
+        },
+    },
+    "sage/rings/complex_mpc.pyi": {
+        "MPComplexNumber": {
+            "__abs__": "'sage.rings.real_mpfr.RealNumber'",
+            "__getitem__": "'sage.rings.real_mpfr.RealNumber'",
+            "real": "'sage.rings.real_mpfr.RealNumber'",
+            "imag": "'sage.rings.real_mpfr.RealNumber'",
+            "argument": "'sage.rings.real_mpfr.RealNumber'",
+            "norm": "'sage.rings.real_mpfr.RealNumber'",
+            "sqrt": "Self",
+            "nth_root": "Self",
+            "agm": "Self",
+            "dilog": "Self",
+            "gamma": "Self",
+            "gamma_inc": "Self",
+            "zeta": "Self",
+            "prec": "int",
+        },
+    },
+    "sage/rings/real_mpfr.pyi": {
+        "RealNumber": {
+            # MPFR operations documented as producing a real number remain
+            # in the receiver's concrete precision/rounding domain.  The
+            # sqrt overload keeps the documented negative-input extension
+            # branch explicit; all=True is handled below by overloads.
+            "__abs__": "Self",
+            "real": "Self",
+            "imag": "'sage.rings.integer.Integer'",
+            "__add__": "Self",
+            "__sub__": "Self",
+            "__mul__": "Self",
+            "__truediv__": "Self",
+            "__lshift__": "Self",
+            "__rshift__": "Self",
+            "__invert__": "Self",
+            "__pow__": "Self",
+            "__neg__": "Self",
+            "__pos__": "Self",
+            "_integer_": "'sage.rings.integer.Integer'",
+            "_complex_number_": "'sage.rings.complex_mpfr.ComplexNumber'",
+            "_rpy_": "float",
+            "hex": "str",
+            "str": "str",
+            "integer_part": "'sage.rings.integer.Integer'",
+            "trunc": "'sage.rings.integer.Integer'",
+            "round": "'sage.rings.integer.Integer'",
+            "floor": "'sage.rings.integer.Integer'",
+            "ceil": "'sage.rings.integer.Integer'",
+            "sign": "int",
+            "precision": "'sage.rings.integer.Integer'",
+            "fp_rank": "'sage.rings.integer.Integer'",
+            "fp_rank_delta": "'sage.rings.integer.Integer'",
+            "multiplicative_order": "'sage.rings.infinity.PlusInfinity'",
+            "ulp": "Self",
+            "epsilon": "Self",
+            "frac": "Self",
+            "nexttoward": "Self",
+            "nextabove": "Self",
+            "nextbelow": "Self",
+            "exact_rational": "'sage.rings.rational.Rational'",
+            "simplest_rational": "'sage.rings.rational.Rational'",
+            "as_integer_ratio": "tuple",
+            "algebraic_dependency": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+            "sqrt": "Self | 'sage.rings.complex_mpfr.ComplexNumber'",
+            "cube_root": "Self",
+            "nth_root": "Self",
+            "log": "Self",
+            "log2": "Self",
+            "log10": "Self",
+            "log1p": "Self",
+            "exp": "Self",
+            "exp2": "Self",
+            "exp10": "Self",
+            "expm1": "Self",
+            "eint": "Self",
+            "cos": "Self",
+            "sin": "Self",
+            "tan": "Self",
+            "sincos": "tuple[Self, Self]",
+            "arccos": "Self",
+            "arcsin": "Self",
+            "arctan": "Self",
+            "cosh": "Self",
+            "sinh": "Self",
+            "tanh": "Self",
+            "coth": "Self",
+            "arccoth": "Self",
+            "cot": "Self",
+            "csch": "Self",
+            "arccsch": "Self",
+            "csc": "Self",
+            "sech": "Self",
+            "arcsech": "Self",
+            "sec": "Self",
+            "arccosh": "Self",
+            "arcsinh": "Self",
+            "arctanh": "Self",
+            "agm": "Self",
+            "erf": "Self",
+            "erfc": "Self",
+            "j0": "Self",
+            "j1": "Self",
+            "jn": "Self",
+            "y0": "Self",
+            "y1": "Self",
+            "yn": "Self",
+            "gamma": "Self",
+            "log_gamma": "Self",
+            "zeta": "Self",
+        },
+    },
+    "sage/rings/rational.pyi": {
+        "Rational": {
+            # Rational arithmetic preserves QQ; characteristic-polynomial
+            # helpers use the concrete FLINT rational polynomial backend.
+            "__add__": "Self",
+            "__sub__": "Self",
+            "__mul__": "Self",
+            "__truediv__": "Self",
+            "__neg__": "Self",
+            "__pos__": "Self",
+            "_add_": "Self",
+            "_sub_": "Self",
+            "_mul_": "Self",
+            "_div_": "Self",
+            "_neg_": "Self",
+            "_pow_": "Self",
+            "__mpq__": "'gmpy2.mpq'",
+            "charpoly": "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'",
+            "minpoly": "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'",
+            "continued_fraction": "'sage.rings.continued_fraction.ContinuedFraction_periodic'",
+            "sqrt": "'sage.symbolic.expression.Expression | sage.rings.rational.Rational | sage.rings.integer.Integer'",
+            "log": "'sage.symbolic.expression.Expression | sage.rings.integer.Integer'",
+            "gamma": "'sage.symbolic.expression.Expression | sage.rings.integer.Integer'",
+            "additive_order": "'sage.rings.integer.Integer | sage.rings.infinity.PlusInfinity'",
+            "multiplicative_order": "'sage.rings.integer.Integer | sage.rings.infinity.PlusInfinity'",
+            "factor": "'sage.structure.factorization.Factorization'",
+        },
+    },
+    "sage/rings/real_double.pyi": {
+        "RealDoubleElement": {
+            # RDF is represented by a GSL subclass at runtime, but the
+            # generated public stub exposes RealDoubleElement as its stable
+            # base.  These methods preserve that concrete implementation.
+            "__abs__": "Self",
+            "abs": "Self",
+            "real": "Self",
+            "imag": "Self",
+            "__add__": "Self",
+            "__sub__": "Self",
+            "__mul__": "Self",
+            "__truediv__": "Self",
+            "__invert__": "Self",
+            "__neg__": "Self",
+            "__pos__": "Self",
+            "_add_": "Self",
+            "_sub_": "Self",
+            "_mul_": "Self",
+            "_div_": "Self",
+            "conjugate": "Self",
+            "sqrt": "Self",
+            "cube_root": "Self",
+            "agm": "Self",
+            "exp": "Self",
+            "log": "Self",
+            "log10": "Self",
+            "log_b": "Self",
+            "sin": "Self",
+            "cos": "Self",
+            "tan": "Self",
+            "sec": "Self",
+            "csc": "Self",
+            "cot": "Self",
+            "arcsin": "Self",
+            "arccos": "Self",
+            "arctan": "Self",
+            "sinh": "Self",
+            "cosh": "Self",
+            "tanh": "Self",
+            "sech": "Self",
+            "csch": "Self",
+            "coth": "Self",
+            "arcsinh": "Self",
+            "arccosh": "Self",
+            "arctanh": "Self",
+            "arcsech": "Self",
+            "arccsch": "Self",
+            "arccoth": "Self",
+            "eta": "Self",
+            "gamma": "Self",
+            "zeta": "Self",
+            "integer_part": "'sage.rings.integer.Integer'",
+            "trunc": "'sage.rings.integer.Integer'",
+            "round": "'sage.rings.integer.Integer'",
+            "floor": "'sage.rings.integer.Integer'",
+            "ceil": "'sage.rings.integer.Integer'",
+            "sign": "int",
+            "as_integer_ratio": "tuple",
+            "algebraic_dependency": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+        },
+    },
+    "sage/rings/complex_double.pyi": {
+        "ComplexDoubleElement": {
+            # CDF's arithmetic and analytic functions preserve the complex
+            # double implementation; projections and magnitudes return the
+            # concrete RDF implementation instead.
+            "__getitem__": "'sage.rings.real_double.RealDoubleElement'",
+            "_add_": "Self",
+            "_sub_": "Self",
+            "_mul_": "Self",
+            "_div_": "Self",
+            "_pow_": "Self",
+            "__invert__": "Self",
+            "__neg__": "Self",
+            "conjugate": "Self",
+            "conj": "Self",
+            "sqrt": "Self",
+            "nth_root": "Self",
+            "exp": "Self",
+            "log": "Self",
+            "log10": "Self",
+            "log_b": "Self",
+            "sin": "Self",
+            "cos": "Self",
+            "tan": "Self",
+            "sec": "Self",
+            "csc": "Self",
+            "cot": "Self",
+            "arcsin": "Self",
+            "arccos": "Self",
+            "arctan": "Self",
+            "arccsc": "Self",
+            "arccot": "Self",
+            "arcsec": "Self",
+            "sinh": "Self",
+            "cosh": "Self",
+            "tanh": "Self",
+            "sech": "Self",
+            "csch": "Self",
+            "coth": "Self",
+            "arcsinh": "Self",
+            "arccosh": "Self",
+            "arctanh": "Self",
+            "arcsech": "Self",
+            "arccsch": "Self",
+            "arccoth": "Self",
+            "eta": "Self",
+            "agm": "Self",
+            "dilog": "Self",
+            "gamma": "Self",
+            "gamma_inc": "Self",
+            "zeta": "Self",
+            "real": "'sage.rings.real_double.RealDoubleElement'",
+            "imag": "'sage.rings.real_double.RealDoubleElement'",
+            "arg": "'sage.rings.real_double.RealDoubleElement'",
+            "argument": "'sage.rings.real_double.RealDoubleElement'",
+            "abs": "'sage.rings.real_double.RealDoubleElement'",
+            "__abs__": "'sage.rings.real_double.RealDoubleElement'",
+            "abs2": "'sage.rings.real_double.RealDoubleElement'",
+            "norm": "'sage.rings.real_double.RealDoubleElement'",
+            "logabs": "'sage.rings.real_double.RealDoubleElement'",
+            "prec": "'sage.rings.integer.Integer'",
+            "__int__": "int",
+            "__float__": "float",
+            "__complex__": "complex",
+            "algebraic_dependency": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
         },
     },
     "sage/rings/complex_interval.pyi": {
@@ -1052,11 +1828,6 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "_compute_order": "'sage.rings.integer.Integer'",
         },
     },
-    "sage/rings/rational.pyi": {
-        "Rational": {
-            "factor": "'sage.structure.factorization.Factorization'",
-        },
-    },
     "sage/rings/polynomial/polynomial_element.pyi": {
         "Polynomial": {
             # These operations preserve the concrete polynomial receiver.
@@ -1108,6 +1879,34 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "__pow__": "'sage.rings.polynomial.polynomial_modn_dense_ntl.Polynomial_dense_mod_p | sage.rings.fraction_field_element.FractionFieldElement'",
             "resultant": PRIME_FIELD_ELEMENT_UNION,
             "discriminant": PRIME_FIELD_ELEMENT_UNION,
+        },
+        # The NTL ZZ/nZZ implementations share the same concrete polynomial
+        # receiver for composition/minimal-polynomial transforms.  Their
+        # conversion helpers have stable Python/NTL outer types.
+        "Polynomial_dense_mod_n": {
+            "__pari__": "'cypari2.gen.Gen'",
+            "int_list": "list[int]",
+            "minpoly_mod": "Self",
+            "compose_mod": "Self",
+            "ntl_ZZ_pX": "'sage.libs.ntl.ntl_ZZ_pX.ntl_ZZ_pX'",
+            "ntl_set_directly": "None",
+            "small_roots": "list['sage.rings.finite_rings.integer_mod.IntegerMod_int | sage.rings.finite_rings.integer_mod.IntegerMod_int64 | sage.rings.finite_rings.integer_mod.IntegerMod_gmp']",
+        },
+        "Polynomial_dense_modn_ntl_ZZ": {
+            "int_list": "list[int]",
+            "ntl_set_directly": "None",
+        },
+        "Polynomial_dense_modn_ntl_zz": {
+            "int_list": "list[int]",
+            "ntl_set_directly": "None",
+        },
+    },
+    "sage/rings/polynomial/polynomial_quotient_ring_element.pyi": {
+        "PolynomialQuotientRingElement": {
+            "__pari__": "'cypari2.gen.Gen'",
+            # ``field_extension`` is the documented QQ quotient-ring bridge:
+            # a number field, its generator map, and the inverse homset map.
+            "field_extension": "tuple['sage.rings.number_field.number_field.NumberField_absolute', 'sage.rings.morphism.RingHomomorphism_im_gens', 'sage.rings.number_field.homset.NumberFieldHomset_with_category.element_class']",
         },
     },
     "sage/rings/polynomial/polynomial_integer_dense_flint.pyi": {
@@ -1258,6 +2057,145 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
 # generic overload machinery in the generated API index; the Kotlin plugin does
 # not recognize these class or member names.
 CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
+    "sage/rings/number_field/number_field_element.pyi": {
+        "NumberFieldElement": {
+            # Absolute norm/trace descend to QQ; supplying a subfield asks
+            # Sage for the relative NumberFieldElement result instead.
+            "norm": (
+                "def norm(self, K: Literal[None] = None) -> 'sage.rings.rational.Rational': ...",
+                "def norm(self, K) -> Self: ...",
+            ),
+            "trace": (
+                "def trace(self, K: Literal[None] = None) -> 'sage.rings.rational.Rational': ...",
+                "def trace(self, K) -> Self: ...",
+            ),
+        },
+    },
+    "sage/rings/number_field/number_field.pyi": {
+        "NumberField_generic": {
+            # ``all`` selects one primitive root or the complete list.
+            "zeta": (
+                "def zeta(self, n=2, all: Literal[False] = False) -> 'sage.rings.number_field.number_field_element.NumberFieldElement': ...",
+                "def zeta(self, n=2, all: Literal[True] = True) -> list['sage.rings.number_field.number_field_element.NumberFieldElement']: ...",
+            ),
+        },
+    },
+    "sage/graphs/generic_graph.pyi": {
+        "GenericGraph": {
+            # ``add_vertex`` returns a generated integer only for the
+            # default ``name=None`` branch; naming an explicit vertex mutates
+            # in place and returns ``None``.
+            "add_vertex": (
+                "def add_vertex(self, name: Literal[None] = None) -> int: ...",
+                "def add_vertex(self, name) -> None: ...",
+            ),
+            # ``subgraph`` has an explicit in-place switch.  Preserve both
+            # branches and expose a conservative union for a non-literal bool.
+            "subgraph": (
+                "def subgraph(self, vertices=None, edges=None, inplace: Literal[False] = False, vertex_property=None, edge_property=None, algorithm=None, immutable=None) -> Self: ...",
+                "def subgraph(self, vertices=None, edges=None, inplace: Literal[True] = True, vertex_property=None, edge_property=None, algorithm=None, immutable=None) -> None: ...",
+                "def subgraph(self, vertices=None, edges=None, inplace: bool = False, vertex_property=None, edge_property=None, algorithm=None, immutable=None) -> Self | None: ...",
+            ),
+        },
+    },
+    "sage/rings/real_mpfr.pyi": {
+        "RealNumber": {
+            # Negative real inputs may extend to CC; the ``all`` switch then
+            # materializes every root rather than returning one element.
+            "sqrt": (
+                "def sqrt(self, extend=True, all: Literal[False] = False) -> Self | 'sage.rings.complex_mpfr.ComplexNumber': ...",
+                "def sqrt(self, extend=True, all: Literal[True] = True) -> list[Self | 'sage.rings.complex_mpfr.ComplexNumber']: ...",
+            ),
+        },
+    },
+    "sage/rings/complex_mpfr.pyi": {
+        "ComplexNumber": {
+            "sqrt": (
+                "def sqrt(self, all: Literal[False] = False) -> Self: ...",
+                "def sqrt(self, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+            "nth_root": (
+                "def nth_root(self, n, all: Literal[False] = False) -> Self: ...",
+                "def nth_root(self, n, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+        },
+    },
+    "sage/rings/complex_double.pyi": {
+        "ComplexDoubleElement": {
+            "sqrt": (
+                "def sqrt(self, all: Literal[False] = False, **kwds) -> Self: ...",
+                "def sqrt(self, all: Literal[True] = True, **kwds) -> list[Self]: ...",
+            ),
+            "nth_root": (
+                "def nth_root(self, n, all: Literal[False] = False) -> Self: ...",
+                "def nth_root(self, n, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+        },
+    },
+    "sage/rings/finite_rings/element_base.pyi": {
+        "FinitePolyExtElement": {
+            # ``all`` selects the single-root versus all-roots contract for
+            # finite-field elements; ``extend`` only changes the search
+            # field and not the concrete element family.
+            "sqrt": (
+                "def sqrt(self, extend=False, all: Literal[False] = False) -> Self: ...",
+                "def sqrt(self, extend=False, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+            "square_root": (
+                "def square_root(self, extend=False, all: Literal[False] = False) -> Self: ...",
+                "def square_root(self, extend=False, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+            "nth_root": (
+                "def nth_root(self, n, extend=False, all: Literal[False] = False, algorithm=None, cunningham=False) -> Self: ...",
+                "def nth_root(self, n, extend=False, all: Literal[True] = True, algorithm=None, cunningham=False) -> list[Self]: ...",
+            ),
+        },
+        # Concrete residue backends override ``sqrt`` without repeating the
+        # inherited annotation in the generated stubs.  Keep the same
+        # explicit all-roots contract on each implementation class.
+        "IntegerMod_gmp": {
+            "sqrt": (
+                "def sqrt(self, extend=True, all: Literal[False] = False) -> Self: ...",
+                "def sqrt(self, extend=True, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+        },
+        "IntegerMod_int": {
+            "sqrt": (
+                "def sqrt(self, extend=True, all: Literal[False] = False) -> Self: ...",
+                "def sqrt(self, extend=True, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+        },
+        "IntegerMod_int64": {
+            "sqrt": (
+                "def sqrt(self, extend=True, all: Literal[False] = False) -> Self: ...",
+                "def sqrt(self, extend=True, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+        },
+    },
+    "sage/rings/finite_rings/integer_mod.pyi": {
+        "IntegerMod_abstract": {
+            "sqrt": (
+                "def sqrt(self, extend=True, all: Literal[False] = False) -> Self: ...",
+                "def sqrt(self, extend=True, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+            "nth_root": (
+                "def nth_root(self, n, extend=False, all: Literal[False] = False, algorithm=None, cunningham=False) -> Self: ...",
+                "def nth_root(self, n, extend=False, all: Literal[True] = True, algorithm=None, cunningham=False) -> list[Self]: ...",
+            ),
+        },
+    },
+    "sage/rings/finite_rings/element_pari_ffelt.pyi": {
+        "FiniteFieldElement_pari_ffelt": {
+            "sqrt": (
+                "def sqrt(self, extend=False, all: Literal[False] = False) -> Self: ...",
+                "def sqrt(self, extend=False, all: Literal[True] = True) -> list[Self]: ...",
+            ),
+            "nth_root": (
+                "def nth_root(self, n, extend=False, all: Literal[False] = False, algorithm=None, cunningham=False) -> Self: ...",
+                "def nth_root(self, n, extend=False, all: Literal[True] = True, algorithm=None, cunningham=False) -> list[Self]: ...",
+            ),
+        },
+    },
     "sage/crypto/classical.pyi": {
         "HillCryptosystem": {
             # Inversion is performed in the key space and preserves the
@@ -1461,6 +2399,35 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             "special_supersingular_curve": (
                 "def special_supersingular_curve(F, q=None, *, endomorphism: Literal[False] = False) -> 'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field': ...",
                 "def special_supersingular_curve(F, q=None, *, endomorphism: Literal[True] = True) -> tuple['sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field', 'sage.schemes.elliptic_curves.ell_curve_isogeny.EllipticCurveIsogeny']: ...",
+            ),
+        },
+    },
+    "sage/schemes/elliptic_curves/ell_rational_field.pyi": {
+        "EllipticCurve_rational_field": {
+            "analytic_rank": (
+                "def analytic_rank(self, algorithm='pari', leading_coefficient: Literal[False] = False) -> 'sage.rings.integer.Integer': ...",
+                "def analytic_rank(self, algorithm='pari', leading_coefficient: Literal[True] = True) -> tuple['sage.rings.integer.Integer', 'sage.rings.real_mpfr.RealNumber']: ...",
+            ),
+            "aplist": (
+                "def aplist(self, n, python_ints: Literal[False] = False) -> list['sage.rings.integer.Integer']: ...",
+                "def aplist(self, n, python_ints: Literal[True] = True) -> list[int]: ...",
+            ),
+            "anlist": (
+                "def anlist(self, n, python_ints: Literal[False] = False) -> list['sage.rings.integer.Integer']: ...",
+                "def anlist(self, n, python_ints: Literal[True] = True) -> list[int]: ...",
+            ),
+            "selmer_rank": (
+                "def selmer_rank(self, algorithm: Literal['pari'] = 'pari') -> 'cypari2.gen.Gen': ...",
+                "def selmer_rank(self, algorithm: Literal['mwrank']) -> 'sage.rings.integer.Integer': ...",
+            ),
+            "rank_bound": (
+                "def rank_bound(self, algorithm: Literal['pari'] = 'pari') -> 'cypari2.gen.Gen': ...",
+                "def rank_bound(self, algorithm: Literal['mwrank']) -> 'sage.rings.integer.Integer': ...",
+            ),
+            "modular_symbol": (
+                "def modular_symbol(self, sign=+1, normalize=None, implementation: Literal['eclib'] = 'eclib', nap=0) -> 'sage.schemes.elliptic_curves.ell_modular_symbols.ModularSymbolECLIB': ...",
+                "def modular_symbol(self, sign=+1, normalize=None, implementation: Literal['sage'] = 'sage', nap=0) -> 'sage.schemes.elliptic_curves.ell_modular_symbols.ModularSymbolSage': ...",
+                "def modular_symbol(self, sign=+1, normalize=None, implementation: Literal['num'] = 'num', nap=0) -> 'sage.schemes.elliptic_curves.mod_sym_num.ModularSymbolNumerical': ...",
             ),
         },
     },
@@ -2249,7 +3216,11 @@ def _doc_output_values(value: str) -> tuple[str, ...]:
 
 
 def _class_name(line: str) -> str | None:
-    if not line.lstrip().startswith("class "):
+    # Generated docstrings frequently contain prose such as ``class are
+    # reordered``.  Treat only a syntactically complete class header as a
+    # declaration; otherwise the line-based walker would lose the owning
+    # class for every following method and silently skip its contracts.
+    if not re.match(r"^\s*class\s+[A-Za-z_]\w*(?:\s*\([^\n]*\))?\s*:\s*(?:#.*)?$", line):
         return None
     return line.lstrip()[6:].split("(")[0].split(":")[0].strip()
 
@@ -3528,6 +4499,760 @@ def _doc_metric_contract_annotation(
     if node.name in {"ngens", "nrows", "ncols"}:
         return "'sage.rings.integer.Integer | int'"
 
+    # ``MatrixSpace`` is a parent/factory whose element implementation is
+    # selected by the base ring, dimensions, sparsity and optional backend.
+    # Its scalar/container protocols are independent of that dispatch and can
+    # therefore be made precise directly.  Matrix-producing methods use the
+    # explicit concrete implementation union above; this avoids publishing
+    # the public ``matrix0.Matrix`` base while still exposing ``solve_right``
+    # and the other matrix2 members in PyCharm.
+    if owner_name == "MatrixSpace":
+        if node.name in {"is_exact", "_has_default_implementation", "_repr_option", "is_dense", "is_sparse", "is_finite"}:
+            return "bool"
+        if node.name == "dims":
+            return "tuple[int, int]"
+        if node.name == "basis":
+            return "'sage.sets.family.FiniteFamily'"
+        if node.name in {"identity_matrix", "zero_matrix", "diagonal_matrix", "gen", "matrix", "from_vector", "random_element", "_an_element_", "_random_nonzero_element", "_element_constructor_", "_from_dict"}:
+            return MATRIX_ELEMENT_UNION
+        if node.name == "some_elements":
+            return f"Iterator[{MATRIX_ELEMENT_UNION}]"
+        if node.name in {"row_space", "column_space"}:
+            return MATRIX_SPACE_MODULE_UNION
+        if node.name == "submodule":
+            return MATRIX_SPACE_SUBMODULE_UNION
+        if node.name == "construction":
+            return "tuple"
+
+    # Symbolic ``Expression`` transforms are expression-preserving in Sage's
+    # symbolic ring.  The generated Cython stubs omit these return annotations
+    # even though the runtime class is stable; keep evaluation/solver helpers
+    # out because their result depends on substitutions and backend choices.
+    if owner_name == "Expression":
+        if node.name in {
+            "__abs__", "__invert__", "__add__", "__floordiv__", "__mul__",
+            "__neg__", "__pow__", "__sub__", "__truediv__",
+            "_add_", "_div_", "_mul_", "_sub_",
+            "abs", "add", "add_to_both_sides", "arccos", "arccosh", "arcsin",
+            "arcsinh", "arctan", "arctan2", "arctanh", "canonicalize_radical",
+            "collect", "collect_common_factors", "combine", "compositional_inverse",
+            "cos", "cosh", "derivative", "divide_both_sides", "distribute", "exp",
+            "expand", "expand_log", "expand_sum", "exponentialize", "factor",
+            "gamma", "gamma_normalize", "integral", "left_hand_side", "log",
+            "log_gamma", "multiply_both_sides", "negation", "normalize", "numerator",
+            "denominator", "power", "primitive_part",
+            "real_part", "imag_part", "rectform", "round", "simplify",
+            "simplify_factorial", "simplify_full", "simplify_hypergeometric",
+            "simplify_log", "simplify_rational", "simplify_real", "simplify_rectform",
+            "simplify_trig", "sin", "sinh", "sqrt", "substitute_function",
+            "substitution_delayed", "subtract_from_both_sides", "tan", "tanh", "taylor",
+            "to_gamma", "trailing_coefficient", "unit", "unit_content_primitive",
+            "unhold", "zeta",
+        }:
+            return "Self"
+        if node.name in {"arguments", "variables", "free_variables", "numerator_denominator"}:
+            return "tuple"
+        if node.name in {"default_variable", "right_hand_side", "subs"}:
+            return "Self"
+        if node.name == "fraction":
+            return "tuple[Self, Self]"
+        if node.name == "find_root":
+            return "'sage.rings.real_mpfr.RealNumber'"
+        if node.name in {"_integer_"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"_rational_"}:
+            return "'sage.rings.rational.Rational'"
+        if node.name in {"_complex_double_"}:
+            return "'sage.rings.complex_double.ComplexDoubleElement'"
+        if node.name in {"_complex_mpfi_", "_complex_mpfr_field_"}:
+            return "'sage.rings.complex_mpfr.ComplexNumber'"
+        if node.name in {"_real_double_"}:
+            return "'sage.rings.real_double.RealDoubleElement'"
+        if node.name in {"_real_mpfi_", "_mpfr_"}:
+            return "'sage.rings.real_mpfr.RealNumber'"
+        if node.name in {"_sympy_"}:
+            return "'sympy.core.expr.Expr'"
+        if node.name in {"number_of_arguments", "number_of_operands"}:
+            return "int"
+        if node.name in {"assume", "decl_assume", "decl_forget", "forget"}:
+            return "None"
+        if node.name in {"has", "test_relation"}:
+            return "bool"
+        if node.name in {"solve", "solve_diophantine", "find"}:
+            return "list"
+        if node.name == "plot":
+            return "'sage.plot.graphics.Graphics'"
+
+    # Algebraic number elements have a fixed rational-polynomial/height
+    # protocol in Sage 10.9.  These methods are independent of the defining
+    # field's concrete parent; ideal-valued and embedding-selection methods
+    # remain unresolved below because their class depends on the field.
+    if owner_name == "NumberFieldElement":
+        if node.name == "absolute_norm":
+            return "'sage.rings.rational.Rational'"
+        if node.name in {"charpoly", "minpoly", "polynomial"}:
+            return "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'"
+        if node.name in {"denominator", "floor", "round", "valuation"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"complex_embedding"}:
+            return "'sage.rings.complex_mpfr.ComplexNumber'"
+        if node.name in {"complex_embeddings", "galois_conjugates"}:
+            return "list['sage.rings.complex_mpfr.ComplexNumber']" if node.name == "complex_embeddings" else "list[Self]"
+        if node.name in {"coordinates_in_terms_of_powers", "vector"}:
+            return "'sage.modules.free_module_element.FreeModuleElement'"
+        if node.name in {"global_height", "global_height_arch", "global_height_non_arch", "local_height", "local_height_arch", "local_height_non_arch"}:
+            return "'sage.rings.real_mpfr.RealNumber'"
+        if node.name == "is_norm":
+            return "bool"
+        if node.name in {"multiplicative_order", "additive_order"}:
+            return ORDER_RETURN_UNION
+        if node.name == "__pari__":
+            return "'cypari2.gen.Gen'"
+        if node.name == "_rational_":
+            return "'sage.rings.rational.Rational'"
+        if node.name == "_integer_":
+            return "'sage.rings.integer.Integer'"
+
+    if owner_name == "NumberField_generic":
+        if node.name in {"class_number", "disc", "discriminant", "zeta_order"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"gen", "random_element", "primitive_root_of_unity", "_element_constructor_"}:
+            return "'sage.rings.number_field.number_field_element.NumberFieldElement'"
+        if node.name in {"power_basis", "roots_of_unity", "reduced_basis", "trace_dual_basis"}:
+            return "list['sage.rings.number_field.number_field_element.NumberFieldElement']"
+        if node.name in {"polynomial", "defining_polynomial"}:
+            return "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'"
+        if node.name == "polynomial_ring":
+            return "'sage.rings.polynomial.polynomial_ring.PolynomialRing_field'"
+        if node.name == "algebraic_closure":
+            return "'sage.rings.qqbar.AlgebraicField'"
+        if node.name in {"complex_embeddings", "real_embeddings"}:
+            return "'sage.structure.sequence.Sequence_generic'"
+        if node.name == "regulator":
+            return "'sage.rings.real_mpfr.RealNumber'"
+        if node.name == "units":
+            return "tuple"
+        if node.name in {"unit_group", "S_unit_group"}:
+            return "'sage.rings.number_field.unit_group.UnitGroup'"
+        if node.name in {"class_group", "narrow_class_group"}:
+            return "'sage.rings.number_field.class_group.ClassGroup | sage.rings.number_field.class_group.SClassGroup'"
+        if node.name == "signature":
+            return "tuple[int, int]"
+        if node.name == "construction":
+            return "tuple"
+        if node.name == "primes_of_bounded_norm_iter":
+            return "Iterator['sage.rings.number_field.number_field_ideal.NumberFieldIdeal']"
+        if node.name in {"ideal", "prime_above"}:
+            return "'sage.rings.number_field.number_field_ideal.NumberFieldIdeal | sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'"
+        if node.name == "fractional_ideal":
+            return "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'"
+        if node.name == "factor":
+            return "'sage.structure.factorization.Factorization'"
+        if node.name == "__pari__":
+            return "'cypari2.gen.Gen'"
+        if node.name == "absolute_polynomial_ntl":
+            return "tuple"
+        if node.name == "lmfdb_page":
+            return "None"
+        if node.name == "_normalize_prime_list":
+            return "tuple"
+        if node.name == "_generator_matrix":
+            return "'sage.matrix.matrix_rational_dense.Matrix_rational_dense'"
+        if node.name == "_pari_integral_basis":
+            return "'cypari2.gen.Gen'"
+        if node.name == "uniformizer":
+            return "'sage.rings.number_field.number_field_element.NumberFieldElement'"
+        if node.name in {"absolute_field"}:
+            return "'sage.rings.number_field.number_field.NumberField_absolute'"
+        if node.name in {"absolute_polynomial"}:
+            return "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'"
+        if node.name == "change_generator":
+            return "tuple"
+        if node.name == "different":
+            return "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'"
+        if node.name == "maximal_order":
+            return "'sage.rings.number_field.order.Order_absolute_with_category'"
+        if node.name == "maximal_totally_real_subfield":
+            return "list"
+        if node.name in {"pari_bnf", "pari_nf", "pari_polynomial", "pari_zk", "zeta_coefficients"}:
+            return "'cypari2.gen.Gen'"
+        if node.name == "polynomial_ntl":
+            return "tuple"
+        if node.name == "polynomial_quotient_ring":
+            return "'sage.rings.polynomial.polynomial_quotient_ring.PolynomialQuotientRing_field_with_category'"
+        if node.name == "primitive_element":
+            return "'sage.rings.number_field.number_field_element.NumberFieldElement'"
+        if node.name == "reduced_gram_matrix":
+            return "'sage.matrix.matrix_generic_dense.Matrix_generic_dense'"
+        if node.name == "structure":
+            return "tuple"
+        if node.name == "subfield":
+            return "tuple"
+        if node.name == "trace_pairing":
+            return MATRIX_ELEMENT_UNION
+        if node.name == "valuation":
+            return "'sage.rings.padics.padic_valuation.pAdicFromLimitValuation_with_category'"
+
+    if owner_name == "NumberField_relative":
+        if node.name in {"absolute_degree", "absolute_discriminant", "relative_degree", "number_of_roots_of_unity"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"base_field", "base_ring"}:
+            return "'sage.rings.number_field.number_field.NumberField_generic | sage.rings.number_field.number_field_rel.NumberField_relative'"
+        if node.name == "absolute_field":
+            return "'sage.rings.number_field.number_field.NumberField_absolute'"
+        if node.name == "absolute_polynomial":
+            return "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'"
+        if node.name == "gen":
+            return "'sage.rings.number_field.number_field_element.NumberFieldElement'"
+        if node.name == "roots_of_unity":
+            return "list['sage.rings.number_field.number_field_element.NumberFieldElement']"
+        if node.name == "subfields":
+            return "list['sage.rings.number_field.number_field.NumberField_generic']"
+        if node.name == "change_names":
+            return "None"
+        if node.name in {"absolute_base_field", "galois_closure"}:
+            return "'sage.rings.number_field.number_field.NumberField_absolute'"
+        if node.name in {"absolute_different", "different", "relative_different", "relative_discriminant"}:
+            return "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'"
+        if node.name in {"absolute_generator", "lift_to_base"}:
+            return "'sage.rings.number_field.number_field_element.NumberFieldElement'"
+        if node.name == "absolute_polynomial_ntl":
+            return "tuple"
+        if node.name == "absolute_vector_space":
+            return "tuple"
+        if node.name == "automorphisms":
+            return "list"
+        if node.name in {"defining_polynomial", "polynomial", "relative_polynomial"}:
+            return "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'"
+        if node.name in {"disc", "discriminant"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name == "embeddings":
+            return "list"
+        if node.name in {"free_module", "vector_space", "relative_vector_space"}:
+            return "tuple"
+        if node.name in {"pari_absolute_base_polynomial", "pari_relative_polynomial", "pari_rnf"}:
+            return "'cypari2.gen.Gen'"
+        if node.name == "relativize":
+            return "'sage.rings.number_field.number_field_rel.NumberField_relative'"
+
+    if owner_name == "Integer":
+        # Integer transcendental helpers construct symbolic expressions; the
+        # factorial-like gamma specialization stays in Sage's Integer class.
+        # Additive/multiplicative orders are value-dependent (zero and units
+        # have different orders), so they intentionally remain unresolved.
+        if node.name in {"sqrt", "log", "exp"}:
+            return "'sage.symbolic.expression.Expression'"
+        if node.name == "gamma":
+            return "'sage.rings.integer.Integer'"
+        if node.name == "__pari__":
+            return "'cypari2.gen.Gen'"
+        if node.name == "_sympy_":
+            return "'sympy.core.numbers.Integer'"
+        if node.name in {"GCD_list", "make_integer"}:
+            return "'sage.rings.integer.Integer'"
+
+    if owner_name == "FiniteField":
+        if node.name in {"extension", "subfield"}:
+            return FINITE_FIELD_UNION
+        if node.name == "factored_order":
+            return "'sage.structure.factorization.Factorization'"
+        if node.name == "free_module":
+            return "tuple"
+        if node.name == "from_bytes":
+            return FINITE_FIELD_ELEMENT_UNION
+        if node.name == "polynomial_ring":
+            return "'sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_mod_p | sage.rings.polynomial.polynomial_ring.PolynomialRing_dense_finite_field'"
+
+    if owner_name and owner_name.casefold().startswith("finitefield_"):
+        if node.name in {"_element_constructor_", "a_times_b_minus_c", "a_times_b_plus_c", "c_minus_a_times_b"}:
+            return "Self"
+        if node.name == "__pari__":
+            return "'cypari2.gen.Gen'"
+        if node.name in {"int_to_log", "degree"}:
+            return "int"
+
+    if owner_name == "FinitePolyExtElement":
+        if node.name == "__pari__":
+            return "'cypari2.gen.Gen'"
+        if node.name == "charpoly":
+            return "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'"
+        if node.name == "matrix":
+            return "'sage.matrix.matrix_modn_dense_float.Matrix_modn_dense_float'"
+        if node.name == "to_bytes":
+            return "bytes"
+
+    if owner_name == "MatroidDatabaseModule":
+        # Every public constructor in ``database_matroids`` (including the
+        # private relabel helper used by those constructors) returns one of
+        # Sage's concrete matroid implementations.  Keep the implementation
+        # union explicit instead of exposing the abstract ``Matroid`` base.
+        return MATROID_RETURN_UNION
+
+    if owner_name == "DesignDatabaseModule":
+        # The small-design catalogue functions materialize their design data
+        # as Python lists (MOLS, orthogonal arrays and block collections).
+        return "list"
+
+    if owner_name == "GraphFamiliesModule":
+        if node.name in {"chang_graphs", "line_graph_forbidden_subgraphs"}:
+            return "list"
+        return "'sage.graphs.graph.Graph'"
+
+    if owner_name == "DistanceRegularGraphsModule":
+        if node.name in {"is_from_GQ_spread", "is_classical_parameters_graph", "is_pseudo_partition_graph"}:
+            return "bool"
+        if node.name == "is_near_polygon":
+            return "tuple"
+        # ``distance_regular_graph(..., existence=True)`` changes its result
+        # from a graph to a predicate; leave this conditional factory open.
+        if node.name == "distance_regular_graph":
+            return None
+        return "'sage.graphs.graph.Graph'"
+
+    if owner_name == "SmallGraphsModule":
+        return "'sage.graphs.graph.Graph'"
+
+    if owner_name == "Polytopes":
+        return POLYHEDRON_RETURN_UNION
+
+    if owner_name == "Posets" and node.name != "__classcall__":
+        return FINITE_POSET_RETURN_UNION
+
+    # ``FinitePoset`` is the concrete object returned by the catalogue and
+    # by most poset transforms.  Its generated stubs leave a sizeable set of
+    # methods unannotated even though the source contract fixes the outer
+    # result.  Keep element-valued operations (``meet``/``join``/``bottom``
+    # and friends) open because facade posets may contain arbitrary user
+    # objects; annotate only container, scalar, graph, matrix and poset
+    # results whose runtime family is stable.
+    if owner_name == "FinitePoset":
+        if node.name in {
+            "_list", "linear_extension", "spectrum", "atkinson", "level_sets",
+            "common_upper_covers", "common_lower_covers", "dilworth_decomposition",
+            "random_maximal_chain", "random_maximal_antichain", "random_linear_extension",
+            "maximal_antichains", "maximal_chains",
+        }:
+            return "list"
+        if node.name in {"show", "_macaulay2_init_"}:
+            return "None"
+        if node.name in {"number_of_relations", "moebius_function", "order_ideal_cardinality", "maximal_chain_length"}:
+            return "'sage.rings.integer.Integer | int'"
+        if node.name == "compare_elements":
+            return "int | None"
+        if node.name in {"height", "jump_number"}:
+            return "'sage.rings.integer.Integer | int | tuple'"
+        if node.name == "rank_function":
+            return "'collections.abc.Callable | None'"
+        if node.name in {"cover_relations_graph", "comparability_graph", "incomparability_graph", "linear_extensions_graph"}:
+            return "'sage.graphs.graph.Graph'"
+        if node.name in {"moebius_function_matrix", "lequal_matrix", "coxeter_transformation"}:
+            return MATRIX_ELEMENT_UNION
+        if node.name in {
+            "coxeter_polynomial", "zeta_polynomial", "apozeta_polynomial",
+            "f_polynomial", "h_polynomial", "flag_f_polynomial",
+            "flag_h_polynomial", "characteristic_polynomial", "chain_polynomial",
+            "order_polynomial", "degree_polynomial", "kazhdan_lusztig_polynomial",
+        }:
+            return POLYNOMIAL_RETURN_UNION
+        if node.name in {
+            "slant_sum", "rees_product", "disjoint_union", "ordinal_product",
+            "ordinal_sum", "star_product", "lexicographic_sum", "dual",
+            "with_bounds", "without_bounds", "relabel", "canonical_label",
+            "subposet", "completion_by_cuts", "promotion", "evacuation",
+        }:
+            return FINITE_POSET_RETURN_UNION
+        if node.name in {"order_filter", "order_ideal"}:
+            return "list"
+        if node.name == "greene_shape":
+            return "'sage.combinat.partition.Partition'"
+        if node.name in {"random_subposet"}:
+            return FINITE_POSET_RETURN_UNION
+        if node.name == "graphviz_string":
+            return "str"
+        if node.name == "order_complex":
+            return "'sage.topology.simplicial_complex.SimplicialComplex'"
+        if node.name in {"order_polytope", "chain_polytope"}:
+            return POLYHEDRON_RETURN_UNION
+
+    if owner_name == "Partition":
+        if node.name in {"__next__", "stretch", "power", "t_completion", "to_core", "k_irreducible", "k_skew", "k_conjugate", "k_split"}:
+            return "Self"
+        if node.name == "__truediv__":
+            return "'sage.combinat.skew_partition.SkewPartition'"
+        if node.name in {"k_rim", "k_column_lengths", "remove_horizontal_border_strip"}:
+            return "list"
+        if node.name == "next_within_bounds":
+            return "Self | None"
+        if node.name == "cell_poset":
+            return FINITE_POSET_RETURN_UNION
+        if node.name in {"to_dyck_word"}:
+            return "'sage.combinat.dyck_word.DyckWord'"
+        if node.name in {"reading_tableau", "initial_column_tableau", "garnir_tableau", "top_garnir_tableau", "leg_lengths", "upper_hook_lengths", "lower_hook_lengths", "contents_tableau"}:
+            return "'sage.combinat.tableau.Tableau'"
+        if node.name == "ladder_tableau":
+            return "'sage.combinat.tableau.Tableau' | tuple"
+        if node.name in {"young_subgroup"}:
+            return "'sage.groups.perm_gps.permgroup.PermutationGroup_generic'"
+        if node.name in {"young_subgroup_generators"}:
+            return "list"
+        if node.name in {"arm_length", "leg_length", "hook_length", "upper_hook", "lower_hook", "_initial_degree"}:
+            return "'sage.rings.integer.Integer | int'"
+        if node.name == "hook_polynomial":
+            return POLYNOMIAL_RETURN_UNION
+        if node.name == "quotient":
+            return "'sage.combinat.partition_tuple.PartitionTuple'"
+        if node.name == "k_boundary":
+            return "'sage.combinat.skew_partition.SkewPartition'"
+        if node.name == "jacobi_trudi":
+            return MATRIX_ELEMENT_UNION
+        if node.name == "plancherel_measure":
+            return "'sage.rings.rational.Rational'"
+        if node.name == "outline":
+            return "'sage.symbolic.expression.Expression'"
+        if node.name in {"specht_module_dimension", "simple_module_dimension"}:
+            return "'sage.rings.rational.Rational'"
+        if node.name in {"add_cell", "core", "dual", "k_interior", "remove_cell", "up", "down"}:
+            return "Iterator" if node.name in {"up", "down"} else "Self"
+        if node.name in {
+            "arm_lengths", "cells", "dominated_partitions", "evaluation", "hook_lengths",
+            "k_row_lengths", "outer_rim", "rim", "to_list", "zero_one_sequence",
+        }:
+            return "list"
+        if node.name in {"centralizer_size", "content", "get_part", "hook_product", "k_size", "residue", "size", "weighted_size"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"crank", "frobenius_rank", "length", "sign"}:
+            return "int"
+        if node.name == "conjugacy_class_size":
+            return "'sage.rings.rational.Rational'"
+        if node.name == "dimension":
+            return "'sage.rings.rational.Rational'"
+        if node.name == "character_polynomial":
+            return "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular'"
+        if node.name == "dual_equivalence_graph":
+            return "'sage.graphs.graph.Graph'"
+
+    if owner_name == "FiniteWord_class":
+        if node.name in {
+            "coerce", "concatenate", "__pow__", "schuetzenberger_involution",
+            "foata_bijection", "to_integer_word", "reversal", "longest_common_suffix",
+            "lps", "palindromic_closure", "border", "primitive", "longest_common_subword",
+            "return_words_derivate", "delta", "delta_derivate", "delta_derivate_left",
+            "delta_derivate_right", "phi", "phi_inv", "iterated_left_palindromic_closure",
+            "apply_permutation_to_positions", "apply_permutation_to_letters", "minimal_conjugate",
+            "swap", "swap_increase", "swap_decrease", "sturmian_desubstitute_as_possible",
+            "BWT", "conjugate_position",
+        }:
+            return "Self" if node.name != "conjugate_position" else "int | None"
+        if node.name in {"topological_entropy"}:
+            return "'sage.rings.rational.Rational | sage.symbolic.expression.Expression'"
+        if node.name in {"reduced_rauzy_graph"}:
+            return "'sage.graphs.digraph.DiGraph'"
+        if node.name in {
+            "length_border", "length_maximal_palindrome", "longest_forward_extension",
+            "longest_backward_extension", "number_of_factor_occurrences",
+            "number_of_subword_occurrences", "defect", "abelian_complexity",
+        }:
+            return "'sage.rings.integer.Integer | int'"
+        if node.name == "palindromic_lacunas_study":
+            return "tuple"
+        if node.name in {"crochemore_factorization", "overlap_partition"}:
+            return "list"
+        if node.name == "robinson_schensted":
+            return "tuple"
+        if node.name == "to_monoid_element":
+            return "'sage.monoids.free_monoid_element.FreeMonoidElement'"
+        if node.name in {"factor_iterator"}:
+            return "Iterator"
+        if node.name in {"good_suffix_table", "prefix_function_table", "quasiperiods"}:
+            return "list"
+        if node.name in {"charge", "factor_complexity", "find", "length", "minimal_period", "palindromic_complexity", "primitive_length", "rfind"}:
+            return "int"
+        if node.name in {"cocharge", "degree", "major_index", "number_of_factors", "number_of_inversions"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name == "critical_exponent":
+            return "'sage.rings.rational.Rational'"
+        if node.name == "evaluation_partition":
+            return "'sage.combinat.partition.Partition'"
+        if node.name == "rauzy_graph":
+            return "'sage.graphs.digraph.DiGraph'"
+        if node.name == "standard_factorization":
+            return "tuple"
+        if node.name == "standard_permutation":
+            return "'sage.combinat.permutation.StandardPermutation'"
+
+    if owner_name == "Tableau":
+        if node.name in {"anti_restrict"}:
+            return "'sage.combinat.skew_tableau.SkewTableau'"
+        if node.name in {"atom", "components", "corners", "k_weight", "reduced_column_word", "reduced_row_word", "to_chain", "to_list", "weight"}:
+            return "list"
+        if node.name in {"charge", "content", "height", "major_index", "size"}:
+            return "int"
+        if node.name in {"cocharge", "codegree", "degree", "inversion_number"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"check", "first_column_descent", "first_row_descent"}:
+            return "None"
+        if node.name in {"column_stabilizer", "row_stabilizer"}:
+            return "'sage.groups.perm_gps.permgroup.PermutationGroup_generic'"
+        if node.name in {"evacuation", "promotion", "promotion_inverse", "restrict", "right_key_tableau", "schensted_insert", "schuetzenberger_involution"}:
+            return "Self"
+        if node.name in {"restriction_shape", "shape"}:
+            return "'sage.combinat.partition.Partition'"
+        if node.name == "reading_word_permutation":
+            return "'sage.combinat.permutation.StandardPermutation'"
+        if node.name == "to_sign_matrix":
+            return "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'"
+        if node.name in {"to_word", "to_word_by_column", "to_word_by_row"}:
+            return "'sage.combinat.words.word.FiniteWord_list'"
+
+    if owner_name == "Permutation":
+        if node.name in {
+            "__next__", "prev", "__mul__", "__rmul__", "left_action_product",
+            "right_action_product", "ishift", "iswitch", "reverse", "complement",
+            "forget_cycles", "remove_extra_fixed_points", "retract_plain",
+            "retract_direct_product", "retract_okounkov_vershik", "shifted_concatenation",
+        }:
+            return "Self"
+        if node.name == "_gap_":
+            return "'cypari2.gen.Gen'"
+        if node.name in {"to_tableau_by_shape", "left_tableau", "right_tableau"}:
+            return "'sage.combinat.tableau.Tableau'"
+        if node.name == "to_permutation_group_element":
+            return "'sage.groups.perm_gps.permgroup_element.PermutationGroupElement'"
+        if node.name == "to_matrix":
+            return MATRIX_ELEMENT_UNION
+        if node.name in {"number_of_longest_increasing_subsequences", "number_of_reduced_words", "number_of_nth_roots", "multi_major_index"}:
+            return "'sage.rings.integer.Integer | int'"
+        if node.name in {"cycle_type", "hyperoctahedral_double_coset_type", "increasing_tree_shape", "binary_search_tree_shape", "RS_partition"}:
+            return "'sage.combinat.partition.Partition'"
+        if node.name in {"fundamental_transformation_inverse", "destandardize"}:
+            return "'sage.combinat.words.finite_word.FiniteWord_list'"
+        if node.name in {"rothe_diagram", "idescents_signature", "to_major_code", "action"}:
+            return "list"
+        if node.name == "rank_matrix":
+            return MATRIX_ELEMENT_UNION
+        if node.name == "descent_polynomial":
+            return POLYNOMIAL_RETURN_UNION
+        if node.name in {"bruhat_succ_iterator", "bruhat_pred_iterator", "nth_roots"}:
+            return "Iterator"
+        if node.name == "permutation_poset":
+            return FINITE_POSET_RETURN_UNION
+        if node.name == "show":
+            return "None"
+
+    if owner_name == "EllipticCurve_generic":
+        if node.name in {"a1", "a2", "a3", "a4", "a6", "b2", "b4", "b6", "b8", "c4", "c6", "discriminant", "j_invariant", "two_division_polynomial"}:
+            return MATRIX_SCALAR_UNION
+        if node.name in {"division_polynomial", "division_polynomial_0", "_multiple_x_denominator", "_multiple_x_numerator"}:
+            return MATRIX_POLYNOMIAL_UNION
+        if node.name == "_defining_params_":
+            return "tuple"
+        if node.name in {"__pari__", "pari_curve"}:
+            return "'cypari2.gen.Gen'"
+        if node.name == "assume_base_ring_is_field":
+            return "None"
+        if node.name == "formal_group":
+            return "'sage.schemes.elliptic_curves.formal_group.EllipticCurveFormalGroup'"
+
+    if owner_name == "PermutationGroup_generic":
+        if node.name in {"gen", "one", "random_element"}:
+            return "'sage.groups.perm_gps.permgroup_element.PermutationGroupElement'"
+        if node.name in {"exponent", "order", "group_primitive_id"}:
+            return "'sage.rings.integer.Integer'"
+        if node.name in {"largest_moved_point", "smallest_moved_point"}:
+            return "int"
+        if node.name in {"composition_series", "conjugacy_classes_representatives", "conjugacy_classes_subgroups", "derived_series", "lower_central_series", "maximal_normal_subgroups", "minimal_generating_set", "minimal_normal_subgroups", "normal_subgroups", "orbits", "transversals", "upper_central_series"}:
+            return "list"
+        if node.name in {"center", "centralizer", "fitting_subgroup", "frattini_subgroup", "normalizer", "solvable_radical", "sylow_subgroup"}:
+            return "'sage.groups.perm_gps.permgroup.PermutationGroup_subgroup'"
+        if node.name in {"commutator", "conjugate"}:
+            return "Self"
+        if node.name == "as_finitely_presented_group":
+            return "'sage.groups.finitely_presented.FinitelyPresentedGroup'"
+        if node.name == "domain":
+            return "'sage.sets.finite_enumerated_set.FiniteEnumeratedSet'"
+        if node.name == "group_id":
+            return "list"
+        if node.name in {"character", "trivial_character"}:
+            return "'sage.groups.class_function.ClassFunction'"
+        if node.name == "minimal_generating_set":
+            return "list"
+
+    if owner_name == "SimplicialComplex":
+        if node.name in {"h_vector", "g_vector", "f_triangle", "h_triangle", "restriction_sets"}:
+            return "list"
+        if node.name in {"vertices"}:
+            return "tuple"
+        if node.name in {"maximal_faces", "minimal_nonfaces"}:
+            return "set"
+        if node.name == "faces":
+            return "dict"
+        if node.name == "face_iterator":
+            return "Iterator"
+        if node.name in {"product", "join", "cone", "suspension", "disjoint_union", "wedge", "connected_sum", "link", "star", "generated_subcomplex", "alexander_dual", "barycentric_subdivision", "n_skeleton", "connected_component", "fixed_complex", "decone", "intersection"}:
+            return "Self"
+        if node.name in {"add_face", "remove_face", "remove_faces", "set_immutable"}:
+            return "None"
+        if node.name == "stellar_subdivision":
+            return "Self | None"
+        if node.name == "graph":
+            return "'sage.graphs.graph.Graph'"
+        if node.name == "delta_complex":
+            return "'sage.topology.delta_complex.DeltaComplex'"
+        if node.name == "chain_complex":
+            return "'sage.homology.chain_complex.ChainComplex'"
+        if node.name == "automorphism_group":
+            return "'sage.groups.perm_gps.permgroup.PermutationGroup_generic'"
+        if node.name == "fundamental_group":
+            return "'sage.groups.finitely_presented.FinitelyPresentedGroup'"
+        if node.name in {"stanley_reisner_ring", "_stanley_reisner_base_ring"}:
+            return "'sage.rings.polynomial.polynomial_quotient_ring.PolynomialQuotientRing_field_with_category'"
+        if node.name == "is_partitionable":
+            return "bool | tuple"
+        if node.name == "bigraded_betti_number":
+            return "'sage.rings.integer.Integer | int'"
+
+    # Graph/Digraph share a large, stable protocol.  The generated stubs often
+    # omit returns because the implementation lives in ``generic_graph.py``;
+    # use the documented outer result here while leaving vertex/edge payloads
+    # unresolved (they are user-defined and cannot be inferred statically).
+    graph_owner = bool(
+        owner_name
+        and (owner_name == "GenericGraph" or owner_name.casefold().endswith("graph"))
+    )
+    if graph_owner:
+        if node.name in {"__eq__", "__ne__"}:
+            return "bool"
+        if node.name in {"__add__", "__mul__", "__rmul__", "_subgraph_by_adding", "_subgraph_by_deleting"}:
+            return "Self"
+        if node.name in {"_matrix_"}:
+            return MATRIX_ELEMENT_UNION
+        if node.name in {"allow_multiple_edges", "_copy_attribute_from", "_scream_if_not_simple", "_scream_if_immutable"}:
+            return "None"
+        if node.name.startswith(("is_", "has_", "allows_")) or node.name in {
+            "weighted", "antisymmetric", "is_immutable",
+        }:
+            return "bool"
+        if node.name in {
+            "to_dictionary", "get_vertices", "shortest_paths", "shortest_path_lengths",
+            "shortest_path_all_pairs", "distance_all_pairs", "distances_distribution",
+            "get_embedding", "get_pos", "pagerank", "clustering_coeff", "cluster_triangles",
+            "to_networkx",
+        }:
+            return "dict"
+        if node.name in {
+            "adjacency_matrix", "incidence_matrix", "distance_matrix",
+            "weighted_adjacency_matrix", "kirchhoff_matrix", "katz_matrix",
+        }:
+            return MATRIX_ELEMENT_UNION
+        if node.name in {
+            "loops", "loop_edges", "loop_vertices", "multiple_edges",
+            "edge_boundary", "edges_incident", "edge_labels", "vertices", "neighbors",
+            "degree_histogram", "degree_sequence", "eulerian_circuit", "minimum_cycle_basis",
+            "cycle_basis", "all_paths", "all_simple_paths", "all_simple_cycles",
+            "connected_components", "connected_components_subgraphs",
+            "connected_component_containing_vertex", "connected_components_sizes",
+            "biconnected_components", "biconnected_components_subgraphs",
+            "edge_disjoint_paths", "vertex_disjoint_paths", "min_spanning_tree",
+            "shortest_path", "vertex_boundary", "eigenvectors", "eigenspaces",
+        }:
+            return "list"
+        if node.name == "random_edge":
+            return "tuple"
+        if node.name in {
+            "random_vertex_iterator", "random_edge_iterator", "vertex_iterator",
+            "neighbor_iterator", "edge_iterator", "degree_iterator", "all_paths_iterator",
+            "shortest_simple_paths", "all_cycles_iterator", "connected_subgraph_iterator",
+            "subgraph_search_iterator", "subgraph_decompositions", "breadth_first_search",
+            "depth_first_search",
+        }:
+            return "Iterator"
+        if node.name in {
+            "order", "size", "number_of_loops", "number_of_connected_components",
+            "number_of_biconnected_components", "degree_to_cell", "triangles_count",
+            "shortest_path_length", "distance", "girth", "odd_girth", "edge_connectivity",
+            "vertex_connectivity", "number_of_spanning_trees", "genus", "crossing_number",
+        }:
+            return "'sage.rings.integer.Integer | int'"
+        if node.name in {"density", "average_degree", "average_distance", "wiener_index"}:
+            return "'sage.rings.rational.Rational | float'"
+        if node.name in {
+            "random_subgraph", "complement", "line_graph", "to_simple", "disjoint_union",
+            "union", "cartesian_product", "tensor_product", "lexicographic_product",
+            "strong_product", "disjunctive_product", "canonical_label", "transitive_closure",
+            "transitive_reduction", "planar_dual", "reduced_homeomorphic_graph",
+        }:
+            return "Self"
+        # Graph mutators are in-place operations in both ``Graph`` and
+        # ``DiGraph``; their Python contract is explicitly ``None``.  Keeping
+        # this separate from the payload-producing methods above avoids
+        # exposing a spurious graph value after calls such as ``G.add_edge``.
+        if node.name in {
+            "add_clique", "add_cycle", "add_edge", "add_edges", "add_path",
+            "add_vertex", "add_vertices", "clear", "delete_edge", "delete_edges",
+            "delete_multiedge", "delete_vertex", "delete_vertices", "merge_vertices",
+            "remove_loops", "remove_multiple_edges", "relabel", "set_edge_label",
+            "set_embedding", "set_latex_options", "set_pos", "set_vertex",
+            "set_vertices", "subdivide_edge", "subdivide_edges",
+        }:
+            return "None"
+        if node.name in {"name", "graphviz_string"}:
+            return "str"
+        if node.name in {"steiner_tree"}:
+            return "Self"
+        if node.name in {
+            "automorphism_group", "centralizer", "edge_disjoint_spanning_trees",
+        }:
+            return "list" if node.name == "edge_disjoint_spanning_trees" else "'sage.groups.perm_gps.permgroup.PermutationGroup_generic'"
+        if node.name in {
+            "centrality_betweenness", "centrality_closeness", "distance_all_pairs",
+        }:
+            return "dict"
+        if node.name in {"layout", "layout_planar", "layout_forest", "layout_graphviz"}:
+            return "dict"
+        if node.name in {"edge_cut", "vertex_cut", "multiway_cut", "max_cut"}:
+            return "'sage.rings.integer.Integer | int | list | tuple'"
+        if node.name in {"flow", "_ford_fulkerson"}:
+            return "'sage.rings.integer.Integer | int | float | dict | tuple'"
+        if node.name == "multicommodity_flow":
+            return "dict"
+        if node.name == "nowhere_zero_flow":
+            return "Self | None"
+        if node.name in {"edge_polytope", "symmetric_edge_polytope"}:
+            return POLYHEDRON_RETURN_UNION
+        if node.name == "show":
+            return "None"
+        if node.name in {
+            "clustering_average", "cluster_transitivity", "effective_resistance",
+        }:
+            return "'sage.rings.rational.Rational | float'"
+        if node.name in {
+            "diameter", "eccentricity", "radius", "arboricity", "chromatic_number",
+            "clique_number", "maximum_average_degree", "fractional_clique_number",
+        }:
+            return "'sage.rings.integer.Integer | int'"
+        if node.name in {"bipartite_sets"}:
+            return "tuple"
+        if node.name in {"clique_maximum", "independent_set", "vertex_cover", "coloring", "feedback_vertex_set", "hamiltonian_cycle", "hamiltonian_path", "longest_cycle", "longest_path", "traveling_salesman_problem"}:
+            return "list"
+        if node.name in {"antipodal_graph", "bipartite_double", "distance_graph", "folded_graph", "join", "to_simple"}:
+            return "Self"
+        if node.name in {"graph6_string", "sparse6_string", "write_to_eps"}:
+            return "str" if node.name != "write_to_eps" else "None"
+        if node.name in {"seidel_adjacency_matrix", "common_neighbors_matrix"}:
+            return MATRIX_ELEMENT_UNION
+        if node.name == "plot3d":
+            return "'sage.plot.plot3d.base.Graphics3d'"
+        if node.name == "characteristic_polynomial":
+            return "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'"
+        if node.name in {"faces", "min_spanning_tree"}:
+            return "list"
+        if node.name in {"n_faces", "subgraph_search_count"}:
+            return "'sage.rings.integer.Integer | int'"
+        if node.name == "power":
+            return "Self"
+        if node.name in {"contract_edge", "contract_edges", "export_to_file", "graphviz_to_file_named", "show3d"}:
+            return "None"
+
     # Polynomial backends frequently override these methods in Cython without
     # repeating the base-class return annotation.  Their source contracts are
     # stable across FLINT/NTL/generic implementations: degree is an integer,
@@ -3588,6 +5313,18 @@ def _doc_metric_contract_annotation(
             return "Self"
         if node.name == "__pow__":
             return "Self"
+        if node.name == "__pari__":
+            return "'cypari2.gen.Gen'"
+        if node.name == "_integer_":
+            return "'sage.rings.integer.Integer'"
+        if node.name == "_rational_":
+            return "'sage.rings.rational.Rational'"
+        if node.name == "valuation":
+            return CARDINALITY_RETURN_UNION
+        if node.name == "gcd":
+            return "Self"
+        if node.name == "lift":
+            return "'sage.rings.integer.Integer'"
 
     # Matrix implementations share the same in-place storage protocol for
     # low-level elementwise arithmetic.  The public multiplication operation
@@ -3606,6 +5343,24 @@ def _doc_metric_contract_annotation(
         ):
             return "Self"
 
+    # NTL Cython wrappers are concrete value objects rather than abstract
+    # Sage parents.  Their arithmetic/linear-algebra hooks return the same
+    # wrapper selected by the NTL modulus/context; matrix dimensions and rich
+    # comparison are the two stable scalar protocol exceptions.  Keep
+    # multiplication and indexing out because their operand/index can switch
+    # between a matrix, vector, or coefficient implementation.
+    if owner_name and owner_name.casefold().startswith("ntl_"):
+        if node.name in {"__add__", "__sub__", "__neg__", "__pos__", "__pow__", "__invert__"}:
+            return "Self"
+        if node.name == "__richcmp__":
+            return "bool"
+        if node.name in {"NumRows", "NumCols"}:
+            return "int"
+        if node.name in {"transpose", "derivative", "reverse", "truncate", "square", "gcd", "lcm", "primitive_part"}:
+            return "Self"
+        if node.name in {"quo_rem", "pseudo_quo_rem", "xgcd"}:
+            return "tuple[Self, Self]" if node.name != "xgcd" else "tuple[Self, Self, Self]"
+
     # Concrete element arithmetic is implemented after Sage's coercion layer
     # has selected a common parent, so these low-level operations preserve the
     # receiver implementation.  Keep the receiver suffix guard: matrix and
@@ -3618,6 +5373,23 @@ def _doc_metric_contract_annotation(
         and node.name in {"_add_", "_sub_", "_mul_", "_lmul_", "_rmul_", "_neg_", "__neg__", "__pos__"}
         and not (owner_name == "TorsionQuadraticModuleElement" and node.name == "_mul_")
     ):
+        return "Self"
+
+    # Sage's numeric backends use a few stable names that do not end in
+    # ``Element`` (``RealNumber``, ``ComplexBall``, ``MPComplexNumber``).
+    # Their unary, inverse, and power operations are receiver-preserving in
+    # Sage 10.9; keep this rule limited to those scalar implementation names
+    # so parent factories and symbolic expressions remain fail-closed.
+    scalar_owner = owner_name.rsplit(".", 1)[-1] if owner_name else ""
+    scalar_owner = scalar_owner or ""
+    if (
+        scalar_owner.endswith(("Number", "Ball"))
+        or scalar_owner.startswith(("RealInterval", "ComplexInterval", "pAdic"))
+        or scalar_owner in {"FpTElement", "FractionFieldElement", "WittVector"}
+    ) and node.name in {
+        "_add_", "_sub_", "_mul_", "_div_", "_neg_", "_lmul_", "_rmul_",
+        "__neg__", "__pos__", "__invert__", "__pow__",
+    }:
         return "Self"
 
     # Multiplicative inverses and powers of concrete algebra/ring/group
@@ -3857,8 +5629,31 @@ def _doc_output_annotation(
         # parent-preserving arithmetic protocol.  Their class names vary by
         # backend (for example ``FiniteFieldElement_pari_ffelt``), so include
         # the stable ``Element`` suffix in this guarded prepass.
-        or re.search(r"(?:Element|element)$", owner_name)
-    ):
+         or re.search(r"(?:Element|element)$", owner_name)
+         or owner_name.casefold().startswith("ntl_")
+         or owner_name == "Integer"
+         or owner_name == "FiniteField"
+         or owner_name.casefold().startswith("finitefield_")
+         or owner_name == "FinitePolyExtElement"
+         or owner_name == "MatroidDatabaseModule"
+         or owner_name in {"DesignDatabaseModule", "GraphFamiliesModule", "SmallGraphsModule"}
+         or owner_name == "DistanceRegularGraphsModule"
+         or owner_name == "Polytopes"
+         or owner_name == "Posets"
+         or owner_name == "Partition"
+         or owner_name == "FiniteWord_class"
+         or owner_name == "Tableau"
+         or owner_name == "EllipticCurve_generic"
+         or owner_name == "PermutationGroup_generic"
+         or owner_name == "GenericGraph"
+         or owner_name.casefold().endswith("graph")
+         # These owners also have stable method-name contracts (for example
+         # ``NumberField_generic.gen`` and symbolic ``Expression.derivative``)
+         # even when the translated OUTPUT prose is absent or intentionally
+         # broad.  Keep this list explicit so dynamic factories remain
+         # fail-closed.
+         or owner_name in {"NumberField_generic", "NumberField_relative", "Expression"}
+     ):
         metric_annotation = _doc_metric_contract_annotation(node, raw_summary, owner_name)
         if metric_annotation is not None:
             return metric_annotation
@@ -4242,6 +6037,23 @@ def annotate_doc_output_returns(path: Path, class_index: dict[str, tuple[str, ..
         return []
     line_offsets = _line_offsets(text)
     edits: list[tuple[int, str, str]] = []
+    # ``database_matroids`` is a generated catalogue of constructors.  Its
+    # module-level functions all return concrete matroid implementations, so
+    # pass an explicit contract owner to the shared metric resolver.
+    module_path = path.as_posix()
+    module_contract_owner = (
+        "MatroidDatabaseModule"
+        if module_path.endswith("sage/matroids/database_matroids.pyi")
+        else "DesignDatabaseModule"
+        if module_path.endswith("sage/combinat/designs/database.pyi")
+        else "GraphFamiliesModule"
+        if module_path.endswith("sage/graphs/generators/families.pyi")
+        else "SmallGraphsModule"
+        if module_path.endswith("sage/graphs/generators/smallgraphs.pyi")
+        else "DistanceRegularGraphsModule"
+        if module_path.endswith("sage/graphs/generators/distance_regular.pyi")
+        else None
+    )
 
     def visit_class(node: ast.ClassDef) -> None:
         for member in node.body:
@@ -4257,7 +6069,7 @@ def annotate_doc_output_returns(path: Path, class_index: dict[str, tuple[str, ..
 
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is None:
-            annotation = _doc_output_annotation(node, class_index)
+            annotation = _doc_output_annotation(node, class_index, module_contract_owner)
             if annotation is not None:
                 colon = _function_header_colon(text, line_offsets, node)
                 if colon is not None:
