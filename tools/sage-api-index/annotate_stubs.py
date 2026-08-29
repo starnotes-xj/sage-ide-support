@@ -2765,6 +2765,42 @@ def _doc_summary_class_role_annotation(
     return _doc_output_class_annotation(summary, class_index)
 
 
+def _doc_numeric_self_summary_annotation(summary: str, owner_name: str | None) -> str | None:
+    """Resolve elementary functions that stay in a concrete numeric domain.
+
+    Sage's MPFR/MPFI/ARB/MPC element docs explicitly describe these results as
+    the sine, logarithm, exponential, etc. of the same numeric value. For the
+    concrete real/complex element classes that is a receiver-preserving
+    operation, so Self is more precise than a shared numeric base. Do not
+    infer from method names alone: magnitudes, arguments, coefficients and
+    conversions are deliberately excluded because they change the result
+    domain.
+    """
+    if owner_name is None or not re.fullmatch(
+        r"(?:Real|Complex)(?:DoubleElement(?:_gsl)?|Number|Ball|IntervalFieldElement)|MPComplexNumber",
+        owner_name,
+        re.IGNORECASE,
+    ):
+        return None
+    if not re.match(r"^(?:this function )?returns?\s+", summary, re.IGNORECASE):
+        return None
+    if not re.search(
+        r"\b(?:self|this (?:real|complex) number|this ball|this number|complex number)\b",
+        summary,
+        re.IGNORECASE,
+    ):
+        return None
+    if not re.search(
+        r"\b(?:sine|cosine|tangent|secant|cosecant|cotangent|"
+        r"arccosine|arcsine|arctangent|arccotangent|arccosecant|arcsecant|"
+        r"exponential|logarithm|hyperbolic)\b",
+        summary,
+        re.IGNORECASE,
+    ):
+        return None
+    return "Self"
+
+
 def _doc_explicit_type_annotation(
     raw_output: str,
     class_index: dict[str, tuple[str, ...]],
@@ -2923,6 +2959,9 @@ def _doc_output_annotation(
     summary_class_annotation = _doc_summary_class_role_annotation(raw_summary, class_index)
     if summary_class_annotation is not None:
         return summary_class_annotation
+    numeric_summary_annotation = _doc_numeric_self_summary_annotation(raw_summary, owner_name)
+    if numeric_summary_annotation is not None:
+        return numeric_summary_annotation
     summary_annotation = _doc_summary_annotation(node, summary, class_index, owner_name)
     if summary_annotation is not None:
         return summary_annotation

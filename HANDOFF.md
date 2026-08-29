@@ -97,3 +97,10 @@ Gradle、索引和 ZIP 静态证据不能替代上述 fresh PyCharm GUI smoke。
 - 完整索引测试仍为 `117` 项通过，`compileall` 与 `git diff --check` 通过；协议测试覆盖多行签名、幂等重复执行及上述 8 个钩子。
 - 重新生成 staging 索引：`2,843` 源文件、`84,508` entries、`52,743` callable、`52,347` signatures；`UNKNOWN=30,057`，相对第 10 节 `30,652` 再减少 `595`（本轮第 11 节规则减少 `513`，本节协议钩子再减少 `82`）。当前分类为 `CONCRETE=3,950`、`TYPE_VARIABLE=617`、`BROAD_BUILTIN=11,970`、`UNION_OR_OPTIONAL=477`、`NONE=4,688`、`DYNAMIC=16`、`STRUCTURAL_BASE=44`。
 - 该轮仍未重新打包 ZIP 或执行 PyCharm GUI smoke；索引审计数字不能替代 fresh 安装验收。剩余 UNKNOWN 继续集中在父对象动态选择、条件/联合返回和 PARI/Magma/Singular 等外部 CAS 接口，未使用公共基类或 `Any` 猜测。
+
+## 13. 数值域文档合同批量收敛（2026-08-29）
+
+- 根据 Sage 10.9 WSL 实际运行（`CC`、`RBF`、`RIF`、`RR`、`CDF` 的三角/对数/共轭结果均保留具体数值元素实现），新增源文档驱动规则：`ComplexDoubleElement`、`ComplexNumber`、`MPComplexNumber`、`ComplexBall`、`ComplexIntervalFieldElement` 及 `RealNumber`、`RealIntervalFieldElement`、`RealDoubleElement_gsl` 中，摘要明确“对同一复/实数值求三角、指数或对数”的方法返回 `Self`。幅值、辐角、系数、PARI/gmpy2 转换等会改变结果域的描述继续保持 UNKNOWN。
+- 新增 1 个回归测试；完整索引测试 `118` 项通过，`compileall` 和 `git diff --check` 通过。
+- 重新生成 staging 索引：`2,843` 源文件、`84,511` entries、`52,743` callable、`52,347` signatures；`UNKNOWN=29,879`，相对第 10 节 `30,652` 再减少 `773`（在第 11、12 节累计 `595` 的基础上，本节数值域规则再减少 `178`）。`TYPE_VARIABLE=795`，因为 `Self` 在调用端按具体 receiver 绑定；其余分类为 `CONCRETE=3,950`、`BROAD_BUILTIN=11,970`、`UNION_OR_OPTIONAL=477`、`NONE=4,688`、`DYNAMIC=16`、`STRUCTURAL_BASE=44`。
+- 本轮仍未重新打包 ZIP 或执行 PyCharm GUI smoke；新增索引只在 staging 生效，安装包需下一步重新构建。剩余 UNKNOWN 仍不以公共基类或 `Any` 填充。

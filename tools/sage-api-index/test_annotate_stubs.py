@@ -1298,6 +1298,36 @@ class AnnotateStubsTest(unittest.TestCase):
             # Inversion may change parent/type and remains fail-closed.
             self.assertIn("def inverse(self):", patched)
 
+    def test_numeric_element_summaries_preserve_the_concrete_receiver(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "numeric.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class ComplexDoubleElement:\n"
+                "    def cos(self):\n"
+                "        \"\"\"This function returns the complex cosine of the complex number z.\"\"\"\n"
+                "    def magnitude(self):\n"
+                "        \"\"\"This function returns the magnitude of the complex number z.\"\"\"\n"
+                "\n"
+                "class RealNumber:\n"
+                "    def log(self):\n"
+                "        \"\"\"Return the logarithm of self to the given base.\"\"\"\n"
+                "\n"
+                "class ComplexBall:\n"
+                "    def arg(self):\n"
+                "        \"\"\"Return the argument of this complex ball.\"\"\"\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, first.returncode, first.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def cos(self) -> Self:", patched)
+            self.assertIn("def log(self) -> Self:", patched)
+            self.assertIn("def magnitude(self):", patched)
+            self.assertIn("def arg(self):", patched)
+
     def test_sage_test_hooks_return_none_even_without_docstrings(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
