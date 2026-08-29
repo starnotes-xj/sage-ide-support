@@ -87,6 +87,6 @@ Gradle、索引和 ZIP 静态证据不能替代上述 fresh PyCharm GUI smoke。
 ## 11. 加速收敛（2026-08-29）
 
 - 将文档合同降低从少量手写条目扩展为通用安全模式：摘要中明确返回的唯一 Sphinx 类（仅限 Return/Construct/Create/Build/Convert 结果动词）、`whether`/`whether or not` 谓词、带明确谓词语义的 `is_`/`has_`/`can_`/`contains_`/`exists_` 方法，以及文档明确“对 self/this 做加法、减法、乘法、取负、转置”且方法名为运算协议的方法，统一生成具体 `Self`/唯一类合同；输入类角色和条件/联合输出仍 fail-closed。
-- 追加 2 个回归测试，完整索引测试由 `114` 增至 `116`，并验证重复执行、AST、`compileall` 和 `git diff --check`。
-- 重新生成 staging 索引：`2,843` 源文件、`84,436` entries、`52,743` callable、`52,347` signatures；`UNKNOWN=30,437`，相对第 10 节 `30,652` 再减少 `215`。返回分类为 `CONCRETE=3,950`、`TYPE_VARIABLE=440`、`BROAD_BUILTIN=11,968`、`UNION_OR_OPTIONAL=477`、`DYNAMIC=16`、`STRUCTURAL_BASE=44`。
+- 追加 3 个回归测试，完整索引测试由 `114` 增至 `117`，并验证重复执行、AST、`compileall` 和 `git diff --check`。
+- 额外将 Sage `TestSuite` 的 `_test_*` 钩子按“失败抛异常、成功返回 `None`”的框架合同批量收敛（含无 docstring 方法）。重新生成 staging 索引：`2,843` 源文件、`84,508` entries、`52,743` callable、`52,347` signatures；`UNKNOWN=30,139`，相对第 10 节 `30,652` 再减少 `513`。返回分类为 `CONCRETE=3,950`、`TYPE_VARIABLE=617`、`BROAD_BUILTIN=11,968`、`UNION_OR_OPTIONAL=477`、`NONE=4,608`、`DYNAMIC=16`、`STRUCTURAL_BASE=44`。
 - 该轮未重新打包 ZIP 或执行 PyCharm GUI smoke；上述数字是 fresh 生成与 `audit_contracts.py` 的实际结果，不能替代插件安装验收。剩余 UNKNOWN 仍主要来自父对象动态选择、条件联合返回和外部 CAS 接口。

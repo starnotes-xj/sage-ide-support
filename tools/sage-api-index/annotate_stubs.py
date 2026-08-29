@@ -2881,6 +2881,12 @@ def _doc_output_annotation(
 ) -> str | None:
     value = ast.get_docstring(node, clean=False)
     if not value:
+        # Sage's ``TestSuite`` discovery contract treats every ``_test_*``
+        # hook as an assertion routine: it raises on failure and returns
+        # ``None`` on success.  This remains safe even when a generated stub
+        # omitted the docstring entirely.
+        if node.name.startswith("_test_"):
+            return "None"
         return None
     # Generated Sage docstrings wrap the first summary sentence over several
     # physical lines (``xlcm`` is a representative case).  Join only that
@@ -2896,6 +2902,8 @@ def _doc_output_annotation(
         summary_lines.append(stripped)
     raw_summary = re.sub(r"\s+", " ", " ".join(summary_lines))
     summary = raw_summary.lower()
+    if node.name.startswith("_test_"):
+        return "None"
     summary_class_annotation = _doc_summary_class_role_annotation(raw_summary, class_index)
     if summary_class_annotation is not None:
         return summary_class_annotation

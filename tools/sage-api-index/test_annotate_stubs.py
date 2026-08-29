@@ -1282,6 +1282,29 @@ class AnnotateStubsTest(unittest.TestCase):
             # Inversion may change parent/type and remains fail-closed.
             self.assertIn("def inverse(self):", patched)
 
+    def test_sage_test_hooks_return_none_even_without_docstrings(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "tests.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class Value:\n"
+                "    def _test_invariant(self):\n"
+                "        pass\n"
+                "    def _test_optional_payload(self):\n"
+                "        \"\"\"Test helper; raises on failure.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def _test_invariant(self) -> None:", patched)
+            self.assertIn("def _test_optional_payload(self) -> None:", patched)
+
     def test_source_scalar_and_chinese_object_contracts_are_typed(self):
         """Documented scalar invariants reduce UNKNOWN without guessing unions."""
         with tempfile.TemporaryDirectory() as temporary:
