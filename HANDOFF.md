@@ -37,10 +37,10 @@ Gradle、索引和 ZIP 静态结果不能替代 fresh PyCharm GUI smoke。
 
 ## 5. 当前验证状态（Sage 10.9 / Python 3.13）
 
-- Staging 索引：`2,843` 源文件、`85,019` entries、`52,423` signatures、`162` diagnostics、coverage `1.0`、missing `0`；inventory digest 为 `8b2676689e9b7a782d209fb9b83a656b350fa6fb903ec646894ee430c0363515`。
-- 合同审计：`UNKNOWN=24,849`、`CONCRETE=5,476`、`TYPE_VARIABLE=2,166`、`BROAD_BUILTIN=12,711`、`NONE=4,791`、`UNION_OR_OPTIONAL=1,727`、`DYNAMIC=17`、`STRUCTURAL_BASE=62`、`GENERIC=481`、`UNQUALIFIED=143`。相对本文件上一记录再减少 `25` 个 UNKNOWN，累计净减少 `682` 个；矩阵特殊构造器、基础图构造器和一元多项式核心工厂均返回具体实现族，不回退公共基类。
+- Staging 索引：`2,843` 源文件、`85,033` entries、`52,431` signatures、`170` diagnostics、coverage `1.0`、missing `0`；inventory digest 为 `bf779be39761b39f88e6212448a4171e319bd6f23d387462498d1ddd38169382`。
+- 合同审计：`UNKNOWN=24,096`、`CONCRETE=5,629`、`TYPE_VARIABLE=2,247`、`BROAD_BUILTIN=13,019`、`NONE=4,904`、`UNION_OR_OPTIONAL=1,804`、`DYNAMIC=17`、`STRUCTURAL_BASE=70`、`GENERIC=495`、`UNQUALIFIED=150`。相对本文件上一记录净减少 `753` 个 UNKNOWN（`24,849 -> 24,096`）；本轮优先收敛了可由源码/WSL 直接证明的 TateAlgebraTerm/Weierstrass 外层结果、PolyDict `lcmt`、TermOrder copy helper、NumberField_cyclotomic GAP/embedding 结果、functional 常用包装函数、SimplicialComplex 示例构造器、Braid 矩阵/结不变量/自运算及内部缓存、LatinSquare 行列/构造器、以及 matrix benchmark 的 float/matrix/None 返回。公共基类仍只用于继承成员查找，动态父对象和无法证明的元素类型保持 UNKNOWN。
 - 本轮新增以 Sage 10.9 文档为主、对可运行项用 WSL 复核：矩阵空间具体矩阵族/模块、`matrix.special` 的块矩阵/伴随矩阵/随机矩阵/旋转矩阵/Toeplitz-Hankel 等构造器、basic graph catalogue 的 `Graph` 构造器、Polynomial/PolynomialRing_generic 的生成元/随机元素/模运算/换基/符号转换/高度/幂级数截断等合同、Graph/Digraph 容器与原地 `None` 分支、符号 Expression、NumberField（含绝对域）、有限域与 IntegerMod 后端、椭圆曲线标量/多项式、matroid/design/graph/polytope/poset/partition/tableau/word/permutation catalogue 构造器、PowerSeries/MPowerSeries/LaurentSeries/LazyModuleElement、Link、FiniteStateMachine、PermutationGroup 基础协议，以及 MPolynomial/MPolynomialRing 的系数、指数、迭代器、插值、生成元、Newton polytope、`nth_root`/`crt` 等；本轮 WSL 抽样确认 `matrix.identity_matrix`、`block_matrix`、`companion_matrix`、`hilbert`、`graphs.CycleGraph`/`CompleteGraph`、`R.gen()`、`R.random_element()`、`f.derivative()`、`f.mod()`、`f.add_bigoh()` 和 `f._symbolic_(SR)` 都落到具体 Sage 类。动态参数仍保留联合或 UNKNOWN。
-- 通过：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`（`167` 项）、`compileall`、`git diff --check`、AST 检查、staging `generate.py` 和 `audit_contracts.py`。
+- 通过：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`（`187` 项）、`compileall`、`git diff --check`、AST 检查、staging `generate.py` 和 `audit_contracts.py`。
 - 当前索引文件：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.json`。
 
 ## 6. 风险与下一步

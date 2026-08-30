@@ -61,6 +61,296 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertEqual(real_text, real.read_text(encoding="utf-8"))
             self.assertEqual(complex_text, complex_mpfr.read_text(encoding="utf-8"))
 
+    def test_number_field_and_number_field_curve_contracts(self):
+        """Cython number-field/ECC methods keep concrete documented results."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def fixture(class_name, signatures):
+                lines = [f"class {class_name}:\n"]
+                for signature in signatures:
+                    lines.extend(
+                        [
+                            f"    def {signature}:\n",
+                            "        \"\"\"Return the documented contract.\"\"\"\n",
+                        ]
+                    )
+                return "".join(lines)
+
+            fixtures = {
+                ("sage", "rings", "number_field", "number_field_element.pyi"): fixture(
+                    "NumberFieldElement",
+                    [
+                        "__abs__(self)", "_acb_(self, R)", "_algebraic_(self, parent)",
+                        "_complex_double_(self, CDF)", "_div_(self, other)", "_mpfr_(self, R)",
+                        "_pari_init_(self, name='y')", "_symbolic_(self, SR)",
+                        "abs(self, prec=None, i=None)", "abs_non_arch(self, P, prec=None)",
+                        "gcd(self, other)", "matrix(self, base=None)", "sign(self)",
+                        "sqrt(self, all=False, extend=True)", "nth_root(self, n, all=False)",
+                    ],
+                ),
+                ("sage", "rings", "number_field", "number_field_element_quadratic.pyi"): fixture(
+                    "NumberFieldElement_quadratic",
+                    [
+                        "__neg__(self)", "_arb_(self, R)", "_complex_mpfi_(self, R)",
+                        "_integer_(self, Z=None)", "_rational_(self)", "continued_fraction(self)",
+                        "continued_fraction_list(self)", "denominator(self)", "numerator(self)",
+                        "real(self)", "trace(self)",
+                    ],
+                ),
+                ("sage", "schemes", "elliptic_curves", "ell_curve_isogeny.pyi"): fixture(
+                    "EllipticCurveIsogeny",
+                    ["__neg__(self)", "dual(self)", "inseparable_degree(self)",
+                     "kernel_polynomial(self)", "_composition_impl(self, right)",
+                     "__compute_via_kohel(self, xP, yP)",
+                     "__compute_via_velu(self, xP, yP)",
+                     "__init_algebraic_structs(self, E)",
+                     "__init_from_kernel_list(self)",
+                     "__initialize_rational_maps_via_kohel(self)",
+                     "__initialize_rational_maps_via_velu(self)",
+                     "__set_pre_isomorphism(self, domain, isomorphism)"],
+                ),
+                ("sage", "schemes", "elliptic_curves", "ell_number_field.pyi"): fixture(
+                    "EllipticCurve_number_field",
+                    [
+                        "base_extend(self, R)", "height_pairing_matrix(self, points=None)",
+                        "is_local_integral_model(self, *P)", "kodaira_symbol(self, P)",
+                        "rank(self, **kwds)", "rank_bounds(self, **kwds)", "reduction(self, place)",
+                        "regulator_of_points(self, points=[])", "simon_two_descent(self, **kwds)",
+                        "local_data(self, P=None, proof=None, algorithm='pari', globally=False)",
+                        "torsion_subgroup(self, n=None, **kwds)",
+                    ],
+                ),
+            }
+            paths = {}
+            for parts, content in fixtures.items():
+                path = root.joinpath(*parts)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                paths[parts[-1]] = path
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            number_text = paths["number_field_element.pyi"].read_text(encoding="utf-8")
+            self.assertIn("def _acb_(self, R) -> 'sage.rings.complex_arb.ComplexBall':", number_text)
+            self.assertIn("def matrix(self, base=None) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |", number_text)
+            self.assertIn("def sqrt(self, all: Literal[False] = False, extend=True) -> Self: ...", number_text)
+            self.assertIn("def nth_root(self, n, all: Literal[True] = True) -> list[Self]: ...", number_text)
+            quadratic_text = paths["number_field_element_quadratic.pyi"].read_text(encoding="utf-8")
+            self.assertIn("def _arb_(self, R) -> 'sage.rings.real_arb.RealBall':", quadratic_text)
+            self.assertIn("def continued_fraction(self) -> 'sage.rings.continued_fraction.ContinuedFraction_periodic':", quadratic_text)
+            self.assertIn("def real(self) -> Self | 'sage.rings.rational.Rational':", quadratic_text)
+            isogeny_text = paths["ell_curve_isogeny.pyi"].read_text(encoding="utf-8")
+            self.assertIn("def __neg__(self) -> Self:", isogeny_text)
+            self.assertIn("def inseparable_degree(self) -> 'sage.rings.integer.Integer':", isogeny_text)
+            self.assertIn("def __compute_via_kohel(self, xP, yP) -> tuple:", isogeny_text)
+            self.assertIn("def __compute_via_velu(self, xP, yP) -> tuple:", isogeny_text)
+            self.assertIn("def __init_algebraic_structs(self, E) -> None:", isogeny_text)
+            self.assertIn("def __init_from_kernel_list(self) -> None:", isogeny_text)
+            self.assertIn("def __initialize_rational_maps_via_kohel(self) -> tuple:", isogeny_text)
+            self.assertIn("def __initialize_rational_maps_via_velu(self) -> tuple:", isogeny_text)
+            self.assertIn("def __set_pre_isomorphism(self, domain, isomorphism) -> None:", isogeny_text)
+            curve_text = paths["ell_number_field.pyi"].read_text(encoding="utf-8")
+            self.assertIn("def is_local_integral_model(self, *P) -> bool:", curve_text)
+            self.assertIn("def rank_bounds(self, **kwds) -> tuple['sage.rings.integer.Integer', 'sage.rings.integer.Integer']:", curve_text)
+            self.assertIn("def simon_two_descent(self, **kwds) -> tuple['sage.rings.integer.Integer',", curve_text)
+            self.assertIn("def local_data(self, P: Literal[None] = None, proof=None, algorithm='pari', globally=False) -> list['sage.schemes.elliptic_curves.ell_local_data.EllipticCurveLocalData']: ...", curve_text)
+            self.assertIn("def torsion_subgroup(self, n: Literal[None] = None, **kwds) -> 'sage.schemes.elliptic_curves.ell_torsion.EllipticCurveTorsionSubgroup': ...", curve_text)
+
+    def test_matroid_contracts_use_documented_outer_types(self):
+        """Core matroid algorithms expose stable set/scalar/polytope types."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "matroids" / "matroid.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "closure(self, X)", "contract(self, X)", "dual(self)",
+                "girth(self)", "binary_matroid(self)", "ternary_matroid(self)",
+                "tutte_polynomial(self)", "characteristic_polynomial(self)",
+                "matroid_polytope(self)", "show(self)",
+            ]
+            content = "class Matroid:\n" + "".join(
+                f"    def {signature}:\n        \"\"\"Return the documented result.\"\"\"\n"
+                for signature in signatures
+            )
+            path.write_text(content, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def closure(self, X) -> frozenset:", text)
+            self.assertIn("def contract(self, X) -> 'sage.matroids.minor_matroid.MinorMatroid':", text)
+            self.assertIn("def dual(self) -> 'sage.matroids.dual_matroid.DualMatroid':", text)
+            self.assertIn("def girth(self) -> int | 'sage.rings.infinity.PlusInfinity':", text)
+            self.assertIn("def binary_matroid(self) -> 'sage.matroids.linear_matroid.BinaryMatroid' | None:", text)
+            self.assertIn("def characteristic_polynomial(self) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint':", text)
+            self.assertIn("def matroid_polytope(self) -> 'sage.geometry.polyhedron.backend_ppl.Polyhedron_ZZ_ppl |", text)
+            self.assertIn("def show(self) -> None:", text)
+
+    def test_elliptic_curve_hom_contracts_keep_scalar_and_polynomial_results(self):
+        """Elliptic-curve homomorphisms expose stable trace/degree outputs."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "schemes" / "elliptic_curves" / "hom.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "_repr_type(self)", "characteristic_polynomial(self)",
+                "inseparable_degree(self)", "separable_degree(self)",
+                "trace(self)",
+            ]
+            path.write_text(
+                "class EllipticCurveHom:\n" + "".join(
+                    f"    def {signature}:\n        \"\"\"Return the documented result.\"\"\"\n"
+                    for signature in signatures
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def _repr_type(self) -> str:", text)
+            self.assertIn("def characteristic_polynomial(self) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint':", text)
+            self.assertIn("def inseparable_degree(self) -> 'sage.rings.integer.Integer':", text)
+            self.assertIn("def separable_degree(self) -> 'sage.rings.integer.Integer':", text)
+            self.assertIn("def trace(self) -> 'sage.rings.integer.Integer':", text)
+
+    def test_elliptic_curve_field_contracts_keep_twist_and_torsion_shapes(self):
+        """Elliptic-curve field helpers expose predicates and containers."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "schemes" / "elliptic_curves" / "ell_field.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "is_quadratic_twist(self, other)", "is_quartic_twist(self, other)",
+                "is_sextic_twist(self, other)", "isogeny_ell_graph(self, l)",
+                "kernel_polynomial_from_divisor(self, f, l)",
+                "kernel_polynomial_from_point(self, P)", "quartic_twist(self, D)",
+                "sextic_twist(self, D)", "torsion_basis(self, n)",
+                "torsion_gens(self, n)", "two_torsion_rank(self)",
+            ]
+            path.write_text(
+                "class EllipticCurve_field:\n" + "".join(
+                    f"    def {signature}:\n        \"\"\"Return the documented result.\"\"\"\n"
+                    for signature in signatures
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def is_quadratic_twist(self, other) -> bool:", text)
+            self.assertIn("def is_quartic_twist(self, other) -> bool:", text)
+            self.assertIn("def is_sextic_twist(self, other) -> bool:", text)
+            self.assertIn("def isogeny_ell_graph(self, l) -> 'sage.graphs.graph.Graph':", text)
+            self.assertIn("def kernel_polynomial_from_point(self, P) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", text)
+            self.assertIn("def quartic_twist(self, D) -> Self:", text)
+            self.assertIn("def torsion_basis(self, n) -> tuple:", text)
+            self.assertIn("def torsion_gens(self, n) -> list:", text)
+            self.assertIn("def two_torsion_rank(self) -> 'sage.rings.integer.Integer':", text)
+
+    def test_number_field_ideal_contracts_use_stable_pari_and_group_types(self):
+        """Number-field ideals expose exact scalar/container/foreign results."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "rings" / "number_field" / "number_field_ideal.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "S_ideal_class_log(self, S)", "__elements_from_hnf(self, hnf)",
+                "__pari__(self)", "_gens_repr(self)", "_magma_init_(self, magma)",
+                "_pari_init_(self)", "_quadratic_form(self)", "_repr_short(self)",
+                "absolute_norm(self)", "absolute_ramification_index(self)",
+                "artin_symbol(self)", "basis(self)", "decomposition_group(self)",
+                "free_module(self)", "gens_reduced(self, proof=None)",
+                "ideal_class_log(self, proof=None)", "inertia_group(self)",
+                "intersection(self, other)", "pari_hnf(self)", "pari_prime(self)",
+                "ramification_group(self, v)", "reduce_equiv(self)",
+                "relative_norm(self)", "relative_ramification_index(self)",
+                "smallest_integer(self)", "valuation(self, p)",
+            ]
+            path.write_text(
+                "class NumberFieldIdeal:\n" + "".join(
+                    f"    def {signature}:\n        \"\"\"Return the documented result.\"\"\"\n"
+                    for signature in signatures
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def __pari__(self) -> 'cypari2.gen.Gen':", text)
+            self.assertIn("def _magma_init_(self, magma) -> 'sage.interfaces.magma.MagmaElement':", text)
+            self.assertIn("def _quadratic_form(self) -> 'sage.quadratic_forms.binary_qf.BinaryQF':", text)
+            self.assertIn("def absolute_norm(self) -> 'sage.rings.rational.Rational':", text)
+            self.assertIn("def basis(self) -> 'sage.structure.sequence.Sequence_generic':", text)
+            self.assertIn("def free_module(self) -> 'sage.modules.free_module_integer.FreeModule_submodule_with_basis_integer':", text)
+            self.assertIn("def decomposition_group(self) -> 'sage.rings.number_field.galois_group.GaloisGroup_subgroup':", text)
+            self.assertIn("def artin_symbol(self) -> 'sage.rings.number_field.galois_group.GaloisGroupElement':", text)
+            self.assertIn("def intersection(self, other) -> 'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal':", text)
+            self.assertIn("def ideal_class_log(self, proof=None) -> list['sage.rings.integer.Integer']:", text)
+            self.assertIn("def smallest_integer(self) -> 'sage.rings.integer.Integer':", text)
+
+    def test_number_field_parent_contracts_keep_fixed_shape_helpers(self):
+        """Number-field parent helpers expose documented tuple/scalar bridges."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "rings" / "number_field" / "number_field.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "_S_class_group_and_units(self, S, proof=True)",
+                "_S_class_group_quotient_matrix(self, S)",
+                "_fractional_ideal_class_(self)", "_ideal_class_(self, n=0)",
+                "_libgap_(self)", "_magma_init_(self, magma)",
+                "_magma_polynomial_(self, magma)",
+                "_pari_absolute_structure(self)", "_pari_init_(self)",
+                "_positive_integral_elements_with_trace(self, C)",
+                "pari_rnfnorm_data(self, L, proof=True)",
+                "quadratic_defect(self, a, p, check=True)",
+                "subfield_from_elements(self, alpha, name=None)",
+            ]
+            path.write_text(
+                "class NumberField_generic:\n" + "".join(
+                    f"    def {signature}:\n        \"\"\"Return the documented result.\"\"\"\n"
+                    for signature in signatures
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def _S_class_group_and_units(self, S, proof=True) -> tuple:", text)
+            self.assertIn("def _S_class_group_quotient_matrix(self, S) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |", text)
+            self.assertIn("def _fractional_ideal_class_(self) -> type:", text)
+            self.assertIn("def _libgap_(self) -> 'sage.libs.gap.element.GapElement_Ring':", text)
+            self.assertIn("def _magma_init_(self, magma) -> 'sage.interfaces.magma.MagmaElement':", text)
+            self.assertIn("def _pari_absolute_structure(self) -> tuple:", text)
+            self.assertIn("def _pari_init_(self) -> str:", text)
+            self.assertIn("def _positive_integral_elements_with_trace(self, C) -> list:", text)
+            self.assertIn("def pari_rnfnorm_data(self, L, proof=True) -> 'cypari2.gen.Gen':", text)
+            self.assertIn("def quadratic_defect(self, a, p, check=True) -> 'sage.rings.integer.Integer' | 'sage.rings.infinity.PlusInfinity':", text)
+            self.assertIn("def subfield_from_elements(self, alpha, name=None) -> tuple:", text)
+
     def test_interval_ball_contracts_keep_concrete_numeric_domains(self):
         """MPFI/ARB/MPC wrappers expose concrete analytic result classes."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -784,6 +1074,131 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def selmer_space(self, S, p, proof=None) -> tuple:", text)
             self.assertIn("def quadratic_defect(self, a, p, check=True) -> 'sage.rings.integer.Integer | sage.rings.infinity.PlusInfinity':", text)
 
+    def test_integer_ring_contracts_keep_singleton_and_scalar_results(self):
+        """ZZ exposes concrete QQ/scalar and foreign bridge return types."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "rings" / "integer_ring.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class IntegerRing_class:\n"
+                "    def _polymake_init_(self):\n        \"\"\"Return the documented result.\"\"\"\n"
+                "    def _sympy_(self):\n        \"\"\"Return the documented result.\"\"\"\n"
+                "    def absolute_degree(self):\n        \"\"\"Return the documented result.\"\"\"\n"
+                "    def fraction_field(self):\n        \"\"\"Return the documented result.\"\"\"\n"
+                "    def krull_dimension(self):\n        \"\"\"Return the documented result.\"\"\"\n"
+                "    def zeta(self, n=2):\n        \"\"\"Return the documented result.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def _polymake_init_(self) -> str:", text)
+            self.assertIn("def _sympy_(self) -> 'sympy.sets.fancysets.Integers':", text)
+            self.assertIn("def absolute_degree(self) -> int:", text)
+            self.assertIn("def fraction_field(self) -> 'sage.rings.rational_field.RationalField':", text)
+            self.assertIn("def krull_dimension(self) -> int:", text)
+            self.assertIn("def zeta(self, n=2) -> 'sage.rings.integer.Integer':", text)
+
+    def test_integer_mod_ring_contracts_use_modular_backend_types(self):
+        """Z/nZ exposes concrete finite-field, factorization and scalar results."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "rings" / "finite_rings" / "integer_mod_ring.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "_element_constructor_(self, x)", "_pari_order(self)",
+                "_pseudo_fraction_field(self)", "degree(self)",
+                "factored_order(self)", "field(self)", "krull_dimension(self)",
+                "modulus(self)", "multiplicative_group_is_cyclic(self)",
+                "multiplicative_subgroups(self)", "square_roots_of_one(self)",
+                "unit_group_exponent(self)", "unit_group_order(self)",
+            ]
+            path.write_text(
+                "class IntegerModRing_generic:\n" + "".join(
+                    f"    def {signature}:\n        \"\"\"Return the documented result.\"\"\"\n"
+                    for signature in signatures
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def _element_constructor_(self, x) -> 'sage.rings.finite_rings.integer_mod.IntegerMod_int |", text)
+            self.assertIn("def _pari_order(self) -> 'cypari2.gen.Gen':", text)
+            self.assertIn("def _pseudo_fraction_field(self) -> Self:", text)
+            self.assertIn("def degree(self) -> 'sage.rings.integer.Integer':", text)
+            self.assertIn("def factored_order(self) -> 'sage.structure.factorization_integer.IntegerFactorization':", text)
+            self.assertIn("def field(self) -> 'sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn |", text)
+            self.assertIn("def krull_dimension(self) -> 'sage.rings.integer.Integer':", text)
+            self.assertIn("def modulus(self) -> 'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint':", text)
+            self.assertIn("def multiplicative_group_is_cyclic(self) -> bool:", text)
+            self.assertIn("def multiplicative_subgroups(self) -> tuple:", text)
+            self.assertIn("def square_roots_of_one(self) -> tuple:", text)
+            self.assertIn("def unit_group_exponent(self) -> 'sage.rings.integer.Integer':", text)
+            self.assertIn("def unit_group_order(self) -> 'sage.rings.integer.Integer':", text)
+
+    def test_category_metadata_contracts_use_containers_and_strings(self):
+        """Category hierarchy metadata keeps its documented outer types."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "categories" / "category.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "_all_super_categories(self)", "_all_super_categories_proper(self)",
+                "_label(self)", "_repr_object_names(self)",
+                "_set_of_super_categories(self)", "_short_name(self)",
+                "axioms(self)", "required_methods(self)",
+                "_subcategory_hook_(self, category)", "__classcontains__(cls, x)",
+                "_is_subclass(self, c)", "category_graph(self)",
+                "_super_categories(self)", "_super_categories_for_classes(self)",
+                "full_super_categories(self)", "_make_named_class(self, name, method_provider, cache, picklable)",
+                "subcategory_class(self)", "parent_class(self)", "element_class(self)",
+                "morphism_class(self)",
+            ]
+            path.write_text(
+                "class Category:\n" + "".join(
+                    f"    def {signature}:\n        \"\"\"Return the documented result.\"\"\"\n"
+                    for signature in signatures
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def _all_super_categories(self) -> list:", text)
+            self.assertIn("def _all_super_categories_proper(self) -> list:", text)
+            self.assertIn("def _label(self) -> str:", text)
+            self.assertIn("def _repr_object_names(self) -> str:", text)
+            self.assertIn("def _set_of_super_categories(self) -> frozenset:", text)
+            self.assertIn("def _short_name(self) -> str:", text)
+            self.assertIn("def axioms(self) -> frozenset:", text)
+            self.assertIn("def required_methods(self) -> dict:", text)
+            self.assertIn("def _subcategory_hook_(self, category) -> bool:", text)
+            self.assertIn("def __classcontains__(cls, x) -> bool:", text)
+            self.assertIn("def _is_subclass(self, c) -> bool:", text)
+            self.assertIn("def category_graph(self) -> 'sage.graphs.graph.Graph':", text)
+            self.assertIn("def _super_categories(self) -> list:", text)
+            self.assertIn("def _super_categories_for_classes(self) -> list:", text)
+            self.assertIn("def full_super_categories(self) -> list:", text)
+            self.assertIn("def _make_named_class(self, name, method_provider, cache, picklable) -> type:", text)
+            self.assertIn("def subcategory_class(self) -> type:", text)
+            self.assertIn("def parent_class(self) -> type:", text)
+            self.assertIn("def element_class(self) -> type:", text)
+            self.assertIn("def morphism_class(self) -> type:", text)
+
     def test_sage_object_protocol_and_serialization_contracts(self):
         """SageObject's stable serialization/typesetting hooks are concrete."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -823,6 +1238,444 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def _gap_init_(self) -> str:", text)
             self.assertIn("def _interface_init_(self, I=None) -> str:", text)
             self.assertIn("def _r_init_(self) -> str:", text)
+
+    def test_graphics_contracts_keep_runtime_shapes(self):
+        """Graphics accessors and rendering helpers use Sage runtime types."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "plot" / "graphics.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "set_aspect_ratio(self, ratio)", "aspect_ratio(self)",
+                "legend(self, show=None)", "set_axes_range(self, xmin, xmax, ymin, ymax)",
+                "set_flip(self, flip_x, flip_y)", "fontsize(self, s=None)",
+                "axes_labels_size(self, s=None)", "axes(self, show=None)",
+                "axes_color(self, c=None)", "axes_label_color(self, c=None)",
+                "axes_width(self, w=None)", "tick_label_color(self, c=None)",
+                "__radd__(self, other)", "__add__(self, other)",
+                "add_primitive(self, primitive)", "plot(self)",
+                "plot3d(self, z=0, **kwds)", "_extract_kwds_for_show(cls, kwds, ignore=[])",
+                "_set_extra_kwds(self, kwds)", "_set_scale(self, subplot, scale, base)",
+                "xmin(self, xmin=None)", "xmax(self, xmax=None)",
+                "ymin(self, ymin=None)", "ymax(self, ymax=None)",
+                "_matplotlib_tick_formatter(self, subplot, base, locator_options, scale, tick_formatter, ticks, xmax, xmin, ymax, ymin)",
+                "_get_vmin_vmax(self, vmin, vmax, basev, axes_pad)",
+                "matplotlib(self, figure=None)", "save_image(self, filename=None)",
+                "description(self)",
+            ]
+            path.write_text(
+                "class Graphics:\n" + "".join(
+                    f"    def {signature}:\n        pass\n" for signature in signatures
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def aspect_ratio(self) -> float | str:", text)
+            self.assertIn("def legend(self, show=None) -> bool:", text)
+            self.assertIn("def axes_color(self, c=None) -> tuple:", text)
+            self.assertIn("def __add__(self, other) -> Self:", text)
+            self.assertIn("def add_primitive(self, primitive) -> None:", text)
+            self.assertIn("def plot3d(self, z=0, **kwds) -> 'sage.plot.plot3d.base.Graphics3dGroup':", text)
+            self.assertIn("def _extract_kwds_for_show(cls, kwds, ignore=[]) -> dict:", text)
+            self.assertIn("def _matplotlib_tick_formatter(self, subplot, base, locator_options, scale, tick_formatter, ticks, xmax, xmin, ymax, ymin) -> tuple:", text)
+            self.assertIn("def matplotlib(self, figure=None) -> 'matplotlib.figure.Figure':", text)
+            self.assertIn("def description(self) -> str:", text)
+
+    def test_pickle_explainer_opcode_contracts_are_void_or_expression(self):
+        """Pickle VM handlers are mutators except for documented stack outputs."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "misc" / "explain_pickle.pyi"
+            path.parent.mkdir(parents=True)
+            signatures = [
+                "run_pickle(self, p)", "check_value(self, v)", "push(self, v)",
+                "push_and_share(self, v)", "push_mark(self)", "pop_to_mark(self)",
+                "APPEND(self)", "BINFLOAT(self, f)", "EMPTY_LIST(self)",
+                "GLOBAL(self, name)", "POP(self)", "SETITEMS(self)",
+                "STOP(self)", "TUPLE(self)", "UNICODE(self, s)",
+            ]
+            path.write_text(
+                "class PickleExplainer:\n" + "".join(
+                    f"    def {signature}:\n        pass\n" for signature in signatures
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def run_pickle(self, p) -> 'sage.misc.sage_input.SageInputExpression':", text)
+            self.assertIn("def check_value(self, v) -> None:", text)
+            self.assertIn("def push(self, v) -> None:", text)
+            self.assertIn("def push_mark(self) -> None:", text)
+            self.assertIn("def pop_to_mark(self) -> list:", text)
+            self.assertIn("def APPEND(self) -> None:", text)
+            self.assertIn("def GLOBAL(self, name) -> None:", text)
+            self.assertIn("def STOP(self) -> None:", text)
+
+    def test_term_order_and_free_module_outer_contracts(self):
+        """Low-level polynomial orders/modules expose stable scalar shapes."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            term = root / "sage" / "rings" / "polynomial" / "term_order.pyi"
+            term.parent.mkdir(parents=True)
+            term.write_text(
+                "class TermOrder:\n"
+                "    def greater_tuple(self, f, g):\n        pass\n"
+                "    def tuple_weight(self, f):\n        pass\n"
+                "    def singular_moreblocks(self):\n        pass\n"
+                "    def macaulay2_str(self):\n        pass\n"
+                "    def blocks(self):\n        pass\n"
+                "    def matrix(self):\n        pass\n"
+                "    def __eq__(self, other):\n        pass\n"
+                "    def __add__(self, other):\n        pass\n"
+                "    def __getitem__(self, i):\n        pass\n",
+                encoding="utf-8",
+            )
+            free = root / "sage" / "modules" / "free_module.pyi"
+            free.parent.mkdir(parents=True)
+            free.write_text(
+                "class FreeModule_generic:\n"
+                "    def construction(self):\n        pass\n"
+                "    def _eq(self, other):\n        pass\n"
+                "    def cardinality(self):\n        pass\n"
+                "    def basis(self):\n        pass\n"
+                "    def basis_matrix(self):\n        pass\n"
+                "    def free_module(self):\n        pass\n"
+                "    def gram_matrix(self):\n        pass\n"
+                "    def scale(self, other):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            term_text = term.read_text(encoding="utf-8")
+            self.assertIn("def greater_tuple(self, f, g) -> tuple:", term_text)
+            self.assertIn("def tuple_weight(self, f) -> int:", term_text)
+            self.assertIn("def macaulay2_str(self) -> str:", term_text)
+            self.assertIn("def blocks(self) -> list | tuple:", term_text)
+            self.assertIn("def __eq__(self, other) -> bool:", term_text)
+            self.assertIn("def __add__(self, other) -> Self:", term_text)
+            free_text = free.read_text(encoding="utf-8")
+            self.assertIn("def construction(self) -> tuple:", free_text)
+            self.assertIn("def _eq(self, other) -> bool:", free_text)
+            self.assertIn("def cardinality(self) -> 'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity':", free_text)
+            self.assertIn("def basis(self) -> list:", free_text)
+            self.assertIn("def basis_matrix(self) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |", free_text)
+            self.assertIn("def free_module(self) -> Self:", free_text)
+
+    def test_low_level_polynomial_and_tate_shapes(self):
+        """Stable term/series helper shapes are annotated without guessing coefficients."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            term = root / "sage" / "rings" / "polynomial" / "term_order.pyi"
+            term.parent.mkdir(parents=True)
+            term.write_text(
+                "class TermOrder:\n"
+                "    def __copy(self, other):\n        pass\n",
+                encoding="utf-8",
+            )
+            poly = root / "sage" / "rings" / "polynomial" / "polydict.pyi"
+            poly.parent.mkdir(parents=True, exist_ok=True)
+            poly.write_text(
+                "class PolyDict:\n"
+                "    def lcmt(self, greater_etuple):\n        pass\n",
+                encoding="utf-8",
+            )
+            tate = root / "sage" / "rings" / "tate_algebra_element.pyi"
+            tate.parent.mkdir(parents=True, exist_ok=True)
+            tate.write_text(
+                "class TateAlgebraElement:\n"
+                "    def leading_monomial(self, secure=False):\n        pass\n"
+                "    def leading_term(self, secure=False):\n        pass\n"
+                "    def weierstrass_degrees(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("def __copy(self, other) -> None:", term.read_text(encoding="utf-8"))
+            self.assertIn("def lcmt(self, greater_etuple) -> 'sage.rings.polynomial.polydict.ETuple':", poly.read_text(encoding="utf-8"))
+            tate_text = tate.read_text(encoding="utf-8")
+            self.assertIn("def leading_monomial(self, secure=False) -> 'sage.rings.tate_algebra_element.TateAlgebraTerm':", tate_text)
+            self.assertIn("def leading_term(self, secure=False) -> 'sage.rings.tate_algebra_element.TateAlgebraTerm':", tate_text)
+            self.assertIn("def weierstrass_degrees(self) -> tuple:", tate_text)
+
+    def test_functional_wrappers_keep_proven_outer_results(self):
+        """Common module-level wrappers expose Sage sequence/scalar families."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "misc" / "functional.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "def additive_order(x):\n        pass\n"
+                "def basis(x):\n        pass\n"
+                "def characteristic_polynomial(x, var='x'):\n        pass\n"
+                "def decomposition(x):\n        pass\n"
+                "def det(x):\n        pass\n"
+                "def eta(x):\n        pass\n"
+                "def log(x, base=None):\n        pass\n"
+                "def minimal_polynomial(x):\n        pass\n"
+                "def numerical_approx(x, prec=53):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def additive_order(x) -> 'sage.rings.integer.Integer | sage.rings.infinity.PlusInfinity':", text)
+            self.assertIn("def basis(x) -> list | 'sage.structure.sequence.Sequence_generic':", text)
+            self.assertIn("def characteristic_polynomial(x, var='x') -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", text)
+            self.assertIn("def decomposition(x) -> list | 'sage.structure.sequence.Sequence_generic':", text)
+            self.assertIn("def det(x) -> 'sage.rings.integer.Integer | sage.rings.rational.Rational |", text)
+            self.assertIn("def eta(x) -> 'sage.rings.integer.Integer | sage.rings.rational.Rational |", text)
+            self.assertIn("def log(x, base=None) -> 'sage.rings.integer.Integer | sage.rings.rational.Rational |", text)
+            self.assertIn("def minimal_polynomial(x) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", text)
+            self.assertIn("def numerical_approx(x, prec=53) -> 'sage.rings.integer.Integer | sage.rings.rational.Rational |", text)
+
+    def test_simplicial_complex_catalogue_uses_constructor_classes(self):
+        """Catalogue helpers retain the concrete class chosen by their bodies."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "topology" / "simplicial_complex_examples.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "def Sphere(n):\n        pass\n"
+                "def FareyMap(p):\n        pass\n"
+                "def RandomTwoSphere(n):\n        pass\n"
+                "def facets_for_K3():\n        pass\n"
+                "def matching(A, B):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def Sphere(n) -> 'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex':", text)
+            self.assertIn("def FareyMap(p) -> 'sage.topology.simplicial_complex.SimplicialComplex':", text)
+            self.assertIn("def RandomTwoSphere(n) -> 'sage.topology.simplicial_complex.SimplicialComplex':", text)
+            self.assertIn("def facets_for_K3() -> list:", text)
+            self.assertIn("def matching(A, B) -> list:", text)
+
+    def test_braid_contracts_keep_matrix_and_knot_output_families(self):
+        """Braid representations and knot invariants expose stable outer types."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "groups" / "braid.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class Braid:\n"
+                "    def burau_matrix(self):\n        pass\n"
+                "    def alexander_polynomial(self):\n        pass\n"
+                "    def jones_polynomial(self):\n        pass\n"
+                "    def markov_trace(self):\n        pass\n"
+                "    def mirror_image(self):\n        pass\n"
+                "    def permutation(self):\n        pass\n"
+                "    def plot3d(self):\n        pass\n"
+                "    def right_normal_form(self):\n        pass\n"
+                "    def strands(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def burau_matrix(self) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |", text)
+            self.assertIn("def alexander_polynomial(self) -> 'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate':", text)
+            self.assertIn("def jones_polynomial(self) -> 'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate |", text)
+            self.assertIn("def markov_trace(self) -> 'sage.rings.fraction_field_element.FractionFieldElement':", text)
+            self.assertIn("def mirror_image(self) -> Self:", text)
+            self.assertIn("def permutation(self) -> 'sage.combinat.permutation.Permutation':", text)
+            self.assertIn("def plot3d(self) -> 'sage.plot.plot3d.base.Graphics3dGroup':", text)
+            self.assertIn("def right_normal_form(self) -> tuple:", text)
+            self.assertIn("def strands(self) -> int:", text)
+
+            # Internal Khovanov/Jones caches and summit-set helpers have
+            # documented dictionary/polynomial/tuple outer results as well.
+            path.write_text(
+                "class Braid:\n"
+                "    def _annular_khovanov_complex_cached(self, qagrad, ring=None):\n        pass\n"
+                "    def _enhanced_states(self):\n        pass\n"
+                "    def _colored_jones_sum(self, N, qword):\n        pass\n"
+                "    def _jones_polynomial(self):\n        pass\n"
+                "    def super_summit_set_element(self):\n        pass\n"
+                "    def ultra_summit_set_element(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def _annular_khovanov_complex_cached(self, qagrad, ring=None) -> 'sage.homology.chain_complex.ChainComplex_class':", text)
+            self.assertIn("def _enhanced_states(self) -> dict:", text)
+            self.assertIn("def _colored_jones_sum(self, N, qword) -> 'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate |", text)
+            self.assertIn("def _jones_polynomial(self) -> 'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate |", text)
+            self.assertIn("def super_summit_set_element(self) -> tuple:", text)
+            self.assertIn("def ultra_summit_set_element(self) -> tuple:", text)
+
+    def test_lazy_import_introspection_contracts(self):
+        """Lazy-import introspection preserves documented Python result types."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "misc" / "lazy_import.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class LazyImport:\n"
+                "    def _instancedoc_(self):\n        pass\n"
+                "    def _sage_src_(self):\n        pass\n"
+                "    def _sage_argspec_(self):\n        pass\n"
+                "    def __oct__(self):\n        pass\n"
+                "    def __hex__(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def _instancedoc_(self) -> str | None:", text)
+            self.assertIn("def _sage_src_(self) -> str:", text)
+            self.assertIn("def _sage_argspec_(self) -> 'inspect.FullArgSpec':", text)
+            self.assertIn("def __oct__(self) -> str:", text)
+            self.assertIn("def __hex__(self) -> str:", text)
+
+    def test_matrix_benchmark_contracts_report_timing_or_matrix(self):
+        """Benchmark helpers expose float timings and the concrete Hilbert matrix."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "matrix" / "benchmark.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "def det_ZZ(n=200, min=1, max=100, system='sage'):\n        pass\n"
+                "def rank_GF(n=700, min=0, max=9, system='sage'):\n        pass\n"
+                "def report(F, title, systems=['sage']):\n        pass\n"
+                "def hilbert_matrix(n):\n        pass\n"
+                "def smithform_ZZ(n=128):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def det_ZZ(n=200, min=1, max=100, system='sage') -> float:", text)
+            self.assertIn("def rank_GF(n=700, min=0, max=9, system='sage') -> float:", text)
+            self.assertIn("def report(F, title, systems=['sage']) -> None:", text)
+            self.assertIn("def hilbert_matrix(n) -> 'sage.matrix.matrix_rational_dense.Matrix_rational_dense':", text)
+            self.assertIn("def smithform_ZZ(n=128) -> float:", text)
+
+    def test_latin_square_helpers_keep_matrix_and_square_types(self):
+        """Latin-square constructors and row/column helpers expose concrete types."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "combinat" / "matrices" / "latin.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class LatinSquare:\n"
+                "    def apply_isotopism(self, row_perm, col_perm, sym_perm):\n        pass\n"
+                "    def column(self, x):\n        pass\n"
+                "    def row(self, x):\n        pass\n"
+                "    def dumps(self):\n        pass\n"
+                "    def random_empty_cell(self):\n        pass\n"
+                "def isotopism(p):\n        pass\n"
+                "def back_circulant(n):\n        pass\n"
+                "def group_to_LatinSquare(G):\n        pass\n"
+                "def bitrade(T1, T2):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def apply_isotopism(self, row_perm, col_perm, sym_perm) -> Self:", text)
+            self.assertIn("def column(self, x) -> 'sage.modules.vector_integer_dense.Vector_integer_dense':", text)
+            self.assertIn("def dumps(self) -> bytes:", text)
+            self.assertIn("def random_empty_cell(self) -> list[int] | None:", text)
+            self.assertIn("def isotopism(p) -> 'sage.combinat.permutation.Permutation':", text)
+            self.assertIn("def back_circulant(n) -> 'sage.combinat.matrices.latin.LatinSquare':", text)
+            self.assertIn("def group_to_LatinSquare(G) -> 'sage.matrix.matrix_integer_dense.Matrix_integer_dense':", text)
+            self.assertIn("def bitrade(T1, T2) -> tuple:", text)
+
+    def test_cyclotomic_number_field_contracts_use_absolute_elements(self):
+        """Cyclotomic fields expose concrete roots, ideals, and sequences."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "rings" / "number_field" / "number_field.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class NumberField_cyclotomic:\n"
+                "    def construction(self):\n        pass\n"
+                "    def _magma_init_(self):\n        pass\n"
+                "    def _libgap_(self):\n        pass\n"
+                "    def _n(self):\n        pass\n"
+                "    def _log_gen(self, x):\n        pass\n"
+                "    def _element_constructor_(self, x):\n        pass\n"
+                "    def complex_embeddings(self, prec=53):\n        pass\n"
+                "    def real_embeddings(self, prec=53):\n        pass\n"
+                "    def embeddings(self, K):\n        pass\n"
+                "    def _coerce_from_gap(self, x):\n        pass\n"
+                "    def signature(self):\n        pass\n"
+                "    def different(self):\n        pass\n"
+                "    def discriminant(self, v=None):\n        pass\n"
+                "    def next_split_prime(self, p=None):\n        pass\n"
+                "    def _pari_integral_basis(self):\n        pass\n"
+                "    def zeta_order(self):\n        pass\n"
+                "    def zeta(self, n=None):\n        pass\n"
+                "    def number_of_roots_of_unity(self):\n        pass\n"
+                "    def roots_of_unity(self):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def construction(self) -> tuple:", text)
+            self.assertIn("def _n(self) -> 'sage.rings.integer.Integer':", text)
+            self.assertIn("def _element_constructor_(self, x) -> 'sage.rings.number_field.number_field_element.NumberFieldElement_absolute':", text)
+            self.assertIn("def complex_embeddings(self, prec=53) -> 'sage.structure.sequence.Sequence_generic':", text)
+            self.assertIn("def embeddings(self, K) -> list:", text)
+            self.assertIn("def _coerce_from_gap(self, x) -> 'sage.rings.number_field.number_field_element.NumberFieldElement_absolute':", text)
+            self.assertIn("def signature(self) -> tuple[int, int]:", text)
+            self.assertIn("def different(self) -> 'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal':", text)
+            self.assertIn("def zeta(self, n=None) -> 'sage.rings.number_field.number_field_element.NumberFieldElement_absolute':", text)
+            self.assertIn("def roots_of_unity(self) -> list['sage.rings.number_field.number_field_element.NumberFieldElement_absolute']:", text)
 
     def test_tableau_helpers_keep_simple_outer_results(self):
         """Tableau formatting and scalar helpers avoid abstract tableau returns."""
@@ -2060,6 +2913,7 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    def _repr_(self): ...\n"
                 "    def _latex_(self): ...\n"
                 "    def _richcmp_(self, other, op): ...\n"
+                "    def __richcmp__(self, other, op): ...\n"
                 "    def __iter__(self):\n"
                 "        " + '"""Return self, as per the iterator protocol."""' + "\n"
                 "    def __eq__(self, other): ...\n"
@@ -2109,6 +2963,7 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def _repr_(self) -> str: ...", patched)
             self.assertIn("def _latex_(self) -> str: ...", patched)
             self.assertIn("def _richcmp_(self, other, op) -> bool: ...", patched)
+            self.assertIn("def __richcmp__(self, other, op) -> bool: ...", patched)
             self.assertIn("def __iter__(self) -> Self:", patched)
             self.assertIn("class IteratorValue:\n    def __iter__(self) -> Self:", patched)
             self.assertIn("def __eq__(self, other): ...", patched)

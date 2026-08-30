@@ -226,6 +226,162 @@ MATRIX_SPACE_SUBMODULE_UNION = (
 
 # ADD: member name -> annotation expression for unannotated defs.
 CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
+    # A few module-level functional wrappers have stable outer results even
+    # though most wrappers delegate to a receiver-dependent method.  Keep only
+    # contracts proved by the documented Sage implementation.
+    "sage/misc/functional.pyi": {
+        None: {
+            "additive_order": "'sage.rings.integer.Integer | sage.rings.infinity.PlusInfinity'",
+            "basis": "list | 'sage.structure.sequence.Sequence_generic'",
+            "characteristic_polynomial": POLYNOMIAL_RETURN_UNION,
+            "decomposition": "list | 'sage.structure.sequence.Sequence_generic'",
+            "det": MATRIX_SCALAR_UNION,
+            "eta": FUNCTIONAL_SYMBOLIC_RESULT_UNION,
+            "log": FUNCTIONAL_SYMBOLIC_RESULT_UNION,
+            "minimal_polynomial": POLYNOMIAL_RETURN_UNION,
+            "numerical_approx": FUNCTIONAL_SYMBOLIC_RESULT_UNION,
+        },
+    },
+    "sage/misc/lazy_import.pyi": {
+        "LazyImport": {
+            "_instancedoc_": "str | None",
+            "_sage_src_": "str",
+            "_sage_argspec_": "'inspect.FullArgSpec'",
+            "__oct__": "str",
+            "__hex__": "str",
+        },
+    },
+    "sage/matrix/benchmark.pyi": {
+        None: {
+            # Benchmark entry points return the measured ``cputime`` as a
+            # native float.  The report wrappers only print tables, while the
+            # Hilbert helper is the one constructor returning a matrix.
+            "MatrixVector_QQ": "float",
+            "charpoly_GF": "float",
+            "charpoly_ZZ": "float",
+            "det_GF": "float",
+            "det_QQ": "float",
+            "det_ZZ": "float",
+            "det_hilbert_QQ": "float",
+            "echelon_QQ": "float",
+            "hilbert_matrix": "'sage.matrix.matrix_rational_dense.Matrix_rational_dense'",
+            "inverse_QQ": "float",
+            "invert_hilbert_QQ": "float",
+            "matrix_add_GF": "float",
+            "matrix_add_ZZ": "float",
+            "matrix_add_ZZ_2": "float",
+            "matrix_multiply_GF": "float",
+            "matrix_multiply_QQ": "float",
+            "matrix_multiply_ZZ": "float",
+            "nullspace_GF": "float",
+            "nullspace_RDF": "float",
+            "nullspace_RR": "float",
+            "nullspace_ZZ": "float",
+            "rank2_GF": "float",
+            "rank2_ZZ": "float",
+            "rank_GF": "float",
+            "rank_ZZ": "float",
+            "report": "None",
+            "report_GF": "None",
+            "report_ZZ": "None",
+            "smithform_ZZ": "float",
+            "vecmat_ZZ": "float",
+        },
+    },
+    "sage/combinat/matrices/latin.pyi": {
+        "LatinSquare": {
+            "apply_isotopism": "Self",
+            "column": "'sage.modules.vector_integer_dense.Vector_integer_dense'",
+            "row": "'sage.modules.vector_integer_dense.Vector_integer_dense'",
+            "dumps": "bytes",
+            "permissable_values": "list",
+            "random_empty_cell": "list[int] | None",
+            "top_left_empty_cell": "list[int] | None",
+        },
+        None: {
+            "isotopism": "'sage.combinat.permutation.Permutation'",
+            "cells_map_as_square": "'sage.combinat.matrices.latin.LatinSquare'",
+            "back_circulant": "'sage.combinat.matrices.latin.LatinSquare'",
+            "forward_circulant": "'sage.combinat.matrices.latin.LatinSquare'",
+            "direct_product": "'sage.combinat.matrices.latin.LatinSquare'",
+            "elementary_abelian_2group": "'sage.combinat.matrices.latin.LatinSquare'",
+            "group_to_LatinSquare": "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'",
+            "bitrade": "tuple",
+            "bitrade_from_group": "tuple",
+        },
+    },
+    "sage/topology/simplicial_complex_examples.pyi": {
+        None: {
+            # The catalogue functions explicitly construct one of these two
+            # concrete implementations in Sage 10.9; the two non-unique
+            # constructors are kept separate instead of widening to a base.
+            "BarnetteSphere": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "BrucknerGrunbaumSphere": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "ChessboardComplex": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "ComplexProjectivePlane": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "DunceHat": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "FareyMap": "'sage.topology.simplicial_complex.SimplicialComplex'",
+            "GenusSix": "'sage.topology.simplicial_complex.SimplicialComplex'",
+            "K3Surface": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "KleinBottle": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "MatchingComplex": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "MooreSpace": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "NotIConnectedGraphs": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "PoincareHomologyThreeSphere": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "QuaternionicProjectivePlane": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "RandomComplex": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "RandomTwoSphere": "'sage.topology.simplicial_complex.SimplicialComplex'",
+            "RealProjectivePlane": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "RealProjectiveSpace": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "RudinBall": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "ShiftedComplex": "'sage.topology.simplicial_complex.SimplicialComplex'",
+            "Simplex": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "Sphere": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "SumComplex": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "SurfaceOfGenus": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "Torus": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "ZieglerBall": "'sage.topology.simplicial_complex_examples.UniqueSimplicialComplex'",
+            "facets_for_K3": "list",
+            "matching": "list",
+        },
+    },
+    "sage/groups/braid.pyi": {
+        "Braid": {
+            # These braid operations have stable outer implementations in
+            # Sage 10.9.  Matrix representations vary by coefficient ring,
+            # so they use the concrete matrix-family union; knot-polynomial
+            # helpers retain their documented Laurent/symbolic families.
+            "LKB_matrix": MATRIX_ELEMENT_UNION,
+            "TL_matrix": MATRIX_ELEMENT_UNION,
+            "annular_khovanov_complex": "dict",
+            "annular_khovanov_homology": "dict",
+            "_annular_khovanov_complex_cached": "'sage.homology.chain_complex.ChainComplex_class'",
+            "_enhanced_states": "dict",
+            "_colored_jones_sum": JONES_POLYNOMIAL_RETURN_UNION,
+            "_jones_polynomial": JONES_POLYNOMIAL_RETURN_UNION,
+            "alexander_polynomial": "'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate'",
+            "burau_matrix": MATRIX_ELEMENT_UNION,
+            "colored_jones_polynomial": JONES_POLYNOMIAL_RETURN_UNION,
+            "conjugating_braid": "Self | None",
+            "deformed_burau_matrix": MATRIX_ELEMENT_UNION,
+            "gcd": "Self",
+            "jones_polynomial": JONES_POLYNOMIAL_RETURN_UNION,
+            "lcm": "Self",
+            "links_gould_matrix": MATRIX_ELEMENT_UNION,
+            "markov_trace": "'sage.rings.fraction_field_element.FractionFieldElement'",
+            "mirror_image": "Self",
+            "permutation": "'sage.combinat.permutation.Permutation'",
+            "plot": "'sage.plot.graphics.Graphics'",
+            "plot3d": "'sage.plot.plot3d.base.Graphics3dGroup'",
+            "pure_conjugating_braid": "Self",
+            "reverse": "Self",
+            "right_normal_form": "tuple",
+            "rigidity": "int",
+            "strands": "int",
+            "super_summit_set_element": "tuple",
+            "ultra_summit_set_element": "tuple",
+        },
+    },
     "sage/features/all.pyi": {
         None: {
             # The package-level enumerator is a generator; individual
@@ -2058,6 +2214,760 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     },
 }
 
+# Number-field elements expose a small, stable conversion/arithmetic protocol
+# even though Sage implements the concrete element class in Cython.  These
+# contracts are deliberately limited to methods whose result family is fixed
+# by the source documentation/runtime (scalar conversions, parent-preserving
+# arithmetic, and the documented square/n-th-root branches).  Ideal-valued
+# and embedding-dependent methods remain unresolved rather than being forced
+# through the public ``Element`` base.
+CURATED_ANNOTATIONS["sage/rings/number_field/number_field_element.pyi"] = {
+    "NumberFieldElement": {
+        "__abs__": "Self | 'sage.rings.real_mpfr.RealNumber'",
+        "_acb_": "'sage.rings.complex_arb.ComplexBall'",
+        "_algebraic_": "'sage.rings.qqbar.AlgebraicNumber'",
+        "_complex_double_": "'sage.rings.complex_double.ComplexDoubleElement'",
+        "_div_": "Self",
+        "_mpfr_": "'sage.rings.real_mpfr.RealNumber'",
+        "_pari_init_": "str",
+        "_symbolic_": "'sage.symbolic.expression.Expression'",
+        "abs": "Self | 'sage.rings.real_mpfr.RealNumber'",
+        "abs_non_arch": "'sage.rings.real_mpfr.RealNumber'",
+        "gcd": "Self",
+        "matrix": MATRIX_ELEMENT_UNION,
+        "sign": "int",
+        "sqrt": "Self | list[Self]",
+        "nth_root": "Self | list[Self]",
+    },
+}
+
+# Quadratic elements have fixed concrete conversion and continued-fraction
+# result classes.  The real-part method is intentionally a narrow union: a
+# totally-real quadratic element stays in ``Self``, while an imaginary
+# quadratic element returns a rational scalar.
+CURATED_ANNOTATIONS["sage/rings/number_field/number_field_element_quadratic.pyi"] = {
+    "NumberFieldElement_quadratic": {
+        "__abs__": "Self | 'sage.rings.real_mpfr.RealNumber'",
+        "__invert__": "Self",
+        "__neg__": "Self",
+        "_acb_": "'sage.rings.complex_arb.ComplexBall'",
+        "_add_": "Self",
+        "_arb_": "'sage.rings.real_arb.RealBall'",
+        "_complex_mpfi_": "'sage.rings.complex_interval.ComplexIntervalFieldElement'",
+        "_integer_": "'sage.rings.integer.Integer'",
+        "_lmul_": "Self",
+        "_maxima_init_": "str",
+        "_mul_": "Self",
+        "_polymake_init_": "str",
+        "_rational_": "'sage.rings.rational.Rational'",
+        "_real_mpfi_": "'sage.rings.real_mpfi.RealIntervalFieldElement'",
+        "_rmul_": "Self",
+        "_sub_": "Self",
+        "ceil": "'sage.rings.integer.Integer'",
+        "charpoly": "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'",
+        "continued_fraction": "'sage.rings.continued_fraction.ContinuedFraction_periodic'",
+        "continued_fraction_list": "tuple",
+        "denominator": "'sage.rings.integer.Integer'",
+        "floor": "'sage.rings.integer.Integer'",
+        "imag": "'sage.rings.rational.Rational'",
+        "minpoly": "'sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint'",
+        "norm": "'sage.rings.rational.Rational'",
+        "numerator": "Self",
+        "real": "Self | 'sage.rings.rational.Rational'",
+        "round": "'sage.rings.integer.Integer'",
+        "sign": "int",
+        "trace": "'sage.rings.rational.Rational'",
+    },
+}
+
+# Number-field ideals have a stable PARI/scalar/container protocol.  These
+# methods are independent of the concrete field element parent, so they can
+# be exposed as exact implementation classes.  The two parent-dependent
+# methods (``random_element`` and ``residue_symbol``) intentionally remain
+# unresolved: their element class is selected by the ambient number field.
+CURATED_ANNOTATIONS["sage/rings/number_field/number_field_ideal.pyi"] = {
+    "NumberFieldIdeal": {
+        "S_ideal_class_log": "list['sage.rings.integer.Integer']",
+        "__elements_from_hnf": "list",
+        "__pari__": "'cypari2.gen.Gen'",
+        "_gens_repr": "tuple",
+        "_magma_init_": "'sage.interfaces.magma.MagmaElement'",
+        "_pari_init_": "str",
+        "_quadratic_form": "'sage.quadratic_forms.binary_qf.BinaryQF'",
+        "_repr_short": "str",
+        "absolute_norm": "'sage.rings.rational.Rational'",
+        "absolute_ramification_index": "'sage.rings.integer.Integer'",
+        "artin_symbol": "'sage.rings.number_field.galois_group.GaloisGroupElement'",
+        "basis": "'sage.structure.sequence.Sequence_generic'",
+        "decomposition_group": "'sage.rings.number_field.galois_group.GaloisGroup_subgroup'",
+        "free_module": "'sage.modules.free_module_integer.FreeModule_submodule_with_basis_integer'",
+        "gens_reduced": "tuple",
+        "ideal_class_log": "list['sage.rings.integer.Integer']",
+        "inertia_group": "'sage.rings.number_field.galois_group.GaloisGroup_subgroup'",
+        "intersection": "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'",
+        "pari_hnf": "'cypari2.gen.Gen'",
+        "pari_prime": "'cypari2.gen.Gen'",
+        "ramification_group": "'sage.rings.number_field.galois_group.GaloisGroup_subgroup'",
+        "reduce_equiv": "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'",
+        "relative_norm": "'sage.rings.rational.Rational'",
+        "relative_ramification_index": "'sage.rings.integer.Integer'",
+        "smallest_integer": "'sage.rings.integer.Integer'",
+        "valuation": "'sage.rings.integer.Integer'",
+    },
+}
+
+# Number-field parents expose several fixed-shape conversion and arithmetic
+# helpers.  Keep the parent-dependent field factories unresolved, while
+# recording the documented tuple/list/scalar and PARI/GAP/Magma contracts.
+CURATED_ANNOTATIONS["sage/rings/number_field/number_field.pyi"] = {
+    "NumberField_generic": {
+        "_S_class_group_and_units": "tuple",
+        "_S_class_group_quotient_matrix": MATRIX_ELEMENT_UNION,
+        "_fractional_ideal_class_": "type",
+        "_ideal_class_": "type",
+        "_libgap_": "'sage.libs.gap.element.GapElement_Ring'",
+        "_magma_init_": "'sage.interfaces.magma.MagmaElement'",
+        "_magma_polynomial_": "'sage.interfaces.magma.MagmaElement'",
+        "_pari_absolute_structure": "tuple",
+        "_pari_init_": "str",
+        "_positive_integral_elements_with_trace": "list",
+        "pari_rnfnorm_data": "'cypari2.gen.Gen'",
+        "quadratic_defect": "'sage.rings.integer.Integer' | 'sage.rings.infinity.PlusInfinity'",
+        "subfield_from_elements": "tuple",
+    },
+}
+
+# Elliptic-curve isogenies have a few methods whose result is independent of
+# the base field.  Keep the isogeny self-returning and expose the integer and
+# polynomial contracts used by CTF code; rational-map/scaling methods stay
+# dynamic because their parent is selected by the curve's coordinate ring.
+CURATED_ANNOTATIONS["sage/schemes/elliptic_curves/ell_curve_isogeny.pyi"] = {
+    "EllipticCurveIsogeny": {
+        "__clear_cached_values": "None",
+        "__compute_codomain": "None",
+        "__compute_via_kohel": "tuple",
+        "__compute_via_kohel_numeric": "tuple",
+        "__compute_via_velu": "tuple",
+        "__compute_via_velu_numeric": "tuple",
+        "__init_algebraic_structs": "None",
+        "__init_from_kernel_gens": "None",
+        "__init_from_kernel_list": "None",
+        "__init_from_kernel_point": "None",
+        "__init_from_kernel_polynomial": "None",
+        "__init_kernel_polynomial": "None",
+        "__init_kernel_polynomial_velu": "None",
+        "__initialize_rational_maps": "None",
+        "__initialize_rational_maps_via_kohel": "tuple",
+        "__initialize_rational_maps_via_velu": "tuple",
+        "__neg__": "Self",
+        "__perform_inheritance_housekeeping": "None",
+        "__set_post_isomorphism": "None",
+        "__set_pre_isomorphism": "None",
+        "__setup_post_isomorphism": "None",
+        "__update_kernel_data": "None",
+        "__velu_sum_helper": "tuple",
+        "dual": "Self",
+        "inseparable_degree": "'sage.rings.integer.Integer'",
+        "kernel_polynomial": POLYNOMIAL_RETURN_UNION,
+        "_composition_impl": "Self",
+    },
+}
+
+# The common elliptic-curve homomorphism protocol has a few field-independent
+# scalar/serialization results.  Polynomial-producing and morphism factories
+# stay unresolved because their concrete parent is selected by each child
+# implementation.
+CURATED_ANNOTATIONS["sage/schemes/elliptic_curves/hom.pyi"] = {
+    "EllipticCurveHom": {
+        "_repr_type": "str",
+        "characteristic_polynomial": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+        "inseparable_degree": "'sage.rings.integer.Integer'",
+        "separable_degree": "'sage.rings.integer.Integer'",
+        "trace": "'sage.rings.integer.Integer'",
+    },
+}
+
+# Elliptic-curve field helpers have stable predicate/container contracts.  The
+# twist constructors preserve the concrete curve implementation; kernel
+# polynomials use the existing backend union because their parent follows the
+# curve's base field.
+CURATED_ANNOTATIONS["sage/schemes/elliptic_curves/ell_field.pyi"] = {
+    "EllipticCurve_field": {
+        "is_quadratic_twist": "bool",
+        "is_quartic_twist": "bool",
+        "is_sextic_twist": "bool",
+        "isogeny_ell_graph": "'sage.graphs.graph.Graph'",
+        "kernel_polynomial_from_divisor": POLYNOMIAL_RETURN_UNION,
+        "kernel_polynomial_from_point": POLYNOMIAL_RETURN_UNION,
+        "quartic_twist": "Self",
+        "sextic_twist": "Self",
+        "torsion_basis": "tuple",
+        "torsion_gens": "list",
+        "two_torsion_rank": "'sage.rings.integer.Integer'",
+    },
+}
+
+# Number-field elliptic curves document concrete outputs for their common
+# CTF-facing operations.  Models preserve the receiver class; arithmetic
+# invariants use the concrete number-field ideal/scalar classes; and the
+# descent/search helpers retain their documented tuple/list structure.
+CURATED_ANNOTATIONS["sage/schemes/elliptic_curves/ell_number_field.pyi"] = {
+    "EllipticCurve_number_field": {
+        "base_extend": "Self",
+        "cm_discriminant": "'sage.rings.integer.Integer'",
+        "conductor": "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'",
+        "galois_representation": "'sage.schemes.elliptic_curves.gal_reps_number_field.GaloisRepresentation'",
+        "gens_quadratic": "list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field']",
+        "global_integral_model": "Self",
+        "global_minimal_model": "Self",
+        "global_minimality_class": "'sage.rings.number_field.class_group.ClassGroup'",
+        "height_function": "'sage.schemes.elliptic_curves.height.EllipticCurveCanonicalHeight'",
+        "height_pairing_matrix": MATRIX_ELEMENT_UNION,
+        "is_local_integral_model": "bool",
+        "kodaira_symbol": "'sage.schemes.elliptic_curves.kodaira_symbol.KodairaSymbol_class'",
+        "local_data": "'sage.schemes.elliptic_curves.ell_local_data.EllipticCurveLocalData' | list['sage.schemes.elliptic_curves.ell_local_data.EllipticCurveLocalData']",
+        "local_integral_model": "Self",
+        "local_minimal_model": "Self",
+        "minimal_discriminant_ideal": "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'",
+        "rank": "'sage.rings.integer.Integer'",
+        "rank_bounds": "tuple['sage.rings.integer.Integer', 'sage.rings.integer.Integer']",
+        "rational_points": "list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field']",
+        "real_components": "int",
+        "reduction": "'sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field'",
+        "regulator_of_points": "'sage.rings.real_mpfr.RealNumber'",
+        "saturation": "tuple[list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field'], 'sage.rings.integer.Integer', 'sage.rings.real_mpfr.RealNumber']",
+        "simon_two_descent": "tuple['sage.rings.integer.Integer', 'sage.rings.integer.Integer', list['sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_number_field']]",
+        "torsion_subgroup": "'sage.schemes.elliptic_curves.ell_torsion.EllipticCurveTorsionSubgroup' | 'sage.groups.additive_abelian.additive_abelian_wrapper.AdditiveAbelianGroupWrapper'",
+    },
+}
+
+# Sandpile's cache builders are explicit mutators (the docstrings show the
+# cached attribute being populated and no value being returned).  Its public
+# graph/algebra helpers likewise document stable outer containers, so expose
+# those directly instead of leaving the whole module behind dynamic UNKNOWN
+# results.
+CURATED_ANNOTATIONS["sage/sandpiles/sandpile.pyi"] = {
+    "Sandpile": {
+        "show": "None",
+        "show3d": "None",
+        "laplacian": "'sage.matrix.matrix_integer_sparse.Matrix_integer_sparse'",
+        "reduced_laplacian": "'sage.matrix.matrix_integer_sparse.Matrix_integer_sparse'",
+        "_set_max_stable": "None",
+        "_set_max_stable_div": "None",
+        "_set_out_degrees": "None",
+        "out_degree": "int | dict",
+        "_set_in_degrees": "None",
+        "in_degree": "int | dict",
+        "_set_burning_config": "None",
+        "_set_identity": "None",
+        "identity": "'sage.sandpiles.sandpile.SandpileConfig' | list[int]",
+        "_set_recurrents": "None",
+        "_set_superstables": "None",
+        "_set_group_gens": "None",
+        "_set_min_recurrents": "None",
+        "tutte_polynomial": MULTIVARIATE_POLYNOMIAL_RETURN_UNION,
+        "_set_avalanche_polynomial": "None",
+        "avalanche_polynomial": MULTIVARIATE_POLYNOMIAL_RETURN_UNION,
+        "_set_invariant_factors": "None",
+        "_set_hilbert_function": "None",
+        "_set_smith_form": "None",
+        "_set_jacobian_representatives": "None",
+        "picard_representatives": "list",
+        "stable_configs": "Iterator['sage.sandpiles.sandpile.SandpileConfig']",
+        "markov_chain": "Iterator['sage.sandpiles.sandpile.SandpileConfig | sage.sandpiles.sandpile.SandpileDivisor']",
+        "_set_stationary_density": "None",
+        "betti_complexes": "list",
+        "_set_betti_complexes": "None",
+        "_set_ring": "None",
+        "ring": MULTIVARIATE_POLYNOMIAL_RING_RETURN_UNION,
+        "_set_ideal": "None",
+        "ideal": "'sage.rings.polynomial.multi_polynomial_ideal.MPolynomialIdeal | sage.rings.polynomial.multi_polynomial_sequence.PolynomialSequence_generic'",
+        "_set_resolution": "None",
+        "_set_groebner": "None",
+        "groebner": "'sage.rings.polynomial.multi_polynomial_sequence.PolynomialSequence_generic'",
+        "betti": "list",
+        "jacobian_representatives": "list",
+    },
+}
+
+# Matroid's core set algorithms have backend-independent outer result types.
+# Keep the concrete wrapper classes for minors/duals and polyhedra, while
+# retaining explicit bool/tuple unions for the documented certificate flags.
+CURATED_ANNOTATIONS["sage/matroids/matroid.pyi"] = {
+    "Matroid": {
+        "closure": "frozenset",
+        "k_closure": "frozenset",
+        "augment": "frozenset",
+        "max_coindependent": "frozenset",
+        "coclosure": "frozenset",
+        "is_valid": "bool | tuple",
+        "lattice_of_flats": "'sage.combinat.posets.lattices.FiniteLatticePoset'",
+        "contract": "'sage.matroids.minor_matroid.MinorMatroid'",
+        "__truediv__": "'sage.matroids.minor_matroid.MinorMatroid'",
+        "delete": "'sage.matroids.minor_matroid.MinorMatroid'",
+        "dual": "'sage.matroids.dual_matroid.DualMatroid'",
+        "has_minor": "bool | tuple",
+        "has_line_minor": "bool | tuple",
+        "is_isomorphic": "bool | tuple",
+        "modular_cut": "set",
+        "linear_subclasses": "'sage.matroids.extension.LinearSubclasses'",
+        "extensions": "'sage.matroids.extension.MatroidExtensions'",
+        "coextensions": "list",
+        "girth": "int | 'sage.rings.infinity.PlusInfinity'",
+        "binary_matroid": "'sage.matroids.linear_matroid.BinaryMatroid' | None",
+        "ternary_matroid": "'sage.matroids.linear_matroid.TernaryMatroid' | None",
+        "is_circuit_chordal": "bool | tuple",
+        "is_chordal": "bool | tuple",
+        "chordality": "'sage.rings.integer.Integer'",
+        "max_weight_independent": "frozenset",
+        "max_weight_coindependent": "frozenset",
+        "intersection": "frozenset",
+        "intersection_unweighted": "frozenset",
+        "tutte_polynomial": MULTIVARIATE_POLYNOMIAL_RETURN_UNION,
+        "characteristic_polynomial": "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint'",
+        "flat_cover": "list",
+        "matroid_polytope": POLYHEDRON_RETURN_UNION,
+        "independence_matroid_polytope": POLYHEDRON_RETURN_UNION,
+        "show": "None",
+        "automorphism_group": "'sage.groups.perm_gps.permgroup.PermutationGroup_generic'",
+    },
+}
+
+# The generic elliptic-curve implementation documents these transformations
+# as staying on the same curve/base ring.  The serialization hooks are plain
+# strings and the symbolic bridge is a concrete symbolic expression; field
+# changing factories intentionally remain dynamic in the base class.
+CURATED_ANNOTATIONS.setdefault("sage/schemes/elliptic_curves/ell_generic.pyi", {}).setdefault("EllipticCurve_generic", {}).update({
+        "_pari_init_": "str",
+        "_magma_init_": "str",
+        "_symbolic_": "'sage.symbolic.expression.Expression'",
+        "rst_transform": "Self",
+        "scale_curve": "Self",
+        "change_weierstrass_model": "Self",
+        "short_weierstrass_model": "Self",
+})
+
+# Integer/rational order and interface conversions have fixed scalar/foreign
+# representations.  Keep these separate from parent-dependent arithmetic so
+# CTF scripts get useful completion without inventing a ring type.
+CURATED_ANNOTATIONS.setdefault("sage/rings/integer.pyi", {}).setdefault("Integer", {}).update({
+        "additive_order": ORDER_RETURN_UNION,
+        "multiplicative_order": ORDER_RETURN_UNION,
+        "_libgap_": "'sage.libs.gap.element.GapElement_Integer'",
+})
+CURATED_ANNOTATIONS.setdefault("sage/rings/rational.pyi", {}).setdefault("Rational", {}).update({
+        "__pari__": "'cypari2.gen.Gen'",
+        "_magma_init_": "str",
+        "_sympy_": "'sympy.core.numbers.Rational'",
+})
+
+# The integer ring's field/degree and foreign-runtime bridges have fixed
+# singleton/scalar results.  ``zeta`` succeeds only for roots that actually
+# lie in ``ZZ``; every successful branch is therefore a Sage Integer.
+CURATED_ANNOTATIONS.setdefault("sage/rings/integer_ring.pyi", {}).setdefault("IntegerRing_class", {}).update({
+        "_polymake_init_": "str",
+        "_sympy_": "'sympy.sets.fancysets.Integers'",
+        "absolute_degree": "int",
+        "fraction_field": "'sage.rings.rational_field.RationalField'",
+        "krull_dimension": "int",
+        "zeta": "'sage.rings.integer.Integer'",
+})
+
+# Integer residue rings have backend-independent group/scalar protocols.  The
+# constructor and ``field`` factory use the existing finite-field unions;
+# parent-dependent square roots/generators remain dynamic.
+CURATED_ANNOTATIONS.setdefault("sage/rings/finite_rings/integer_mod_ring.pyi", {}).setdefault("IntegerModRing_generic", {}).update({
+        "_element_constructor_": INTEGER_MOD_ELEMENT_UNION,
+        "_pari_order": "'cypari2.gen.Gen'",
+        "_pseudo_fraction_field": "Self",
+        "degree": "'sage.rings.integer.Integer'",
+        "factored_order": "'sage.structure.factorization_integer.IntegerFactorization'",
+        "field": FINITE_FIELD_UNION,
+        "krull_dimension": "'sage.rings.integer.Integer'",
+        "modulus": "'sage.rings.polynomial.polynomial_zmod_flint.Polynomial_zmod_flint'",
+        "multiplicative_group_is_cyclic": "bool",
+        "multiplicative_subgroups": "tuple",
+        "square_roots_of_one": "tuple",
+        "unit_group_exponent": "'sage.rings.integer.Integer'",
+        "unit_group_order": "'sage.rings.integer.Integer'",
+})
+
+# Category metadata is a pure container/string protocol.  These contracts do
+# not expose the dynamic parent/element factories, but make hierarchy and
+# introspection helpers useful to completion without inventing a category.
+CURATED_ANNOTATIONS["sage/categories/category.pyi"] = {
+    "Category": {
+        "_all_super_categories": "list",
+        "_all_super_categories_proper": "list",
+        "_label": "str",
+        "_repr_object_names": "str",
+        "_set_of_super_categories": "frozenset",
+        "_short_name": "str",
+        "axioms": "frozenset",
+        "required_methods": "dict",
+    },
+}
+
+# ``Category`` has a small set of hierarchy/introspection methods whose
+# docstrings commit to a fixed Python outer type.  Dynamic category factories
+# (``example``, ``parent_class`` construction, and ``__call__``) stay
+# unresolved; these annotations cover only the source-proven booleans,
+# concrete graph, class objects, and category lists.
+CURATED_ANNOTATIONS["sage/categories/category.pyi"]["Category"].update({
+    "_subcategory_hook_": "bool",
+    "__classcontains__": "bool",
+    "_is_subclass": "bool",
+    "category_graph": "'sage.graphs.graph.Graph'",
+    "_super_categories": "list",
+    "_super_categories_for_classes": "list",
+    "full_super_categories": "list",
+    "_make_named_class": "type",
+    "subcategory_class": "type",
+    "parent_class": "type",
+    "element_class": "type",
+    "morphism_class": "type",
+})
+
+# Graphics accessors and mutators have stable runtime shapes independent of
+# the primitive payload.  Setter/getter methods return their stored option,
+# while explicit ``set_*`` methods mutate in place and return ``None``.
+CURATED_ANNOTATIONS["sage/plot/graphics.pyi"] = {
+    "Graphics": {
+        "set_aspect_ratio": "None",
+        "aspect_ratio": "float | str",
+        "legend": "bool",
+        "set_axes_range": "None",
+        "set_flip": "None",
+        "fontsize": "int | float",
+        "axes_labels_size": "float",
+        "axes": "bool",
+        "axes_color": "tuple",
+        "axes_label_color": "tuple",
+        "axes_width": "float",
+        "tick_label_color": "tuple",
+        "__radd__": "Self",
+        "__add__": "Self",
+        "add_primitive": "None",
+        "plot": "Self",
+        "plot3d": "'sage.plot.plot3d.base.Graphics3dGroup'",
+        "_extract_kwds_for_show": "dict",
+        "_set_extra_kwds": "None",
+        "_set_scale": "tuple",
+        "xmin": "int | float",
+        "xmax": "int | float",
+        "ymin": "int | float",
+        "ymax": "int | float",
+        "_matplotlib_tick_formatter": "tuple",
+        "_get_vmin_vmax": "tuple",
+        "matplotlib": "'matplotlib.figure.Figure'",
+        "save_image": "None",
+        "description": "str",
+    },
+}
+
+# The pickle-explainer opcode handlers are stack mutators: each handler
+# updates the virtual machine and has no Python return value.  The two
+# observable exceptions are documented explicitly by Sage: ``run_pickle``
+# yields a SageInputExpression, while ``pop_to_mark`` materializes a list.
+# Stack payloads from ``pop``/``share`` remain dynamic and are intentionally
+# left UNKNOWN.
+CURATED_ANNOTATIONS["sage/misc/explain_pickle.pyi"] = {
+    "PickleExplainer": {
+        "run_pickle": "'sage.misc.sage_input.SageInputExpression'",
+        "check_value": "None",
+        "push": "None",
+        "push_and_share": "None",
+        "push_mark": "None",
+        "pop_to_mark": "list",
+        "APPEND": "None",
+        "APPENDS": "None",
+        "_APPENDS_helper": "None",
+        "BINFLOAT": "None",
+        "BINGET": "None",
+        "BININT": "None",
+        "BININT1": "None",
+        "BININT2": "None",
+        "BINPUT": "None",
+        "BINSTRING": "None",
+        "BINUNICODE": "None",
+        "BUILD": "None",
+        "DICT": "None",
+        "DUP": "None",
+        "EMPTY_DICT": "None",
+        "EMPTY_LIST": "None",
+        "EMPTY_TUPLE": "None",
+        "EXT1": "None",
+        "EXT2": "None",
+        "EXT4": "None",
+        "FLOAT": "None",
+        "GET": "None",
+        "GLOBAL": "None",
+        "INST": "None",
+        "INT": "None",
+        "LIST": "None",
+        "LONG": "None",
+        "LONG1": "None",
+        "LONG4": "None",
+        "LONG_BINGET": "None",
+        "LONG_BINPUT": "None",
+        "MARK": "None",
+        "NEWFALSE": "None",
+        "NEWTRUE": "None",
+        "NEWOBJ": "None",
+        "NONE": "None",
+        "OBJ": "None",
+        "PERSID": "None",
+        "BINPERSID": "None",
+        "POP": "None",
+        "POP_MARK": "None",
+        "PROTO": "None",
+        "PUT": "None",
+        "REDUCE": "None",
+        "SETITEM": "None",
+        "SETITEMS": "None",
+        "_SETITEMS_helper": "None",
+        "SHORT_BINSTRING": "None",
+        "STOP": "None",
+        "STRING": "None",
+        "TUPLE": "None",
+        "TUPLE1": "None",
+        "TUPLE2": "None",
+        "TUPLE3": "None",
+        "UNICODE": "None",
+    },
+}
+
+# 3-D graphics use the same concrete scene object for transformations and
+# expose stable serialization/container results.  The renderer-specific
+# payloads vary internally, but their documented outer types are fixed.
+CURATED_ANNOTATIONS["sage/plot/plot3d/base.pyi"] = {
+    "Graphics3d": {
+        "__add__": "Self",
+        "aspect_ratio": "list",
+        "frame_aspect_ratio": "list",
+        "bounding_box": "tuple",
+        "transform": "Self",
+        "translate": "Self",
+        "scale": "Self",
+        "rotate": "Self",
+        "rotateX": "Self",
+        "rotateY": "Self",
+        "rotateZ": "Self",
+        "viewpoint": "'sage.plot.plot3d.base.Viewpoint'",
+        "x3d": "str",
+        "tachyon": "str",
+        "obj": "str",
+        "export_jmol": "None",
+        "json_repr": "list",
+        "jmol_repr": "list",
+        "tachyon_repr": "list",
+        "obj_repr": "list",
+        "threejs_repr": "list",
+        "texture_set": "set",
+        "mtl_str": "str",
+        "flatten": "Self",
+        "save_image": "None",
+        "save": "None",
+        "stl_binary": "bytes",
+        "plot": "Self",
+    },
+}
+
+# The 3-D scene base class has similarly stable transformation and
+# serialization contracts.  These are outer result types verified from Sage
+# 10.9 docs/runtime; primitive-specific payloads remain intentionally broad.
+CURATED_ANNOTATIONS["sage/plot/plot3d/base.pyi"]["Graphics3d"].update({
+    "__add__": "Self",
+    "aspect_ratio": "list",
+    "frame_aspect_ratio": "list",
+    "bounding_box": "tuple",
+    "transform": "Self",
+    "translate": "Self",
+    "scale": "Self",
+    "rotate": "Self",
+    "rotateX": "Self",
+    "rotateY": "Self",
+    "rotateZ": "Self",
+    "viewpoint": "'sage.plot.plot3d.base.Viewpoint'",
+    "x3d": "str",
+    "tachyon": "str",
+    "obj": "str",
+    "export_jmol": "None",
+    "json_repr": "list",
+    "jmol_repr": "list",
+    "tachyon_repr": "list",
+    "obj_repr": "list",
+    "threejs_repr": "list",
+    "texture_set": "set",
+    "mtl_str": "str",
+    "flatten": "Self",
+    "save_image": "None",
+    "save": "None",
+    "stl_binary": "bytes",
+    "plot": "Self",
+})
+
+# Polynomial term orders are value objects: comparison/block composition keep
+# the term-order class, exponent comparisons return tuples, and all external
+# serializations are strings.  The block list/matrix accessors are the only
+# parent-dependent shapes, so retain their documented outer unions.
+CURATED_ANNOTATIONS["sage/rings/polynomial/term_order.pyi"] = {
+    "TermOrder": {
+        # The Cython copy helper mutates ``self`` and returns ``None``; it is
+        # named ``__copy`` (without the trailing dunder) in Sage's stub.
+        "__copy": "None",
+        "sortkey_invlex": "tuple",
+        "greater_tuple": "tuple",
+        "greater_tuple_matrix": "tuple",
+        "greater_tuple_lex": "tuple",
+        "greater_tuple_invlex": "tuple",
+        "greater_tuple_deglex": "tuple",
+        "greater_tuple_degrevlex": "tuple",
+        "greater_tuple_negdegrevlex": "tuple",
+        "greater_tuple_negdeglex": "tuple",
+        "greater_tuple_degneglex": "tuple",
+        "greater_tuple_neglex": "tuple",
+        "greater_tuple_wdeglex": "tuple",
+        "greater_tuple_wdegrevlex": "tuple",
+        "greater_tuple_negwdeglex": "tuple",
+        "greater_tuple_negwdegrevlex": "tuple",
+        "greater_tuple_block": "tuple",
+        "tuple_weight": "int",
+        "singular_moreblocks": "int",
+        "macaulay2_str": "str",
+        "magma_str": "str",
+        "blocks": "list | tuple",
+        "matrix": MATRIX_ELEMENT_UNION,
+        "weights": "tuple",
+        "__eq__": "bool",
+        "__ne__": "bool",
+        "__add__": "Self",
+        "__getitem__": "Self",
+    },
+}
+
+# PolyDict is the low-level multivariate polynomial value object.  Its
+# arithmetic and calculus operations preserve the same dictionary-backed
+# polynomial, formatting helpers return strings, and degree/exponent helpers
+# expose stable scalar/tuple results.  Coefficient lookup remains dynamic.
+CURATED_ANNOTATIONS["sage/rings/polynomial/polydict.pyi"] = {
+    "PolyDict": {
+        "remove_zeros": "None",
+        "apply_map": "None",
+        "rich_compare": "bool",
+        "degree": "int",
+        "total_degree": "int",
+        "polynomial_coefficient": "Self",
+        "coefficient": "Self",
+        "homogenize": "Self",
+        "latex": "str",
+        "poly_repr": "str",
+        "__iadd__": "Self",
+        "__neg__": "Self",
+        "__add__": "Self",
+        "__mul__": "Self",
+        "scalar_rmult": "Self",
+        "scalar_lmult": "Self",
+        "term_lmult": "Self",
+        "term_rmult": "Self",
+        "__sub__": "Self",
+        "derivative_i": "Self",
+        "derivative": "Self",
+        "integral_i": "Self",
+        "integral": "Self",
+        "min_exp": "'sage.rings.polynomial.polydict.ETuple | None'",
+        "max_exp": "'sage.rings.polynomial.polydict.ETuple | None'",
+        "lcmt": "'sage.rings.polynomial.polydict.ETuple'",
+    },
+}
+
+# Free modules have fixed outer containers and matrix/scalar invariants.  The
+# element and parent-changing factories depend on the base ring and therefore
+# intentionally remain dynamic instead of falling back to a shared module
+# base class.
+CURATED_ANNOTATIONS["sage/modules/free_module.pyi"] = {
+    "FreeModule_generic": {
+        "construction": "tuple",
+        "_eq": "bool",
+        "cardinality": CARDINALITY_RETURN_UNION,
+        "basis": "list",
+        "basis_matrix": MATRIX_ELEMENT_UNION,
+        "matrix": MATRIX_ELEMENT_UNION,
+        "codimension": "'sage.rings.integer.Integer'",
+        "discriminant": "'sage.rings.integer.Integer | sage.rings.rational.Rational'",
+        "free_module": "Self",
+        "gram_matrix": MATRIX_ELEMENT_UNION,
+        "inner_product_matrix": MATRIX_ELEMENT_UNION,
+        "_magma_init_": "str",
+        "_macaulay2_": "str",
+        "scale": "Self",
+        "__radd__": "Self",
+        "_mul_": "Self",
+    },
+}
+
+# Tate-algebra series operations preserve the concrete series implementation
+# at fixed precision.  Scalar coefficient/index access remains parent
+# dependent, while precision/degree/valuation use the documented integer or
+# infinity families and Euclidean division keeps its tuple outer shape.
+CURATED_ANNOTATIONS["sage/rings/tate_algebra_element.pyi"] = {
+    "TateAlgebraElement": {
+        "inverse_of_unit": "Self",
+        "square_root": "Self",
+        "sqrt": "Self",
+        "nth_root": "Self",
+        "__lshift__": "Self",
+        "__rshift__": "Self",
+        "restriction": "Self",
+        "add_bigoh": "Self",
+        "lift_to_precision": "Self",
+        "precision_absolute": "'sage.rings.integer.Integer | int'",
+        "valuation": "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity'",
+        "precision_relative": "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity'",
+        "log": "Self",
+        "exp": "Self",
+        "weierstrass_degree": "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity'",
+        "degree": "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity'",
+        "degrees": "tuple",
+        "residue": POLYNOMIAL_RETURN_UNION,
+        "quo_rem": "tuple",
+        "__mod__": "Self | list[Self]",
+        "__floordiv__": "Self | list[Self]",
+        "reduce": "Self",
+        "Spoly": "Self",
+        "leading_monomial": "'sage.rings.tate_algebra_element.TateAlgebraTerm'",
+        "leading_term": "'sage.rings.tate_algebra_element.TateAlgebraTerm'",
+        "weierstrass_degrees": "tuple",
+    },
+}
+
+# Cyclotomic number fields have concrete scalar/ideal/sequence contracts that
+# are independent of the chosen embedding.  Embedding maps themselves stay
+# dynamic (their homset element class depends on the codomain), while field
+# elements and roots of unity use Sage's absolute number-field element class.
+CURATED_ANNOTATIONS.setdefault("sage/rings/number_field/number_field.pyi", {}).setdefault("NumberField_cyclotomic", {}).update({
+        "construction": "tuple",
+        "_magma_init_": "str",
+        "_libgap_": "'sage.libs.gap.element.GapElement_Ring'",
+        "_n": "'sage.rings.integer.Integer'",
+        "_log_gen": "'sage.rings.integer.Integer | None'",
+        "_element_constructor_": "'sage.rings.number_field.number_field_element.NumberFieldElement_absolute'",
+        "_coerce_from_other_cyclotomic_field": "'sage.rings.number_field.number_field_element.NumberFieldElement_absolute | None'",
+        "_coerce_from_gap": "'sage.rings.number_field.number_field_element.NumberFieldElement_absolute'",
+        "complex_embeddings": "'sage.structure.sequence.Sequence_generic'",
+        "real_embeddings": "'sage.structure.sequence.Sequence_generic'",
+        "embeddings": "list",
+        "signature": "tuple[int, int]",
+        "different": "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'",
+        "discriminant": "'sage.rings.integer.Integer'",
+        "next_split_prime": "'sage.rings.integer.Integer'",
+        "_pari_integral_basis": "list",
+        "zeta_order": "'sage.rings.integer.Integer'",
+        "zeta": "'sage.rings.number_field.number_field_element.NumberFieldElement_absolute'",
+        "number_of_roots_of_unity": "'sage.rings.integer.Integer'",
+        "roots_of_unity": "list['sage.rings.number_field.number_field_element.NumberFieldElement_absolute']",
+})
+
 # REPLACE: member name -> annotation expression for defs that already have
 # an annotation.  Used to point factory returns at the most capable real
 # class so member completion covers the commonly used subclass surface.
@@ -2270,6 +3180,49 @@ CURATED_REPLACE_ANNOTATIONS["sage/rings/polynomial/multi_polynomial.pyi"] = {
 # generic overload machinery in the generated API index; the Kotlin plugin does
 # not recognize these class or member names.
 CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
+    "sage/schemes/elliptic_curves/ell_number_field.pyi": {
+        "EllipticCurve_number_field": {
+            # ``local_data`` returns one record for an explicit prime and a
+            # list covering the discriminant support when omitted.
+            "local_data": (
+                "def local_data(self, P: Literal[None] = None, proof=None, algorithm='pari', globally=False) -> list['sage.schemes.elliptic_curves.ell_local_data.EllipticCurveLocalData']: ...",
+                "def local_data(self, P, proof=None, algorithm='pari', globally=False) -> 'sage.schemes.elliptic_curves.ell_local_data.EllipticCurveLocalData': ...",
+            ),
+            # An omitted ``n`` constructs the dedicated elliptic-curve torsion
+            # subgroup; an explicit torsion order delegates to the additive
+            # group wrapper used by the generic field implementation.
+            "torsion_subgroup": (
+                "def torsion_subgroup(self, n: Literal[None] = None, **kwds) -> 'sage.schemes.elliptic_curves.ell_torsion.EllipticCurveTorsionSubgroup': ...",
+                "def torsion_subgroup(self, n, **kwds) -> 'sage.groups.additive_abelian.additive_abelian_wrapper.AdditiveAbelianGroupWrapper': ...",
+            ),
+        },
+    },
+    "sage/sandpiles/sandpile.pyi": {
+        "Sandpile": {
+            # ``v=None`` asks for the complete degree dictionary; a vertex
+            # argument selects one native integer degree.
+            "out_degree": (
+                "def out_degree(self, v: Literal[None] = None) -> dict: ...",
+                "def out_degree(self, v) -> int: ...",
+            ),
+            "in_degree": (
+                "def in_degree(self, v: Literal[None] = None) -> dict: ...",
+                "def in_degree(self, v) -> int: ...",
+            ),
+            # The verbose flag controls whether configurations are returned as
+            # SandpileConfig objects or materialized integer lists.
+            "identity": (
+                "def identity(self, verbose: Literal[True] = True) -> 'sage.sandpiles.sandpile.SandpileConfig': ...",
+                "def identity(self, verbose: Literal[False] = False) -> list[int]: ...",
+            ),
+            # ``gens=True`` returns the polynomial sequence; the default gives
+            # the concrete multivariate ideal.
+            "ideal": (
+                "def ideal(self, gens: Literal[False] = False) -> 'sage.rings.polynomial.multi_polynomial_ideal.MPolynomialIdeal': ...",
+                "def ideal(self, gens: Literal[True] = True) -> 'sage.rings.polynomial.multi_polynomial_sequence.PolynomialSequence_generic': ...",
+            ),
+        },
+    },
     "sage/rings/number_field/number_field_element.pyi": {
         "NumberFieldElement": {
             # Absolute norm/trace descend to QQ; supplying a subfield asks
@@ -2281,6 +3234,16 @@ CURATED_OVERLOADS: dict[str, dict[str, dict[str, tuple[str, ...]]]] = {
             "trace": (
                 "def trace(self, K: Literal[None] = None) -> 'sage.rings.rational.Rational': ...",
                 "def trace(self, K) -> Self: ...",
+            ),
+            # ``all`` materializes the second root; with the default branch
+            # Sage returns one element from the same number field.
+            "sqrt": (
+                "def sqrt(self, all: Literal[False] = False, extend=True) -> Self: ...",
+                "def sqrt(self, all: Literal[True] = True, extend=True) -> list[Self]: ...",
+            ),
+            "nth_root": (
+                "def nth_root(self, n, all: Literal[False] = False) -> Self: ...",
+                "def nth_root(self, n, all: Literal[True] = True) -> list[Self]: ...",
             ),
         },
     },
@@ -3221,6 +4184,11 @@ PROTOCOL_RETURNS: dict[str, str] = {
     "__len__": "int",
     "__index__": "int",
     "__hash__": "int",
+    # Cython/Sage exposes ``__richcmp__`` as the implementation hook used by
+    # the six Python comparison operators.  Unlike the public ``__eq__``
+    # methods (which may legally return NotImplemented), this hook returns
+    # the comparison predicate consumed by the runtime.
+    "__richcmp__": "bool",
     # Sage's internal rich-comparison hook feeds the Python comparison
     # protocol and returns the predicate result (the public ``__eq__``/
     # ordering methods may still be symbolic and are intentionally separate).
