@@ -5164,6 +5164,146 @@ def generic_matroid():
             self.assertIn("def _gap_init_(self) -> str:", text)
             self.assertIn("def is_exact(self) -> bool:", text)
 
+    def test_basic_graph_catalogue_uses_concrete_graph_returns(self):
+        """Basic graph constructors are all concrete Graph factories."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "graphs" / "generators" / "basic.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "def BullGraph(immutable=False):\n    ...\n"
+                "def CycleGraph(n, immutable=False):\n    ...\n"
+                "def CompleteGraph(n, immutable=False):\n    ...\n"
+                "def ToroidalGrid2dGraph(p, q, immutable=False):\n    ...\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def BullGraph(immutable=False) -> 'sage.graphs.graph.Graph':", text)
+            self.assertIn("def CycleGraph(n, immutable=False) -> 'sage.graphs.graph.Graph':", text)
+            self.assertIn("def CompleteGraph(n, immutable=False) -> 'sage.graphs.graph.Graph':", text)
+            self.assertIn("def ToroidalGrid2dGraph(p, q, immutable=False) -> 'sage.graphs.graph.Graph':", text)
+
+    def test_special_matrix_factories_use_concrete_matrix_union(self):
+        """Special matrix helpers expose implementation-family completions."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "matrix" / "special.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "def column_matrix(*args, **kwds) -> Matrix:\n    ...\n"
+                "def identity_matrix(ring, n=0) -> Matrix:\n    ...\n"
+                "def block_matrix(*args, **kwds):\n    ...\n"
+                "def companion_matrix(poly, format='right'):\n    ...\n"
+                "def _determine_block_matrix_grid(sub_matrices):\n    ...\n"
+                "def _determine_block_matrix_rows(sub_matrices):\n    ...\n"
+                "def matrix_method(func=None, name=None):\n    ...\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(
+                "def column_matrix(*args, **kwds) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |",
+                text,
+            )
+            self.assertIn(
+                "def identity_matrix(ring, n=0) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |",
+                text,
+            )
+            self.assertIn(
+                "def block_matrix(*args, **kwds) -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |",
+                text,
+            )
+            self.assertIn(
+                "def companion_matrix(poly, format='right') -> 'sage.matrix.matrix_complex_ball_dense.Matrix_complex_ball_dense |",
+                text,
+            )
+            self.assertIn(
+                "def _determine_block_matrix_grid(sub_matrices) -> tuple[list[int], list[int]]:",
+                text,
+            )
+            self.assertIn(
+                "def _determine_block_matrix_rows(sub_matrices) -> tuple[list[int], list[int], int]:",
+                text,
+            )
+            self.assertIn(
+                "def matrix_method(func=None, name=None) -> collections.abc.Callable:",
+                text,
+            )
+
+    def test_univariate_polynomial_contracts_avoid_public_base_returns(self):
+        """Polynomial elements and parents expose concrete factory results."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base = root / "sage" / "rings" / "polynomial"
+            base.mkdir(parents=True)
+            element = base / "polynomial_element.pyi"
+            element.write_text(
+                "class Polynomial:\n"
+                "    def derivative(self, *args) -> Self: ...\n"
+                "    def gcd(self, other) -> Self: ...\n"
+                "    def inverse_of_unit(self) -> Polynomial: ...\n"
+                "    def base_extend(self, R) -> Polynomial: ...\n"
+                "    def square(self) -> Polynomial: ...\n"
+                "    def _symbolic_(self, R):\n        ...\n"
+                "    def _pari_init_(self):\n        ...\n"
+                "    def global_height(self, prec=None):\n        ...\n"
+                "    def add_bigoh(self, prec):\n        ...\n"
+                "    def mod(self, other):\n        ...\n",
+                encoding="utf-8",
+            )
+            ring = base / "polynomial_ring.pyi"
+            ring.write_text(
+                "class PolynomialRing_generic:\n"
+                "    def gen(self) -> Polynomial: ...\n"
+                "    def _element_constructor_(self, x=None):\n        ...\n"
+                "    def cyclotomic_polynomial(self, n):\n        ...\n"
+                "    def monomial(self, exponent):\n        ...\n"
+                "    def random_element(self, degree=(-1, 2)):\n        ...\n"
+                "    def extend_variables(self, added_names, order='degrevlex'):\n        ...\n"
+                "    def _implementation_names(cls, implementation, base_ring):\n        ...\n"
+                "    def _is_valid_homomorphism_(self, codomain, im_gens):\n        ...\n"
+                "    def karatsuba_threshold(self):\n        ...\n"
+                "    def set_karatsuba_threshold(self, value):\n        ...\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            element_text = element.read_text(encoding="utf-8")
+            self.assertIn("def inverse_of_unit(self) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", element_text)
+            self.assertIn("def base_extend(self, R) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", element_text)
+            self.assertIn("def square(self) -> Self:", element_text)
+            self.assertIn("def _symbolic_(self, R) -> 'sage.symbolic.expression.Expression':", element_text)
+            self.assertIn("def _pari_init_(self) -> 'cypari2.gen.Gen':", element_text)
+            self.assertIn("def global_height(self, prec=None) -> 'sage.rings.real_mpfr.RealNumber':", element_text)
+            self.assertIn("def add_bigoh(self, prec) -> 'sage.rings.power_series_poly.PowerSeries_poly |", element_text)
+            self.assertIn("def mod(self, other) -> Self:", element_text)
+            ring_text = ring.read_text(encoding="utf-8")
+            self.assertIn("def gen(self) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", ring_text)
+            self.assertIn("def _element_constructor_(self, x=None) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", ring_text)
+            self.assertIn("def cyclotomic_polynomial(self, n) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", ring_text)
+            self.assertIn("def monomial(self, exponent) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", ring_text)
+            self.assertIn("def random_element(self, degree=(-1, 2)) -> 'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint |", ring_text)
+            self.assertIn("def extend_variables(self, added_names, order='degrevlex') -> 'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomialRing_libsingular |", ring_text)
+            self.assertIn("def _implementation_names(cls, implementation, base_ring) -> list[str]:", ring_text)
+            self.assertIn("def _is_valid_homomorphism_(self, codomain, im_gens) -> bool:", ring_text)
+            self.assertIn("def karatsuba_threshold(self) -> int:", ring_text)
+            self.assertIn("def set_karatsuba_threshold(self, value) -> None:", ring_text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -156,6 +156,11 @@ MULTIVARIATE_POLYNOMIAL_RETURN_UNION = (
     "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomial_libsingular | "
     "sage.rings.polynomial.multi_polynomial_element.MPolynomial_polydict'"
 )
+MULTIVARIATE_POLYNOMIAL_RING_RETURN_UNION = (
+    "'sage.rings.polynomial.multi_polynomial_libsingular.MPolynomialRing_libsingular | "
+    "sage.rings.polynomial.multi_polynomial_ring.MPolynomialRing_polydict | "
+    "sage.rings.polynomial.multi_polynomial_ring.MPolynomialRing_polydict_domain'"
+)
 LAURENT_POLYNOMIAL_RETURN_UNION = (
     "'sage.rings.polynomial.laurent_polynomial.LaurentPolynomial_univariate | "
     "sage.rings.polynomial.laurent_polynomial_mpair.LaurentPolynomial_mpair'"
@@ -1774,7 +1779,25 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
     },
     "sage/rings/polynomial/polynomial_ring.pyi": {
         "PolynomialRing_generic": {
-            "gen": "'sage.rings.polynomial.polynomial_element.Polynomial'",
+            "gen": POLYNOMIAL_RETURN_UNION,
+            "_element_constructor_": POLYNOMIAL_RETURN_UNION,
+            "_implementation_names": "list[str]",
+            "_is_valid_homomorphism_": "bool",
+            "_magma_init_": "str",
+            "_macaulay2_init_": "str",
+            "cyclotomic_polynomial": POLYNOMIAL_RETURN_UNION,
+            "parameter": POLYNOMIAL_RETURN_UNION,
+            "monomial": POLYNOMIAL_RETURN_UNION,
+            "extend_variables": MULTIVARIATE_POLYNOMIAL_RING_RETURN_UNION,
+            "krull_dimension": "'sage.rings.integer.Integer | int'",
+            "random_element": POLYNOMIAL_RETURN_UNION,
+            "_monics_degree": "Iterator",
+            "_monics_max": "Iterator",
+            "_polys_degree": "Iterator",
+            "_polys_max": "Iterator",
+            "_Karatsuba_threshold": "int",
+            "karatsuba_threshold": "int",
+            "set_karatsuba_threshold": "None",
         },
         "PolynomialRing_dense_mod_p": {
             # The parent class is shared by FLINT and NTL implementations;
@@ -1876,6 +1899,15 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "gcd": "Self",
             "xgcd": "tuple[Self, Self, Self]",
             "quo_rem": "tuple[Self, Self]",
+            "_symbolic_": "'sage.symbolic.expression.Expression'",
+            "_pari_init_": "'cypari2.gen.Gen'",
+            "_magma_init_": "str",
+            "_giac_init_": "str",
+            "global_height": "'sage.rings.real_mpfr.RealNumber'",
+            "local_height": "'sage.rings.real_mpfr.RealNumber'",
+            "local_height_arch": "'sage.rings.real_mpfr.RealNumber'",
+            "add_bigoh": "'sage.rings.power_series_poly.PowerSeries_poly | sage.rings.power_series_pari.PowerSeries_pari'",
+            "mod": "Self",
         },
     },
     "sage/rings/polynomial/multi_polynomial.pyi": {
@@ -2005,6 +2037,25 @@ CURATED_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "real_root_intervals": "list[tuple[tuple['sage.rings.rational.Rational', 'sage.rings.rational.Rational'], 'sage.rings.integer.Integer']]",
         },
     },
+    # The basic graph catalogue consists entirely of concrete ``Graph``
+    # constructors.  Their optional ``immutable`` flag changes mutability,
+    # not the public Sage graph class, so retain one concrete completion
+    # surface instead of leaving every catalogue function UNKNOWN.
+    "sage/graphs/generators/basic.pyi": {
+        None: {
+            name: "'sage.graphs.graph.Graph'"
+            for name in {
+                "BullGraph", "ButterflyGraph", "CircularLadderGraph",
+                "ClawGraph", "CompleteBipartiteGraph", "CompleteGraph",
+                "CompleteMultipartiteGraph", "CorrelationGraph", "CycleGraph",
+                "DartGraph", "DiamondGraph", "EmptyGraph", "ForkGraph",
+                "GemGraph", "Grid2dGraph", "GridGraph", "HouseGraph",
+                "HouseXGraph", "LadderGraph", "MoebiusLadderGraph",
+                "PathGraph", "StarGraph", "Toroidal6RegularGrid2dGraph",
+                "ToroidalGrid2dGraph",
+            }
+        },
+    },
 }
 
 # REPLACE: member name -> annotation expression for defs that already have
@@ -2038,9 +2089,55 @@ CURATED_REPLACE_ANNOTATIONS: dict[str, dict[str, dict[str, str]]] = {
             "gcd": "Self",
             "xgcd": "tuple[Self, Self, Self]",
             "quo_rem": "tuple[Self, Self]",
+            # Replace public ``Polynomial`` protocol returns with concrete
+            # implementation families (or receiver-preserving ``Self``).
+            "compose_trunc": "Self",
+            "inverse_of_unit": POLYNOMIAL_RETURN_UNION,
+            "inverse_mod": POLYNOMIAL_RETURN_UNION,
+            "inverse_series_trunc": POLYNOMIAL_RETURN_UNION,
+            "revert_series": POLYNOMIAL_RETURN_UNION,
+            "_mul_trunc_": POLYNOMIAL_RETURN_UNION,
+            "multiplication_trunc": POLYNOMIAL_RETURN_UNION,
+            "square": "Self",
+            "any_irreducible_factor": POLYNOMIAL_RETURN_UNION,
+            "base_extend": POLYNOMIAL_RETURN_UNION,
+            "change_variable_name": "Self",
+            "denominator": POLYNOMIAL_RETURN_UNION,
+            "numerator": POLYNOMIAL_RETURN_UNION,
+            "integral": POLYNOMIAL_RETURN_UNION,
+            "lcm": POLYNOMIAL_RETURN_UNION,
+            "lm": "Self",
+            "lt": "Self",
+            "monic": "Self",
+            "polynomial": POLYNOMIAL_RETURN_UNION,
+            "composed_op": "Self",
+            "compose_power": "Self",
+            "adams_operator_on_roots": "Self",
+            "symmetric_power": "Self",
+            "reciprocal_transform": "Self",
+            "truncate": "Self",
+            "radical": "Self",
+            "cyclotomic_part": "Self",
+            "homogenize": POLYNOMIAL_RETURN_UNION,
+            "nth_root": POLYNOMIAL_RETURN_UNION,
+            "map_coefficients": POLYNOMIAL_RETURN_UNION,
+            # Stable interface conversions and height values are absent from
+            # the generated annotations but fixed by the source contract.
+            "_symbolic_": "'sage.symbolic.expression.Expression'",
+            "_pari_init_": "'cypari2.gen.Gen'",
+            "_magma_init_": "str",
+            "_giac_init_": "str",
+            "global_height": "'sage.rings.real_mpfr.RealNumber'",
+            "local_height": "'sage.rings.real_mpfr.RealNumber'",
+            "local_height_arch": "'sage.rings.real_mpfr.RealNumber'",
+            "add_bigoh": "'sage.rings.power_series_poly.PowerSeries_poly | sage.rings.power_series_pari.PowerSeries_pari'",
+            "mod": "Self",
         },
     },
     "sage/rings/polynomial/polynomial_ring.pyi": {
+        "PolynomialRing_generic": {
+            "gen": POLYNOMIAL_RETURN_UNION,
+        },
         "PolynomialRing_dense_mod_p": {
             "gen": POLYNOMIAL_MOD_P_ELEMENT_UNION,
         },
@@ -2097,6 +2194,48 @@ CURATED_REPLACE_ANNOTATIONS["sage/rings/rational_field.pyi"] = {
         "gens": "tuple['sage.rings.rational.Rational']",
         "number_field": "Self",
         "selmer_group_iterator": "Iterator['sage.rings.rational.Rational']",
+    },
+}
+
+# ``sage.matrix.special`` is imported through the global ``matrix``
+# constructor.  The generated module stubs historically used the public
+# ``matrix0.Matrix`` protocol for only a few functions and omitted the rest;
+# retarget every matrix-producing constructor to the concrete implementation
+# union so ``solve_right``/``determinant`` and backend-specific members remain
+# discoverable in PyCharm.
+CURATED_REPLACE_ANNOTATIONS["sage/matrix/special.pyi"] = {
+    None: {
+        name: MATRIX_ELEMENT_UNION
+        for name in {
+            "column_matrix", "random_matrix", "diagonal_matrix",
+            "identity_matrix", "zero_matrix",
+        }
+    },
+}
+
+# Most special-matrix constructors omit an annotation in the generated
+# source.  Their documentation and implementation both construct a matrix
+# in the selected parent; annotate the two private shape helpers with their
+# stable tuple contracts and the public constructors with the same concrete
+# implementation union.
+CURATED_ANNOTATIONS["sage/matrix/special.pyi"] = {
+    None: {
+        "_determine_block_matrix_grid": "tuple[list[int], list[int]]",
+        "_determine_block_matrix_rows": "tuple[list[int], list[int], int]",
+        "matrix_method": "collections.abc.Callable",
+        **{
+            name: MATRIX_ELEMENT_UNION
+            for name in {
+                "block_diagonal_matrix", "block_matrix", "circulant",
+                "companion_matrix", "elementary_matrix", "hankel", "hilbert",
+                "ith_to_zero_rotation_matrix", "jordan_block", "lehmer",
+                "ones_matrix", "random_bistochastic_matrix",
+                "random_diagonalizable_matrix", "random_echelonizable_matrix",
+                "random_rref_matrix", "random_subspaces_matrix",
+                "random_unimodular_matrix", "random_unitary_matrix", "toeplitz",
+                "vandermonde", "vector_on_axis_rotation_matrix",
+            }
+        },
     },
 }
 

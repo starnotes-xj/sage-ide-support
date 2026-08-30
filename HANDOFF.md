@@ -37,10 +37,10 @@ Gradle、索引和 ZIP 静态结果不能替代 fresh PyCharm GUI smoke。
 
 ## 5. 当前验证状态（Sage 10.9 / Python 3.13）
 
-- Staging 索引：`2,843` 源文件、`85,019` entries、`52,423` signatures、`162` diagnostics、coverage `1.0`、missing `0`；本轮 `direct_product` 参数合同新增 3 个 overload，inventory digest 为 `8b2676689e9b7a782d209fb9b83a656b350fa6fb903ec646894ee430c0363515`。
-- 合同审计：`UNKNOWN=24,922`、`CONCRETE=5,478`、`TYPE_VARIABLE=2,151`、`BROAD_BUILTIN=12,706`、`NONE=4,790`、`UNION_OR_OPTIONAL=1,676`、`DYNAMIC=17`、`STRUCTURAL_BASE=62`、`GENERIC=478`、`UNQUALIFIED=143`。相对本文件上一记录再减少 `61` 个 UNKNOWN，累计净减少 `609` 个；多元多项式及其环的新增结果保留具体实现族或稳定外层容器，不回退公共基类。
-- 本轮新增以 Sage 10.9 文档为主、对可运行项用 WSL 复核：矩阵空间具体矩阵族/模块、Graph/Digraph 容器与原地 `None` 分支、符号 Expression、NumberField（含绝对域）、有限域与 IntegerMod 后端、椭圆曲线标量/多项式、通用 Polynomial、matroid/design/graph/polytope/poset/partition/tableau/word/permutation catalogue 构造器、PowerSeries/MPowerSeries/LaurentSeries/LazyModuleElement、Link、FiniteStateMachine、PermutationGroup 基础协议，以及 MPolynomial/MPolynomialRing 的系数、指数、迭代器、插值、生成元、Newton polytope、`nth_root`/`crt` 等；PermutationGroup 的 `base`/`gens_small`/`orbit`/`stabilizer`/`subgroup` 已由 WSL 复核，`socle`/交集/holomorph 等 GAP 依赖方法以源码文档证据为准（当前 WSL GAP 进程崩溃后保持保守合同）。动态参数仍保留联合或 UNKNOWN。
-- 通过：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`（`164` 项）、`compileall`、`git diff --check`、AST 检查、staging `generate.py` 和 `audit_contracts.py`。
+- Staging 索引：`2,843` 源文件、`85,019` entries、`52,423` signatures、`162` diagnostics、coverage `1.0`、missing `0`；inventory digest 为 `8b2676689e9b7a782d209fb9b83a656b350fa6fb903ec646894ee430c0363515`。
+- 合同审计：`UNKNOWN=24,849`、`CONCRETE=5,476`、`TYPE_VARIABLE=2,166`、`BROAD_BUILTIN=12,711`、`NONE=4,791`、`UNION_OR_OPTIONAL=1,727`、`DYNAMIC=17`、`STRUCTURAL_BASE=62`、`GENERIC=481`、`UNQUALIFIED=143`。相对本文件上一记录再减少 `25` 个 UNKNOWN，累计净减少 `682` 个；矩阵特殊构造器、基础图构造器和一元多项式核心工厂均返回具体实现族，不回退公共基类。
+- 本轮新增以 Sage 10.9 文档为主、对可运行项用 WSL 复核：矩阵空间具体矩阵族/模块、`matrix.special` 的块矩阵/伴随矩阵/随机矩阵/旋转矩阵/Toeplitz-Hankel 等构造器、basic graph catalogue 的 `Graph` 构造器、Polynomial/PolynomialRing_generic 的生成元/随机元素/模运算/换基/符号转换/高度/幂级数截断等合同、Graph/Digraph 容器与原地 `None` 分支、符号 Expression、NumberField（含绝对域）、有限域与 IntegerMod 后端、椭圆曲线标量/多项式、matroid/design/graph/polytope/poset/partition/tableau/word/permutation catalogue 构造器、PowerSeries/MPowerSeries/LaurentSeries/LazyModuleElement、Link、FiniteStateMachine、PermutationGroup 基础协议，以及 MPolynomial/MPolynomialRing 的系数、指数、迭代器、插值、生成元、Newton polytope、`nth_root`/`crt` 等；本轮 WSL 抽样确认 `matrix.identity_matrix`、`block_matrix`、`companion_matrix`、`hilbert`、`graphs.CycleGraph`/`CompleteGraph`、`R.gen()`、`R.random_element()`、`f.derivative()`、`f.mod()`、`f.add_bigoh()` 和 `f._symbolic_(SR)` 都落到具体 Sage 类。动态参数仍保留联合或 UNKNOWN。
+- 通过：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`（`167` 项）、`compileall`、`git diff --check`、AST 检查、staging `generate.py` 和 `audit_contracts.py`。
 - 当前索引文件：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.json`。
 
 ## 6. 风险与下一步
