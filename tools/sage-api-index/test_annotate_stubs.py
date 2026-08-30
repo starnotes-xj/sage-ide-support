@@ -1608,6 +1608,8 @@ class AnnotateStubsTest(unittest.TestCase):
                 "    def row(self, x):\n        pass\n"
                 "    def dumps(self):\n        pass\n"
                 "    def random_empty_cell(self):\n        pass\n"
+                "    def __getitem__(self, rc):\n        pass\n"
+                "    def gcs(self):\n        pass\n"
                 "def isotopism(p):\n        pass\n"
                 "def back_circulant(n):\n        pass\n"
                 "def group_to_LatinSquare(G):\n        pass\n"
@@ -1625,10 +1627,33 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def column(self, x) -> 'sage.modules.vector_integer_dense.Vector_integer_dense':", text)
             self.assertIn("def dumps(self) -> bytes:", text)
             self.assertIn("def random_empty_cell(self) -> list[int] | None:", text)
+            self.assertIn("def __getitem__(self, rc) -> 'sage.rings.integer.Integer':", text)
+            self.assertIn("def gcs(self) -> Self:", text)
             self.assertIn("def isotopism(p) -> 'sage.combinat.permutation.Permutation':", text)
             self.assertIn("def back_circulant(n) -> 'sage.combinat.matrices.latin.LatinSquare':", text)
             self.assertIn("def group_to_LatinSquare(G) -> 'sage.matrix.matrix_integer_dense.Matrix_integer_dense':", text)
             self.assertIn("def bitrade(T1, T2) -> tuple:", text)
+
+            path.write_text(
+                "def beta1(T1, T2, r):\n        pass\n"
+                "def genus(T1, T2):\n        pass\n"
+                "def tau1(T1, T2):\n        pass\n"
+                "def tau123(T1, T2):\n        pass\n"
+                "def LatinSquare_generator(P):\n        pass\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def beta1(T1, T2, r) -> tuple:", text)
+            self.assertIn("def genus(T1, T2) -> int:", text)
+            self.assertIn("def tau1(T1, T2) -> 'sage.combinat.permutation.Permutation':", text)
+            self.assertIn("def tau123(T1, T2) -> tuple:", text)
+            self.assertIn("def LatinSquare_generator(P) -> Iterator['sage.combinat.matrices.latin.LatinSquare']:", text)
 
     def test_cyclotomic_number_field_contracts_use_absolute_elements(self):
         """Cyclotomic fields expose concrete roots, ideals, and sequences."""
