@@ -31,6 +31,7 @@ class SageRunSettingsConfigurable : Configurable {
 
     private val nativeSageExecutableField = JBTextField()
     private val wslSageExecutableField = JBTextField()
+    private val wslPythonExecutableField = JBTextField()
     private val wslDistributionField = JBTextField()
     private val wslCondaEnvironmentField = JBTextField()
     private val wslCondaExecutableField = JBTextField()
@@ -82,9 +83,10 @@ class SageRunSettingsConfigurable : Configurable {
         cardRow(nativeCard, 0, "Sage executable:", nativeSageExecutableField)
 
         cardRow(wslCard, 0, "Sage executable (inside WSL):", wslSageExecutableField)
-        cardRow(wslCard, 1, "WSL distribution:", wslDistributionField)
-        cardRow(wslCard, 2, "Conda environment:", wslCondaEnvironmentField)
-        cardRow(wslCard, 3, "Conda executable (optional):", wslCondaExecutableField)
+        cardRow(wslCard, 1, "Python executable (inside WSL):", wslPythonExecutableField)
+        cardRow(wslCard, 2, "WSL distribution:", wslDistributionField)
+        cardRow(wslCard, 3, "Conda environment:", wslCondaEnvironmentField)
+        cardRow(wslCard, 4, "Conda executable (optional):", wslCondaExecutableField)
 
         cardRow(dockerCard, 0, "Container executable (docker/podman):", containerExecutableField)
         cardRow(dockerCard, 1, "Container image:", dockerImageField)
@@ -175,6 +177,7 @@ class SageRunSettingsConfigurable : Configurable {
                             val result = value as? WslSageRuntime
                             if (error == null && result != null) {
                                 wslSageExecutableField.text = result.sageExecutable
+                                wslPythonExecutableField.text = result.pythonExecutable.orEmpty()
                                 wslCondaExecutableField.text = result.condaExecutable.orEmpty()
                                 statusLabel.text = "Validated WSL Sage ${result.version ?: "runtime"} · ${result.pythonExecutable ?: "Python unavailable"}"
                             } else {
@@ -235,6 +238,7 @@ class SageRunSettingsConfigurable : Configurable {
         return s.executionMode != (modeCombo.selectedItem as ExecutionMode).name ||
             s.nativeSageExecutable != nativeSageExecutableField.text ||
             s.wslSageExecutable != wslSageExecutableField.text ||
+            s.wslPythonExecutable != wslPythonExecutableField.text ||
             s.sageParameters != sageParametersField.text ||
             s.wslDistribution != wslDistributionField.text ||
             s.wslCondaEnvironment != wslCondaEnvironmentField.text ||
@@ -265,6 +269,7 @@ class SageRunSettingsConfigurable : Configurable {
             executionMode = mode.name
             nativeSageExecutable = nativeSageExecutableField.text
             wslSageExecutable = wslSageExecutableField.text
+            wslPythonExecutable = wslPythonExecutableField.text
             sageParameters = sageParametersField.text
             wslDistribution = wslDistributionField.text
             wslCondaEnvironment = wslCondaEnvironmentField.text
@@ -302,7 +307,13 @@ class SageRunSettingsConfigurable : Configurable {
         val result: RuntimeOperationResult<*> = when (mode) {
             ExecutionMode.NATIVE -> RuntimeOperationResult(Unit)
             ExecutionMode.WSL -> runCatching {
-                SageAutoDetect.validateConfiguredWslSettings(candidate.wslDistribution, candidate.wslCondaEnvironment, candidate.wslCondaExecutable, candidate.wslSageExecutable)
+                SageAutoDetect.validateConfiguredWslSettings(
+                    candidate.wslDistribution,
+                    candidate.wslCondaEnvironment,
+                    candidate.wslCondaExecutable,
+                    candidate.wslSageExecutable,
+                    candidate.wslPythonExecutable,
+                )
                 RuntimeOperationResult(Unit)
             }.getOrElse { RuntimeOperationResult(null, listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.TARGET_INVALID, "WSL_CONFIG_VALIDATE", it.message ?: "WSL settings are invalid")), false) }
             ExecutionMode.DOCKER -> SageRuntimeService.getInstance().validateContainerProfile(candidate)
@@ -320,6 +331,7 @@ class SageRunSettingsConfigurable : Configurable {
         modeCombo.selectedItem = runCatching { ExecutionMode.valueOf(s.executionMode) }.getOrDefault(ExecutionMode.WSL)
         nativeSageExecutableField.text = s.nativeSageExecutable
         wslSageExecutableField.text = s.wslSageExecutable
+        wslPythonExecutableField.text = s.wslPythonExecutable
         sageParametersField.text = s.sageParameters
         wslDistributionField.text = s.wslDistribution
         wslCondaEnvironmentField.text = s.wslCondaEnvironment

@@ -208,6 +208,14 @@ class ImportWslArtifactTest(unittest.TestCase):
         self.assertEqual(command[5:9], ["run", "-n", "sage", "python"])
         self.assertNotIn("activate", command)
 
+    def test_probe_command_auto_resolves_conda_from_the_wsl_user_environment(self):
+        command = importer.probe_command("Ubuntu", importer.AUTO_CONDA, "sage")
+        self.assertEqual(command[:6], ["wsl", "-d", "Ubuntu", "--exec", "/bin/bash", "-lc"])
+        script = command[6]
+        self.assertIn('"$HOME/miniconda3/bin/conda"', script)
+        self.assertIn('command -v conda', script)
+        self.assertNotIn("/home/starnotes", script)
+
     def test_run_import_writes_receipt_manifest_and_invokes_generator(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

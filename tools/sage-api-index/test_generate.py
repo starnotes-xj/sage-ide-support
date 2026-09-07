@@ -234,7 +234,7 @@ class ManifestContractTest(unittest.TestCase):
                 "--sage-version", "10.6",
                 "--python-version", "3.11",
                 "--output", str(output),
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True, encoding="utf-8")
             self.assertEqual(result.returncode, 2)
             self.assertIn("source manifest root does not exist", result.stderr)
 

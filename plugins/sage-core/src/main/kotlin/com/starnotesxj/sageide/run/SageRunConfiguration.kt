@@ -37,6 +37,7 @@ internal fun configurationValidationError(scriptPath: String, settings: SageRunS
                 settings.wslCondaEnvironment,
                 settings.wslCondaExecutable,
                 settings.wslSageExecutable,
+                settings.wslPythonExecutable,
             )
         }.exceptionOrNull()?.message
         ExecutionMode.DOCKER -> {
@@ -99,9 +100,9 @@ class SageRunConfiguration(
      * Settings-backed WSL runs must not probe the host before launch.
      *
      * IntelliJ can construct a command state on the EDT.  Runtime discovery
-     * starts `wsl.exe` and waits for its output, which is forbidden there.  The
-     * child shell therefore activates the configured Conda environment and
-     * resolves Sage when no managed Sage SDK was selected.
+     * starts `wsl.exe` and waits for its output, which is forbidden there.
+     * Startup discovery fills the persisted Sage path before normal use; if it
+     * is still empty, the direct launch fails quickly instead of probing.
      */
     internal fun usesConfiguredWslRuntime(settings: SageRunSettings.State): Boolean =
         settings.executionMode == ExecutionMode.WSL.name &&

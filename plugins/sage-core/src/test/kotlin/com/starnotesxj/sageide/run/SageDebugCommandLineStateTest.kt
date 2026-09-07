@@ -63,77 +63,41 @@ class SageDebugCommandLineStateTest {
     }
 
     @Test
-    fun `activates configured conda environment before WSL run`() {
-        val command = wslRunScript("sage", "/home/user/miniconda3/envs/sage/bin/sage", listOf("/mnt/c/test.sage"))
-        assertEquals(true, command.contains("conda activate 'sage'"))
-        assertEquals(true, command.contains("exec '/home/user/miniconda3/envs/sage/bin/sage' '/mnt/c/test.sage'"))
-        assertEquals(true, command.contains("\"${'$'}HOME/miniconda3/etc/profile.d/conda.sh\""))
-        assertEquals(true, command.contains("\"${'$'}{conda_sh%/etc/profile.d/conda.sh}/bin/conda\""))
-    }
-
-    @Test
-    fun `configured WSL run wrapper resolves Sage inside the child shell`() {
-        val command = wslConfiguredRunScript(
-            environment = "sage",
-            configuredExecutable = "",
-            arguments = listOf("/mnt/c/test.sage"),
-        )
-        assertTrue(command.contains("conda activate 'sage'"))
-        assertTrue(command.contains("exec sage '/mnt/c/test.sage'"))
-        assertTrue(command.contains("${'$'}HOME/miniconda3/etc/profile.d/conda.sh"))
-        assertTrue(command.contains("${'$'}HOME/.bashrc"))
-        assertTrue(!command.contains("for conda_sh"))
-        assertTrue(!command.contains("command -v sage"))
-    }
-
-    @Test
-    fun `configured WSL run wrapper uses explicit conda without exposing discovery probes`() {
-        val command = wslConfiguredRunScript(
-            environment = "sage",
-            configuredExecutable = "",
-            arguments = listOf("/mnt/c/test.sage"),
-            condaExecutable = "/home/user/miniconda3/bin/conda",
-        )
-        assertTrue(command.contains("eval \"${'$'}('/home/user/miniconda3/bin/conda' shell.bash hook)\""))
-        assertTrue(command.contains("conda activate 'sage' >/dev/null 2>&1 && exec sage"))
-        assertTrue(!command.contains(".bashrc"))
-        assertTrue(!command.contains("for conda_sh"))
-    }
-
-    @Test
     fun `WSL probe preserves runtime variables and reports conda`() {
         val script = SageAutoDetect.probeWslScript()
         assertEquals(true, script.contains("${'$'}HOME/miniconda3/etc/profile.d/conda.sh"))
         assertEquals(true, script.contains("${'$'}(command -v sage || true)"))
         assertEquals(true, script.contains("CONDA=%s"))
-        assertEquals(false, script.contains("/home/starnotes/miniconda3"))
+        assertEquals(false, script.contains("/home/example/miniconda3"))
+        assertEquals(false, script.contains("type conda >/dev/null 2>&1 || exit 127"))
     }
 
     @Test
-    fun `explicit conda executable uses bash hook`() {
-        val command = wslRunScript(
-            "sage",
-            "/home/user/miniconda3/envs/sage/bin/sage",
-            emptyList(),
-            "/home/user/miniconda3/bin/conda",
+    fun `WSL distribution parser handles Windows UTF16 null padding and default marker`() {
+        assertEquals(
+            listOf("Ubuntu", "Debian"),
+            SageAutoDetect.parseWslDistributions("* U\u0000b\u0000u\u0000n\u0000t\u0000u\u0000\r\nD\u0000e\u0000b\u0000i\u0000a\u0000n\u0000\r\n"),
         )
-        assertEquals(true, command.contains("conda_executable='/home/user/miniconda3/bin/conda'"))
-        assertEquals(true, command.contains("shell.bash hook"))
-        assertEquals(false, command.contains("conda_sh in"))
+    }
+
+    @Test
+    fun `configured WSL Sage path derives its sibling Python without probing`() {
+        val script = SageAutoDetect.probeWslScript(
+            sageExecutable = "/home/example/miniconda3/envs/sage/bin/sage",
+        )
+        assertTrue(script.contains("python_executable='/home/example/miniconda3/envs/sage/bin/python'"))
+        assertTrue(script.contains("command -v python3"))
+        assertTrue(!script.contains("command -v sage"))
+        assertTrue(!script.contains("for conda_sh"))
     }
 
     @Test
     fun `WSL debug wrapper uses explicit bundled Python path`() {
-        val command = wslDebugScript(
-            "sage",
-            "/home/user/miniconda3/envs/sage/bin/sage",
-            "/opt/sage/local/bin/python3",
-            "/home/user/miniconda3/bin/conda",
-        )
-        assertEquals(true, command.contains("conda activate 'sage'"))
+        val command = wslConfiguredDebugScript("/home/user/miniconda3/envs/sage/bin/python")
         assertEquals(true, command.contains("host_ip="))
-        assertEquals(true, command.contains("python_executable='/opt/sage/local/bin/python3'"))
-        assertEquals(true, command.contains("conda_executable='/home/user/miniconda3/bin/conda'"))
+        assertEquals(true, command.contains("python_executable='/home/user/miniconda3/envs/sage/bin/python'"))
+        assertEquals(false, command.contains("command -v sage"))
+        assertEquals(false, command.contains("conda activate"))
         assertEquals(false, command.contains("%/sage"))
         assertEquals(true, command.contains("exec \"${'$'}python_executable\""))
     }

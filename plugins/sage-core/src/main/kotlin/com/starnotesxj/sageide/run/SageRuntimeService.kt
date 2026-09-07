@@ -29,6 +29,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Application-scoped adapter for Sage discovery and managed-runtime probes. */
@@ -38,6 +39,45 @@ class SageRuntimeService : Disposable {
     private val probeExecutor = JdkRuntimeProcessExecutor()
     private val probe = RuntimeProbe(probeExecutor)
     private val containerProbe = ContainerRuntimeProbe(JdkContainerRuntimeExecutor(probeExecutor))
+    private val discoveryStarted = AtomicBoolean(false)
+
+    /**
+     * Starts the one-time post-install discovery without blocking project startup.
+     * The resulting paths are persisted only into still-empty settings fields, so
+     * a user's explicit runtime choice is never replaced.
+     */
+    fun discoverInstalledRuntimesAsync(): SageRuntimeProbeHandle<DetectedSageRuntimes>? {
+        if (!discoveryStarted.compareAndSet(false, true)) return null
+        val cancellation = MutableRuntimeCancellation()
+        val future = CompletableFuture.supplyAsync({
+            SageAutoDetect.detectInstalledRuntimes(DEFAULT_DISCOVERY_TIMEOUT_MILLIS)
+        }, executor)
+        future.whenComplete { detected, error ->
+            if (error == null && detected != null && !cancellation.isCancelled()) {
+                persistDetectedRuntimes(detected)
+            }
+        }
+        return SageRuntimeProbeHandle(future, cancellation)
+    }
+
+    private fun persistDetectedRuntimes(detected: DetectedSageRuntimes) {
+        val settings = SageRunSettings.getInstance()
+        val state = settings.getState()
+        if (state.nativeSageExecutable.isBlank() && detected.nativeExecutable != null) {
+            state.nativeSageExecutable = detected.nativeExecutable
+        }
+        val wsl = detected.wslRuntimes.firstOrNull()
+        if (wsl != null) {
+            if (state.wslSageExecutable.isBlank()) state.wslSageExecutable = wsl.sageExecutable
+            if (state.wslPythonExecutable.isBlank()) {
+                state.wslPythonExecutable = wsl.pythonExecutable.orEmpty()
+            }
+            if (state.wslCondaExecutable.isBlank()) state.wslCondaExecutable = wsl.condaExecutable.orEmpty()
+            if (state.wslDistribution.isBlank()) state.wslDistribution = wsl.distribution
+            if (state.wslCondaEnvironment.isBlank()) state.wslCondaEnvironment = wsl.condaEnvironment
+        }
+        settings.loadState(state)
+    }
 
     fun probeAsync(
         executable: Path,
@@ -291,6 +331,7 @@ class SageRuntimeService : Disposable {
 
     companion object {
         val DEFAULT_PROBE_DEADLINE: Duration = Duration.ofSeconds(10)
+        const val DEFAULT_DISCOVERY_TIMEOUT_MILLIS: Long = 10_000
         const val DEFAULT_PROBE_OUTPUT_BYTES: Int = 64 * 1024
 
         @JvmStatic

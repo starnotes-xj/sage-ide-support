@@ -20,6 +20,7 @@ class ContractAuditTest(unittest.TestCase):
         self.assertEqual("BROAD_BUILTIN", audit_contracts.classify_return({"state": "KNOWN", "expression": "list"}))
         self.assertEqual("STRUCTURAL_BASE", audit_contracts.classify_return({"state": "KNOWN", "expression": "sage.foo.Foo_generic"}))
         self.assertEqual("TYPE_VARIABLE", audit_contracts.classify_return({"state": "KNOWN", "expression": "T"}, [{"name": "T"}]))
+        self.assertEqual("NO_RETURN", audit_contracts.classify_return({"state": "KNOWN", "expression": "NoReturn"}))
         self.assertEqual("CONCRETE", audit_contracts.classify_return({"state": "KNOWN", "expression": "sage.foo.Foo"}))
 
     def test_audit_reports_callable_and_source_gaps(self):

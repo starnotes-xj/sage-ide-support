@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -42,6 +43,9 @@ def tree_digest(root: Path, paths: list[Path]) -> str:
     return source_metadata(root, paths)["treeDigest"]
 
 
+AUTO_CONDA = "auto"
+
+
 def probe_command(distro: str, conda: str, conda_env: str) -> list[str]:
     script = (
         "import importlib.metadata as m,json,os,sage,sys; "
@@ -53,6 +57,23 @@ def probe_command(distro: str, conda: str, conda_env: str) -> list[str]:
         "'stubgen':{'name':'sage-pycharm-stubgen','version':m.version('sage-pycharm-stubgen'),"
         "'license':d.get('License-Expression') or d.get('License') or 'UNKNOWN'}},sort_keys=True))"
     )
+    if conda == AUTO_CONDA:
+        python_command = f"python -c {shlex.quote(script)}"
+        return [
+            "wsl", "-d", distro, "--exec", "/bin/bash", "-lc",
+            "set -e; "
+            "for conda_executable in "
+            '"$HOME/miniconda3/bin/conda" '
+            '"$HOME/anaconda3/bin/conda" '
+            '"$HOME/mambaforge/bin/conda" '
+            '"$HOME/miniforge3/bin/conda" '
+            '"/opt/conda/bin/conda"; do '
+            "if [ -x \"$conda_executable\" ]; then "
+            f"exec \"$conda_executable\" run -n {shlex.quote(conda_env)} {python_command}; "
+            "fi; done; "
+            f"if command -v conda >/dev/null 2>&1; then exec conda run -n {shlex.quote(conda_env)} {python_command}; fi; "
+            "echo 'Sage API importer: no WSL Conda executable was found' >&2; exit 127",
+        ]
     return ["wsl", "-d", distro, "--", conda, "run", "-n", conda_env, "python", "-c", script]
 
 
@@ -1029,7 +1050,11 @@ def parser() -> argparse.ArgumentParser:
     base = Path(__file__).resolve().parent
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--distro", default="Ubuntu")
-    result.add_argument("--conda", default="/home/starnotes/miniconda3/bin/conda")
+    result.add_argument(
+        "--conda",
+        default=AUTO_CONDA,
+        help="WSL Conda executable, or 'auto' to resolve it from the current WSL user's HOME/PATH",
+    )
     result.add_argument("--conda-env", default="sage")
     result.add_argument("--source-root", type=Path)
     result.add_argument("--generation-report", type=Path)

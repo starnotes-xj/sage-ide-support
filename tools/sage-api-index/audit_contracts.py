@@ -90,6 +90,8 @@ def classify_return(return_type: Any, type_parameters: Iterable[dict[str, Any]] 
     names = {item.get("name") for item in type_parameters if isinstance(item, dict)}
     if expression in names or expression in {"Self", "typing.Self"}:
         return "TYPE_VARIABLE"
+    if expression in {"NoReturn", "typing.NoReturn"}:
+        return "NO_RETURN"
     if expression == "None":
         return "NONE"
     if expression in BROAD_BUILTINS:

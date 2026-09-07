@@ -57,7 +57,10 @@ class SageDebugCommandLineState(
         }
         val commandLine = if (mode == ExecutionMode.WSL) {
             val command = if (usesConfiguredWsl) {
-                wslConfiguredDebugScript(settings.wslCondaEnvironment, settings.wslCondaExecutable)
+                wslConfiguredDebugScript(
+                    settings.wslPythonExecutable.trim().takeIf { it.isNotEmpty() }
+                        ?: throw ExecutionException("WSL Sage Python was not discovered; run Sage discovery before debugging"),
+                )
             } else {
                 val resolvedExecutables = executables!!
                 val bundledPython = resolvedExecutables.python

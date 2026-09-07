@@ -29,6 +29,8 @@ class SageRunSettings : PersistentStateComponent<SageRunSettings.State> {
         var sageExecutable: String = ""
         /** Optional absolute POSIX Sage executable inside WSL. */
         var wslSageExecutable: String = ""
+        /** Optional absolute Python executable paired with the WSL Sage runtime. */
+        var wslPythonExecutable: String = ""
         var wslDistribution: String = "Ubuntu"
         var wslCondaEnvironment: String = "sage"
         /** Optional absolute WSL path to conda; blank uses standard locations. */

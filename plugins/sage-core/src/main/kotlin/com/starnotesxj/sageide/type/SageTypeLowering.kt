@@ -29,9 +29,11 @@ import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
 import com.starnotesxj.sagemath.sageapi.SageApiParameter
 import com.starnotesxj.sagemath.sageapi.SageApiSignature
+import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
 import com.starnotesxj.sagemath.sageapi.SageTypeExpression
 import com.starnotesxj.sagemath.sageapi.SageTypeRef
 import com.starnotesxj.sagemath.sageapi.SageTypeRefExpressionParser
+import com.starnotesxj.sagemath.sageapi.SageTypeState
 import com.starnotesxj.sageide.sugar.SageStubIndex
 
 /**
@@ -554,6 +556,28 @@ object SageTypeLowering {
         bindings: Map<String, PyType> = emptyMap(),
     ): PyType? {
         val baseName = normalizeName(expression.base.qualifiedName)
+        if (baseName == "sage.type_contracts.ParentElement" || baseName == "ParentElement") {
+            val parent = bindings["Self"] as? PyClassType ?: return null
+            return lowerParentElement(parent, anchor, context, query)
+        }
+        // Relation-aware contracts are used when a method returns an element
+        // of a parent reached through the receiver (for example a morphism's
+        // codomain or an element's base ring).  Resolve that parent first,
+        // then apply the same concrete element-factory proof as
+        // ``ParentElement[Self]``.  A missing/ambiguous relation is kept
+        // unresolved instead of leaking a public Element base or Any.
+        val relatedRelation = when (baseName) {
+            "sage.type_contracts.CodomainElement", "CodomainElement" -> "codomain"
+            "sage.type_contracts.DomainElement", "DomainElement" -> "domain"
+            "sage.type_contracts.BaseRingElement", "BaseRingElement" -> "base_ring"
+            "sage.type_contracts.BaseFieldElement", "BaseFieldElement" -> "base_field"
+            "sage.type_contracts.AmbientElement", "AmbientElement" -> "ambient"
+            else -> null
+        }
+        if (relatedRelation != null) {
+            val receiver = bindings["Self"] as? PyClassType ?: return null
+            return lowerRelatedParentElement(receiver, relatedRelation, anchor, context, query)
+        }
         val arguments = expression.arguments.map { lower(it, anchor, context, query, bindings) ?: return null }
         if (baseName == "tuple") {
             if (arguments.isEmpty()) return null
@@ -571,6 +595,134 @@ object SageTypeLowering {
         } else {
             PyClassTypeImpl(base.pyClass, base.isDefinition, arguments)
         }
+    }
+
+    /**
+     * Resolve the symbolic parent/element contract against one concrete
+     * receiver.  Sage parents choose their element class at runtime, so a
+     * shared ``Element`` base would lose the methods users actually need.  We
+     * instead inspect the receiver's indexed element-producing protocols and
+     * accept a result only when every concrete proof agrees.
+     */
+    private fun lowerParentElement(
+        parent: PyClassType,
+        anchor: PsiElement,
+        context: TypeEvalContext,
+        query: SageApiIndexQuery,
+    ): PyType? {
+        val owner = SageStubIndex.canonicalQualifiedName(parent.pyClass) ?: return null
+        if (!owner.startsWith("sage.")) return null
+        val protocolNames = listOf(
+            "__call__",
+            "_element_constructor_",
+            "an_element",
+            "_an_element_",
+            "from_vector",
+            "from_coordinates",
+            "retract",
+            "gen",
+            "zero",
+            "one",
+            "identity",
+            "unit",
+            "random_element",
+        )
+        val concreteResults = protocolNames
+            .flatMap { name -> query.members(owner, name) }
+            .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
+            .flatMap { entry ->
+                entry.signatures.mapNotNull { signature ->
+                    if (signature.returnType.state != SageTypeState.KNOWN ||
+                        signature.returnType.expression.isNullOrBlank()
+                    ) return@mapNotNull null
+                    val typeNames = signature.typeParameters.map { it.name }.toSet()
+                    val paramSpecNames = signature.typeParameters
+                        .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                        .map { it.name }
+                        .toSet()
+                    val parsed = SageTypeRefExpressionParser.parse(
+                        signature.returnType.expression!!,
+                        typeNames,
+                        paramSpecNames,
+                    ) ?: return@mapNotNull null
+                    if (containsParentElementContract(parsed)) return@mapNotNull null
+                    val lowered = lower(parsed, anchor, context, query, mapOf("Self" to parent))
+                        ?: return@mapNotNull null
+                    // A receiver-preserving result is not evidence of an
+                    // element class; it would merely recurse back to Parent.
+                    if (lowered is PyClassType &&
+                        SageStubIndex.canonicalQualifiedName(lowered.pyClass) == owner
+                    ) return@mapNotNull null
+                    lowered
+                }
+            }
+            .distinct()
+        concreteResults.singleOrNull()?.let { return it }
+
+        // Dynamic interpreter interfaces follow a stable module-level naming
+        // convention even when their implementation methods are inherited
+        // and therefore absent from the concrete stub.  Resolve only the
+        // matching ``sage.interfaces.<backend>`` wrapper; never apply this
+        // heuristic to ordinary mathematical parents.
+        if (owner.contains(".interfaces.")) {
+            val module = owner.substringBeforeLast('.')
+            val elementName = owner.substringAfterLast('.') + "Element"
+            val canonical = query.resolveKnownClassName("$module.$elementName")
+                ?: return null
+            val activeClass = SageStubIndex.findClassByCanonicalName(anchor.project, canonical)
+                ?: return null
+            val activeCanonical = SageStubIndex.canonicalQualifiedName(activeClass)
+            if (activeCanonical == canonical) return PyClassTypeImpl(activeClass, false)
+        }
+        return null
+    }
+
+    /** Resolve a concrete element class through one receiver relation. */
+    private fun lowerRelatedParentElement(
+        receiver: PyClassType,
+        relationName: String,
+        anchor: PsiElement,
+        context: TypeEvalContext,
+        query: SageApiIndexQuery,
+    ): PyType? {
+        val owner = SageStubIndex.canonicalQualifiedName(receiver.pyClass) ?: return null
+        val relatedParents = query.members(owner, relationName)
+            .asSequence()
+            .filter { it.kind == SageApiSymbolKind.METHOD || it.kind == SageApiSymbolKind.PROPERTY }
+            .flatMap { entry -> entry.signatures.asSequence() }
+            .mapNotNull { signature ->
+                if (signature.returnType.state != SageTypeState.KNOWN ||
+                    signature.returnType.expression.isNullOrBlank()
+                ) return@mapNotNull null
+                val typeNames = signature.typeParameters.map { it.name }.toSet()
+                val paramSpecNames = signature.typeParameters
+                    .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                    .map { it.name }
+                    .toSet()
+                val parsed = SageTypeRefExpressionParser.parse(
+                    signature.returnType.expression!!,
+                    typeNames,
+                    paramSpecNames,
+                ) ?: return@mapNotNull null
+                lower(parsed, anchor, context, query, mapOf("Self" to receiver)) as? PyClassType
+            }
+            .distinctBy { SageStubIndex.canonicalQualifiedName(it.pyClass) ?: it.pyClass.name }
+            .toList()
+        val parent = relatedParents.singleOrNull() ?: return null
+        return lowerParentElement(parent, anchor, context, query)
+    }
+
+    private fun containsParentElementContract(expression: SageTypeExpression): Boolean = when (expression) {
+        is SageTypeExpression.Generic ->
+            expression.base.qualifiedName == "sage.type_contracts.ParentElement" ||
+                expression.base.qualifiedName == "ParentElement" ||
+                expression.arguments.any(::containsParentElementContract)
+        is SageTypeExpression.Union -> expression.members.any(::containsParentElementContract)
+        is SageTypeExpression.Optional -> containsParentElementContract(expression.element)
+        is SageTypeExpression.Callable ->
+            (expression.parameters?.any(::containsParentElementContract) == true) ||
+                containsParentElementContract(expression.returnType)
+        else -> false
     }
 
     private fun lowerLiteral(

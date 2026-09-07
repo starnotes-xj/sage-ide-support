@@ -231,6 +231,7 @@
     <runConfigurationProducer implementation="com.starnotesxj.sageide.run.SageRunConfigurationProducer"/>
     <runLineMarkerContributor language="Sage"
                               implementationClass="com.starnotesxj.sageide.run.SageRunLineMarkerContributor"/>
+    <postStartupActivity implementation="com.starnotesxj.sageide.run.SageRuntimeDiscoveryStartupActivity"/>
 
     <!-- Shared Sage execution settings (Settings | Tools | SageMath). -->
     <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRunSettings"/>
