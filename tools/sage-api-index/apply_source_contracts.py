@@ -46,7 +46,9 @@ def _module_name(path: Path, root: Path) -> str:
 def _valid_annotation(annotation: str) -> bool:
     if annotation in _BUILTINS or annotation in {"Self", "Iterator"}:
         return True
-    if annotation.startswith("'sage.") and annotation.endswith("'"):
+    # A quoted PEP 604 union also starts and ends with a quote.  Only use the
+    # fast path for one literal; unions must go through the AST validator.
+    if annotation.startswith("'sage.") and annotation.endswith("'") and annotation.count("'") == 2:
         return _is_concrete_sage_path(annotation[1:-1])
     try:
         node = ast.parse(annotation, mode="eval").body

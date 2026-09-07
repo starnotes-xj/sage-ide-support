@@ -269,6 +269,9 @@ class SourceContractTest(unittest.TestCase):
         self.assertTrue(_valid_annotation(
             "'sage.sample.Result_generic' | 'sage.sample.Result_gap'"
         ))
+        self.assertTrue(_valid_annotation(
+            "'sage.sample.Result_gap' | 'sage.sample.Result_generic'"
+        ))
         self.assertTrue(_valid_annotation("type | 'sage.sample.Result_generic'"))
         self.assertFalse(_valid_annotation("None | 'sage.sample.Result_generic'"))
         self.assertFalse(_valid_annotation(
