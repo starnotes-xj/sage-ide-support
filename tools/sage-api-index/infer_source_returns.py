@@ -228,6 +228,37 @@ def _assigned_type(node: ast.AST, analyzer: "_FunctionAnalyzer") -> str | None:
         canonical = analyzer.class_aliases.get(resolved, resolved) if resolved else None
         if canonical and (canonical in analyzer.classes or canonical in analyzer.known_classes):
             return f"{_CLASS_OBJECT_PREFIX}{canonical}"
+    # Preserve element information for materialized builtin containers when
+    # they flow through a local variable.  The direct expression contract
+    # remains the ordinary builtin shape, but an assignment such as
+    # ``items = [1, 'x']`` can safely expose ``list[int | str]`` to a later
+    # ``min/max`` or dynamic subscript without any Sage-specific heuristic.
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        values = [analyzer.expr_type(item) for item in node.elts]
+        if values and all(value is not None for value in values):
+            element_types = [value for value in values if value is not None]
+            base = {
+                ast.List: "list",
+                ast.Tuple: "tuple",
+                ast.Set: "set",
+            }[type(node)]
+            if base == "tuple":
+                return f"tuple[{', '.join(element_types)}]"
+            return f"{base}[{_union(*element_types)}]"
+    if isinstance(node, (ast.ListComp, ast.SetComp)):
+        element = analyzer.expr_type(node.elt)
+        if element is not None:
+            base = "list" if isinstance(node, ast.ListComp) else "set"
+            return f"{base}[{element}]"
+    if isinstance(node, ast.Dict):
+        keys = [analyzer.expr_type(key) for key in node.keys if key is not None]
+        values = [analyzer.expr_type(value) for value in node.values]
+        if values and all(value is not None for value in values):
+            value_types = [value for value in values if value is not None]
+            key_types = [key for key in keys if key is not None]
+            if key_types and len(key_types) == len(keys):
+                return f"dict[{_union(*key_types)}, {_union(*value_types)}]"
+            return f"dict[object, {_union(*value_types)}]"
     return analyzer.expr_type(node)
 
 
@@ -1606,6 +1637,7 @@ def _module_globals(
     known_classes: set[str] | None = None,
     class_aliases: dict[str, str] | None = None,
     known_properties: dict[str, str] | None = None,
+    known_constants: dict[str, str] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Infer stable module constants used by trivial wrapper functions."""
 
@@ -1622,6 +1654,7 @@ def _module_globals(
             known_classes=known_classes,
             class_aliases=class_aliases,
             known_properties=known_properties,
+            known_constants=known_constants,
         )
         values: dict[str, set[str]] = {}
         for statement in tree.body:
@@ -2283,6 +2316,7 @@ def infer(
         external_classes,
         external_class_aliases,
         external_properties,
+        external_constants,
     )
     class_attributes = _class_attributes(
         files,

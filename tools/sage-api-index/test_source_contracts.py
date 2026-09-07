@@ -287,7 +287,7 @@ F = Factory('sage.factory.F')
             root = Path(directory) / "sage"
             root.mkdir()
             (root / "__init__.py").write_text(
-                "from sage.all import ZZ\n\ndef zero():\n    return ZZ.zero()\n\ndef element():\n    return ZZ(1)\n",
+                "from sage.all import ZZ\nALIAS = ZZ\n\ndef zero():\n    return ZZ.zero()\n\ndef element():\n    return ZZ(1)\n\ndef alias_element():\n    return ALIAS(1)\n",
                 encoding="utf-8",
             )
             contracts = infer(
@@ -304,6 +304,7 @@ F = Factory('sage.factory.F')
             )
             self.assertEqual(contracts["sage.zero"], "'sage.rings.integer.Integer'")
             self.assertEqual(contracts["sage.element"], "'sage.rings.integer.Integer'")
+            self.assertEqual(contracts["sage.alias_element"], "'sage.rings.integer.Integer'")
 
     def test_indexed_receiver_uses_exact_getitem_contract(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -418,6 +419,14 @@ def annotated() -> list[int]:
 
 def assigned():
     value = tuple()
+    return value
+
+def assigned_generic_list():
+    value = [1, "text"]
+    return value
+
+def assigned_generic_tuple():
+    value = (1, "text")
     return value
 
 def wrapped():
@@ -837,6 +846,8 @@ def make():
             self.assertEqual(contracts["sage.generated_from"], "Iterator[int]")
             self.assertEqual(contracts["sage.annotated"], "list[int]")
             self.assertEqual(contracts["sage.assigned"], "tuple")
+            self.assertEqual(contracts["sage.assigned_generic_list"], "list[int | str]")
+            self.assertEqual(contracts["sage.assigned_generic_tuple"], "tuple[int, str]")
             self.assertEqual(contracts["sage.wrapped"], "tuple")
             self.assertEqual(contracts["sage.mutator"], "None")
             self.assertEqual(contracts["sage.explicit_none"], "None")
