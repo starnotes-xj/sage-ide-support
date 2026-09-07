@@ -28,6 +28,8 @@
 - 最新增量：Cython 无分支/副作用/同型条件分支/多行头规则累计应用 `54` 个；本轮修正引号联合解析并写入 `21` 个源码证明的多实现联合合同，再传播 `99` 个唯一父类实现合同（累计 UNKNOWN 由 `8142` 降至 `7857`）。父合同传播同时覆盖 METHOD/PROPERTY，且只保留最近层唯一同值合同；`*_generic` 仅在与非结构叶类或 `type` 工厂同一联合中允许；单独 `_generic`、`_base`、`_parent`、`_element`、`_factory` 仍拒绝。`PowerSeriesRing(ZZ,'t')` 实跑为 `PowerSeriesRing_domain_with_category`，`AffineSpace(GF(5),2)` 实跑为 `AffineSpace_finite_field_with_category`。
 - 测试：全量回归 `311` 项通过（45.974 秒）；本轮聚焦审计/源合同测试、父合同测试与 Cython 测试均通过；`compileall`、`git diff --check` 通过；源/父/Cython 合同重复应用均 `applied=0`。重新运行既有结构化注解流水线报告 378 个文件编辑，但 canonical 声明/UNKNOWN 无变化，未计入新增减少。
 - `generate.py` 产生 `missing=14`、已知 `conflicts=2`（本次命令 exit 1，索引仍已生成）；最终 `audit_contracts.py` exit 0。expected-high-value 仅是旧 fixture 覆盖清单，不能冒充 10.9 完整质量门。
+- 本轮新增工厂实例合同桥：仅从 `create_object` 的已索引联合中剔除 `_generic`/`_base` 等结构臂，再传播到模块级 `Factory(...)` 绑定；普通索引合同仍保持全量 fail-closed。源码合同 `78657` 条，实际写入 `95` 个缺失返回，重复应用 `applied=0`。重建后索引为 `entries=85825`、`callableEntries=52747`、`signatures=52451`，最终审计 `UNKNOWN=7762`（`7857 -> 7762`），`CONCRETE=8756`、`UNION_OR_OPTIONAL=4696`，审计 exit 0。
+- 验证：新增源合同测试 15 项通过；此前同一代码状态全量回归 314 项通过（设置 UTF-8 环境）；本轮再次启动全量回归时 WSL 子进程返回 Windows 环境码 `1073807364`，无测试断言失败输出，故不把该次启动当作新的全量证据。`compileall`、`git diff --check` 通过。
 
 ## 4. 下一步与限制
 

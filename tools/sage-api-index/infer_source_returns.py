@@ -163,6 +163,7 @@ def _generic_element(value: str | None) -> str | None:
 
 
 _CLASS_OBJECT_PREFIX = "@class:"
+_FACTORY_RESULT_PREFIX = "@factory:"
 _STRUCTURAL_SUFFIXES = ("_base", "_generic", "_element", "_parent", "_factory")
 
 
@@ -173,9 +174,48 @@ def _is_final_class_path(value: str) -> bool:
     return not any(final.endswith(suffix) for suffix in _STRUCTURAL_SUFFIXES)
 
 
+def _safe_factory_result(expression: str | None) -> str | None:
+    """Filter a factory ``create_object`` contract to usable result arms.
+
+    UniqueFactory implementations commonly document a union containing both
+    concrete backends and a public ``*_generic``/``*_base`` protocol class.
+    The latter is useful for inheritance lookup but is not an accurate IDE
+    result type.  Keep only builtins and final Sage class paths, preserving a
+    finite union when several implementations are genuinely possible.
+    """
+    if not isinstance(expression, str):
+        return None
+    builtins = {
+        "None", "NoReturn", "Self", "Iterator", "bool", "bytes", "bytearray",
+        "complex", "dict", "float", "frozenset", "int", "list", "memoryview",
+        "object", "range", "set", "slice", "str", "tuple", "type",
+    }
+    safe: list[str] = []
+    for arm in expression.split(" | "):
+        arm = arm.strip()
+        if arm in builtins:
+            safe.append(arm)
+            continue
+        if arm.startswith("'") and arm.endswith("'"):
+            path = arm[1:-1]
+        else:
+            path = arm
+        if path.startswith("sage.") and _is_final_class_path(path):
+            safe.append(_quote(path))
+    unique = list(dict.fromkeys(safe))
+    return _union(*unique) if unique else None
+
+
 def _public_type(value: str | None) -> str | None:
     """Hide internal class-object markers from published return contracts."""
     if value is None:
+        return None
+    # Factory-instance markers are an internal bridge used while following a
+    # module-level ``F = Factory(...)`` assignment.  They describe the value
+    # produced by calling ``F`` rather than a public return type of the
+    # assignment itself; leaking the marker would make the generated index
+    # unparsable and would overstate a dynamic factory object as a Sage class.
+    if any(arm.startswith(_FACTORY_RESULT_PREFIX) for arm in value.split(" | ")):
         return None
     arms = ["type" if arm.startswith(_CLASS_OBJECT_PREFIX) else arm for arm in value.split(" | ")]
     return _union(*arms)
@@ -246,6 +286,13 @@ class _FunctionAnalyzer:
             return alias
         return None
 
+    def _factory_result(self, expression: str | None) -> str | None:
+        """Return the public result behind an internal factory marker."""
+        if not isinstance(expression, str) or not expression.startswith(_FACTORY_RESULT_PREFIX):
+            return None
+        result = expression[len(_FACTORY_RESULT_PREFIX):]
+        return result or None
+
     def _receiver_class_path(self, node: ast.AST) -> str | None:
         """Resolve an expression to one concrete class for property lookup."""
         receiver_type = self.expr_type(node)
@@ -270,8 +317,37 @@ class _FunctionAnalyzer:
         }
         return next(iter(candidates)) if len(candidates) == 1 else None
 
+    def _member_contract(self, receiver: str, member: str, seen: set[str] | None = None) -> str | None:
+        """Resolve one exact member through a finite class hierarchy."""
+        seen = set() if seen is None else seen
+        if receiver in seen:
+            return None
+        seen.add(receiver)
+        direct = self.known_contracts.get(f"{receiver}.{member}")
+        if direct is not None:
+            return direct
+        candidates = {
+            contract
+            for parent in self.class_bases.get(receiver, ())
+            for contract in [self._member_contract(parent, member, seen.copy())]
+            if contract is not None
+        }
+        return next(iter(candidates)) if len(candidates) == 1 else None
+
     def _resolve_call(self, node: ast.Call) -> str | None:
         dotted = _dotted(node.func)
+        # A factory instance imported from another Sage module is represented
+        # in ``known_constants`` by a source-derived ``@factory:...`` marker.
+        # Resolve the marker before ordinary name lookup so calls such as
+        # ``EllipticCurve(...)`` follow the concrete ``create_object`` union
+        # instead of being treated as an untyped CONSTANT.
+        if dotted:
+            marker = self.known_constants.get(dotted)
+            if marker is None and "." not in dotted:
+                marker = self.known_constants.get(f"{self.module}.{dotted}")
+            factory_result = self._factory_result(marker)
+            if factory_result is not None:
+                return factory_result
         if dotted == "self.__class__.__base__" and self.owner is not None:
             parents = self.class_bases.get(self.owner, ())
             if len(parents) == 1 and _is_final_class_path(parents[0]):
@@ -280,6 +356,9 @@ class _FunctionAnalyzer:
             receiver = node.func.value
             receiver_type = self.expr_type(receiver)
             method = node.func.attr
+            factory_result = self._factory_result(receiver_type)
+            if factory_result is not None:
+                return factory_result
             # Immutable/builtin literal protocols have deterministic result
             # shapes independent of Sage's overloaded element classes.
             if receiver_type in {"str", "bytes"}:
@@ -353,21 +432,27 @@ class _FunctionAnalyzer:
         if isinstance(node.func, ast.Attribute):
             receiver_type = self.expr_type(node.func.value)
             if receiver_type:
-                if receiver_type == "Self" and self.owner is not None:
-                    resolved_receiver = self.owner
-                elif receiver_type.startswith("'sage.") and receiver_type.endswith("'"):
-                    resolved_receiver = receiver_type[1:-1]
-                elif receiver_type.startswith("sage."):
-                    resolved_receiver = receiver_type
-                else:
-                    resolved_receiver = None
-                if resolved_receiver is not None:
-                    proven = self.known_contracts.get(f"{resolved_receiver}.{node.func.attr}")
-                    if proven is not None:
-                        return proven
-                    inherited = self._inherited_contract(resolved_receiver, node.func.attr)
-                    if inherited is not None:
-                        return inherited
+                receiver_arms = receiver_type.split(" | ")
+                resolved_contracts: list[str] = []
+                for arm in receiver_arms:
+                    if arm == "Self" and self.owner is not None:
+                        resolved_receiver = self.owner
+                    elif arm.startswith("'sage.") and arm.endswith("'"):
+                        resolved_receiver = arm[1:-1]
+                    elif arm.startswith("sage."):
+                        resolved_receiver = arm
+                    else:
+                        resolved_receiver = None
+                    if resolved_receiver is None:
+                        resolved_contracts = []
+                        break
+                    proven = self._member_contract(resolved_receiver, node.func.attr)
+                    if proven is None:
+                        resolved_contracts = []
+                        break
+                    resolved_contracts.append(proven)
+                if resolved_contracts and len(resolved_contracts) == len(receiver_arms):
+                    return _union(*resolved_contracts)
         if dotted is None:
             return None
         # A class-valued receiver attribute is safe to call only when the
@@ -536,6 +621,17 @@ class _FunctionAnalyzer:
             if resolved is not None and resolved in self.known_contracts:
                 return self.known_contracts[resolved]
             return None
+        # A source-defined factory class exposes its exact construction
+        # contract through ``create_object``.  Keep only concrete leaves of
+        # that contract; abstract/base/generic arms are structural and are
+        # deliberately not published as final return types.
+        factory_contract = _safe_factory_result(self.known_contracts.get(f"{resolved}.create_object"))
+        if factory_contract is not None and resolved in self.classes:
+            return _FACTORY_RESULT_PREFIX + factory_contract
+        marker = self.known_constants.get(resolved)
+        factory_result = self._factory_result(marker)
+        if factory_result is not None:
+            return factory_result
         overloads = self.known_overloads.get(resolved)
         if overloads and len(overloads) > 1:
             actual = [self.expr_type(argument) for argument in node.args]
@@ -714,6 +810,9 @@ class _FunctionAnalyzer:
                 return self.module_globals[node.id]
             constant_type = self.known_constants.get(node.id)
             if constant_type is not None:
+                factory_result = self._factory_result(constant_type)
+                if factory_result is not None:
+                    return _FACTORY_RESULT_PREFIX + factory_result
                 return _quote(constant_type)
             # A bare class symbol is a class object, not an instance produced
             # by calling that class.  Preserve Python's ``type`` contract for
@@ -744,6 +843,9 @@ class _FunctionAnalyzer:
                 if resolved is not None:
                     constant_type = self.known_constants.get(resolved)
                     if constant_type is not None:
+                        factory_result = self._factory_result(constant_type)
+                        if factory_result is not None:
+                            return _FACTORY_RESULT_PREFIX + factory_result
                         return _quote(constant_type)
             receiver = self._receiver_class_path(node.value)
             if receiver is not None:
@@ -1260,6 +1362,7 @@ def _class_attributes(
     class_aliases: dict[str, str] | None = None,
     known_properties: dict[str, str] | None = None,
     known_parameters: dict[str, tuple[str | None, ...]] | None = None,
+    known_constants: dict[str, str] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Infer stable ``self.attr`` shapes from simple assignments.
 
@@ -1304,6 +1407,7 @@ def _class_attributes(
                             class_aliases,
                             known_properties,
                             known_parameters=known_parameters,
+                            known_constants=known_constants,
                         )
                         analyzer.bind_parameters(child)
                         analyzer.bind_external_parameters(f"{qualified}.{child.name}", child)
@@ -1350,6 +1454,7 @@ def _class_attributes(
                         class_aliases,
                         known_properties,
                         known_parameters=known_parameters,
+                        known_constants=known_constants,
                     )
                     for statement in node.body:
                         if isinstance(statement, ast.Assign):
@@ -1572,6 +1677,46 @@ def _index_contracts(index: Path | None) -> dict[str, str]:
             result[qualified] = _union(
                 *[arm if arm in builtins else _quote(arm) for arm in arms]
             )
+    return result
+
+
+def _index_factory_contracts(index: Path | None) -> dict[str, str]:
+    """Load only concrete arms from indexed ``create_object`` contracts.
+
+    Factory ``create_object`` methods intentionally document both concrete
+    implementations and a structural protocol/base class. Ordinary index
+    contracts remain fail-closed; this narrow bridge is consumed only while
+    resolving a module-level ``Factory(...)`` binding, where the structural
+    arm is not a possible final IDE type.
+    """
+    payload = _read_index_payload(index)
+    class_names = {
+        entry.get("qualifiedName")
+        for entry in payload.get("entries", [])
+        if entry.get("kind") == "CLASS"
+        and isinstance(entry.get("qualifiedName"), str)
+    }
+    result: dict[str, str] = {}
+    for entry in payload.get("entries", []):
+        if entry.get("kind") not in {"FUNCTION", "METHOD"}:
+            continue
+        qualified = entry.get("qualifiedName")
+        if not isinstance(qualified, str) or not qualified.endswith(".create_object"):
+            continue
+        owner = qualified[: -len(".create_object")]
+        if owner not in class_names:
+            continue
+        expressions = {
+            signature.get("returnType", {}).get("expression")
+            for signature in entry.get("signatures", [])
+            if signature.get("returnType", {}).get("state") == "KNOWN"
+        }
+        if len(expressions) != 1:
+            continue
+        expression = next(iter(expressions))
+        safe = _safe_factory_result(expression)
+        if safe is not None:
+            result[qualified] = safe
     return result
 
 
@@ -1919,6 +2064,55 @@ def _index_constant_types(index: Path | None) -> dict[str, str]:
     return result
 
 
+def _factory_bindings(
+    files: list[tuple[Path, str, ast.Module]],
+    classes: set[str],
+    known_contracts: dict[str, str],
+) -> dict[str, str]:
+    """Map ``Factory(...)`` assignments to their proven object contracts.
+
+    Sage exposes most public constructors as module-level instances of
+    ``UniqueFactory`` (for example ``EllipticCurve`` and ``FiniteField``), so
+    generated stubs represent them as CONSTANTs rather than functions.  The
+    factory class's ``create_object`` method is the source-level contract for
+    the callable instance.  Recording that relation once lets every imported
+    use site follow the concrete implementation union without a constructor
+    name allow-list.
+    """
+    bindings: dict[str, str] = {}
+    for path, module, tree in files:
+        imports = _imports(tree, module, package_module=path.name == "__init__.py")
+        for statement in tree.body:
+            if not isinstance(statement, ast.Assign) or not isinstance(statement.value, ast.Call):
+                continue
+            called = _dotted(statement.value.func)
+            if not called:
+                continue
+            bits = called.split(".")
+            resolved = imports.get(bits[0])
+            if resolved is None:
+                resolved = f"{module}.{bits[0]}"
+            if len(bits) > 1:
+                resolved = ".".join([resolved, *bits[1:]])
+            if resolved not in classes:
+                continue
+            result = _safe_factory_result(known_contracts.get(f"{resolved}.create_object"))
+            if result is None:
+                continue
+            for target in statement.targets:
+                if isinstance(target, ast.Name):
+                    bindings[f"{module}.{target.id}"] = _FACTORY_RESULT_PREFIX + result
+    # Short names are used only when one defining module owns the binding;
+    # colliding factory names remain qualified and therefore fail closed.
+    short_values: dict[str, set[str]] = {}
+    for qualified, value in bindings.items():
+        short_values.setdefault(qualified.rsplit(".", 1)[-1], set()).add(value)
+    for short, values in short_values.items():
+        if len(values) == 1:
+            bindings[short] = next(iter(values))
+    return bindings
+
+
 def infer(
     source_root: Path,
     known_contracts: dict[str, str] | None = None,
@@ -1946,6 +2140,11 @@ def infer(
     external_parameters = known_parameters or {}
     external_overloads = known_overloads or {}
     external_constants = known_constants or {}
+    # Merge source-defined factory instances with indexed constant types.
+    # This is internal evidence only; marker values are consumed by the
+    # analyzer and never emitted as public return expressions.
+    external_constants = dict(external_constants)
+    external_constants.update(_factory_bindings(files, classes, external_contracts))
     module_globals = _module_globals(
         files,
         classes,
@@ -1965,6 +2164,7 @@ def infer(
         external_class_aliases,
         external_properties,
         external_parameters,
+        external_constants,
     )
     class_bases = _class_bases(files, classes)
     class_methods = _class_methods(files)
@@ -2119,6 +2319,7 @@ def infer(
         external_class_aliases,
         visible_properties,
         external_parameters,
+        external_constants,
     )
     class_attributes = _inherit_class_attributes(class_attributes, class_bases)
 
@@ -2208,9 +2409,14 @@ def main() -> int:
     parser.add_argument("--index", type=Path, help="Optional generated index supplying exact receiver-member contracts.")
     args = parser.parse_args()
     index = args.index.resolve() if args.index else None
+    known_contracts = _index_contracts(index)
+    # Keep factory filtering scoped to ``create_object``. Do not broaden the
+    # general index bridge: unrelated source wrappers returning a structural
+    # class must remain UNKNOWN rather than inheriting a guessed leaf type.
+    known_contracts.update(_index_factory_contracts(index))
     contracts = infer(
         args.source_root.resolve(),
-        _index_contracts(index),
+        known_contracts,
         _index_generic_contracts(index),
         _index_classes(index),
         _index_class_aliases(index),

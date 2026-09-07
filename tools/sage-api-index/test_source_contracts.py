@@ -84,6 +84,76 @@ class SourceContractTest(unittest.TestCase):
                 "'sage.a.First' | 'sage.b.Second'",
             )
 
+    def test_index_factory_contracts_retain_concrete_arms_with_structural_base(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {"qualifiedName": "sage.factory.Factory", "kind": "CLASS"},
+                            {"qualifiedName": "sage.result.Concrete", "kind": "CLASS"},
+                            {"qualifiedName": "sage.result.Protocol_generic", "kind": "CLASS"},
+                            {
+                                "qualifiedName": "sage.factory.Factory.create_object",
+                                "kind": "METHOD",
+                                "signatures": [
+                                    {
+                                        "returnType": {
+                                            "state": "KNOWN",
+                                            "expression": "sage.result.Concrete | sage.result.Protocol_generic",
+                                        }
+                                    }
+                                ],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            from infer_source_returns import _index_factory_contracts
+
+            self.assertEqual(_index_contracts(index), {})
+            self.assertEqual(
+                _index_factory_contracts(index)["sage.factory.Factory.create_object"],
+                "'sage.result.Concrete'",
+            )
+
+    def test_unique_factory_assignment_propagates_create_object_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "factory.py").write_text(
+                """class Factory:
+    def create_object(self) -> 'sage.result.Concrete':
+        return Concrete()
+
+F = Factory('sage.factory.F')
+""",
+                encoding="utf-8",
+            )
+            (root / "use.py").write_text(
+                "from sage.factory import F\n\ndef make():\n    return F(1)\n",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.factory.Factory.create_object": "'sage.result.Concrete'",
+                },
+            )
+            self.assertEqual(contracts["sage.use.make"], "'sage.result.Concrete'")
+
+    def test_factory_union_drops_structural_base_arms(self):
+        from infer_source_returns import _safe_factory_result
+
+        self.assertEqual(
+            _safe_factory_result(
+                "'sage.result.Concrete' | 'sage.result.Protocol_generic' | int"
+            ),
+            "'sage.result.Concrete' | int",
+        )
+
     def test_index_parameter_contracts_bind_unannotated_source_arguments(self):
         with tempfile.TemporaryDirectory() as directory:
             index = Path(directory) / "index.json"
