@@ -91,7 +91,11 @@ class SourceContractTest(unittest.TestCase):
                 json.dumps(
                     {
                         "entries": [
-                            {"qualifiedName": "sage.factory.Factory", "kind": "CLASS"},
+                            {
+                                "qualifiedName": "sage.factory.Factory",
+                                "kind": "CLASS",
+                                "parents": ["sage.structure.factory.UniqueFactory"],
+                            },
                             {"qualifiedName": "sage.result.Concrete", "kind": "CLASS"},
                             {"qualifiedName": "sage.result.Protocol_generic", "kind": "CLASS"},
                             {
@@ -124,7 +128,10 @@ class SourceContractTest(unittest.TestCase):
             root = Path(directory) / "sage"
             root.mkdir()
             (root / "factory.py").write_text(
-                """class Factory:
+                """class UniqueFactory:
+    pass
+
+class Factory(UniqueFactory):
     def create_object(self) -> 'sage.result.Concrete':
         return Concrete()
 

@@ -2068,6 +2068,7 @@ def _factory_bindings(
     files: list[tuple[Path, str, ast.Module]],
     classes: set[str],
     known_contracts: dict[str, str],
+    class_bases: dict[str, tuple[str, ...]],
 ) -> dict[str, str]:
     """Map ``Factory(...)`` assignments to their proven object contracts.
 
@@ -2079,6 +2080,19 @@ def _factory_bindings(
     use site follow the concrete implementation union without a constructor
     name allow-list.
     """
+    def is_unique_factory(owner: str) -> bool:
+        pending = [owner]
+        seen: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            if current.rsplit(".", 1)[-1] == "UniqueFactory":
+                return True
+            pending.extend(class_bases.get(current, ()))
+        return False
+
     bindings: dict[str, str] = {}
     for path, module, tree in files:
         imports = _imports(tree, module, package_module=path.name == "__init__.py")
@@ -2095,6 +2109,11 @@ def _factory_bindings(
             if len(bits) > 1:
                 resolved = ".".join([resolved, *bits[1:]])
             if resolved not in classes:
+                continue
+            # ``create_object`` is also used by ordinary Sage classes as an
+            # internal helper. Only classes proven to inherit UniqueFactory
+            # expose a callable factory instance at module scope.
+            if not is_unique_factory(resolved):
                 continue
             result = _safe_factory_result(known_contracts.get(f"{resolved}.create_object"))
             if result is None:
@@ -2132,6 +2151,7 @@ def infer(
             continue
         files.append((path, _module_name(path, source_root), tree))
     classes = _class_names(files)
+    class_bases = _class_bases(files, classes)
     external_contracts = known_contracts or {}
     external_generic_contracts = generic_contracts or {}
     external_classes = known_classes or set()
@@ -2144,7 +2164,12 @@ def infer(
     # This is internal evidence only; marker values are consumed by the
     # analyzer and never emitted as public return expressions.
     external_constants = dict(external_constants)
-    external_constants.update(_factory_bindings(files, classes, external_contracts))
+    external_constants.update(_factory_bindings(files, classes, external_contracts, class_bases))
+    factory_constants = {
+        name: value
+        for name, value in external_constants.items()
+        if isinstance(value, str) and value.startswith(_FACTORY_RESULT_PREFIX)
+    }
     module_globals = _module_globals(
         files,
         classes,
@@ -2164,9 +2189,8 @@ def infer(
         external_class_aliases,
         external_properties,
         external_parameters,
-        external_constants,
+        factory_constants,
     )
-    class_bases = _class_bases(files, classes)
     class_methods = _class_methods(files)
     class_attributes = _inherit_class_attributes(class_attributes, class_bases)
     contracts: dict[str, str] = {}
@@ -2319,7 +2343,7 @@ def infer(
         external_class_aliases,
         visible_properties,
         external_parameters,
-        external_constants,
+        factory_constants,
     )
     class_attributes = _inherit_class_attributes(class_attributes, class_bases)
 
