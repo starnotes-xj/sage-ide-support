@@ -265,6 +265,15 @@ class SourceContractTest(unittest.TestCase):
     def test_apply_rejects_structural_base_as_final_contract(self):
         self.assertFalse(_valid_annotation("'sage.sample.Result_base'"))
         self.assertTrue(_valid_annotation("'sage.sample.Result'"))
+        self.assertFalse(_valid_annotation("'sage.sample.Result_generic'"))
+        self.assertTrue(_valid_annotation(
+            "'sage.sample.Result_generic' | 'sage.sample.Result_gap'"
+        ))
+        self.assertTrue(_valid_annotation("type | 'sage.sample.Result_generic'"))
+        self.assertFalse(_valid_annotation("None | 'sage.sample.Result_generic'"))
+        self.assertFalse(_valid_annotation(
+            "'sage.sample.Result_base' | 'sage.sample.Result_generic'"
+        ))
 
     def test_infer_requires_a_unique_non_fallthrough_shape(self):
         with tempfile.TemporaryDirectory() as directory:

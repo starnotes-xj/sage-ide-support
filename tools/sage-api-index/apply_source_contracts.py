@@ -25,11 +25,13 @@ _BUILTINS = {
 _STRUCTURAL_SUFFIXES = ("_base", "_generic", "_element", "_parent", "_factory")
 
 
-def _is_concrete_sage_path(value: str) -> bool:
+def _is_concrete_sage_path(value: str, *, allow_generic: bool = False) -> bool:
     """Accept only leaf-like Sage classes, never public structural bases."""
     if not value.startswith("sage."):
         return False
     final = value.rsplit(".", 1)[-1].lower()
+    if final.endswith("_generic"):
+        return allow_generic
     return not any(final.endswith(suffix) for suffix in _STRUCTURAL_SUFFIXES)
 
 
@@ -51,20 +53,46 @@ def _valid_annotation(annotation: str) -> bool:
     except SyntaxError:
         return False
 
-    def valid(node: ast.AST) -> bool:
+    def flatten_union(node: ast.AST) -> list[ast.AST]:
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            return flatten_union(node.left) + flatten_union(node.right)
+        return [node]
+
+    def valid(node: ast.AST, *, allow_generic: bool = False) -> bool:
         if isinstance(node, ast.Name):
             return node.id in _BUILTINS or node.id in {"Self", "Iterator"}
         if isinstance(node, ast.Constant):
             # ``None`` is represented as an AST constant (rather than a
             # Name), including when it appears in a proven ``T | None`` arm.
-            return node.value is None or (isinstance(node.value, str) and _is_concrete_sage_path(node.value))
+            return node.value is None or (
+                isinstance(node.value, str)
+                and _is_concrete_sage_path(node.value, allow_generic=allow_generic)
+            )
         # Source inference may prove a finite set of successful branch
         # shapes.  Preserve that exact PEP 604 union instead of dropping the
         # contract merely because it has more than one arm.
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-            return valid(node.left) and valid(node.right)
+            arms = flatten_union(node)
+            sage_paths = [
+                arm.value for arm in arms
+                if isinstance(arm, ast.Constant)
+                and isinstance(arm.value, str)
+                and arm.value.startswith("sage.")
+            ]
+            has_non_generic_leaf = any(
+                not path.rsplit(".", 1)[-1].lower().endswith("_generic")
+                for path in sage_paths
+            )
+            has_type_factory = any(
+                isinstance(arm, ast.Name) and arm.id == "type" for arm in arms
+            )
+            allow_union_generic = has_non_generic_leaf or has_type_factory
+            return all(valid(arm, allow_generic=allow_union_generic) for arm in arms)
         if isinstance(node, ast.Subscript):
-            return valid(node.value) and all(valid(item) for item in (node.slice.elts if isinstance(node.slice, ast.Tuple) else (node.slice,)))
+            return valid(node.value, allow_generic=allow_generic) and all(
+                valid(item, allow_generic=allow_generic)
+                for item in (node.slice.elts if isinstance(node.slice, ast.Tuple) else (node.slice,))
+            )
         return False
 
     return valid(node)

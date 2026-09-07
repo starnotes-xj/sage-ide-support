@@ -96,11 +96,25 @@ def classify_return(return_type: Any, type_parameters: Iterable[dict[str, Any]] 
         return "NONE"
     if expression in BROAD_BUILTINS:
         return "BROAD_BUILTIN"
+    if " | " in expression or expression.startswith(("Union[", "Optional[")):
+        # A source-proven multi-implementation union may contain a concrete
+        # ``*_generic`` implementation alongside a backend leaf.  Keep that
+        # as a union quality class; only the other structural suffixes remain
+        # a structural-base diagnostic.  Standalone ``*_generic`` expressions
+        # still take the conservative STRUCTURAL_BASE path below.
+        arms = [
+            arm.strip().strip("'\"")
+            for arm in expression.replace("Union[", "").replace("Optional[", "").strip("[]").split(" | ")
+        ]
+        if any(
+            any(arm.rsplit(".", 1)[-1].lower().endswith(suffix) for suffix in ("_base", "_element", "_parent", "_factory"))
+            for arm in arms
+        ):
+            return "STRUCTURAL_BASE"
+        return "UNION_OR_OPTIONAL"
     final = expression.rsplit(".", 1)[-1].lower()
     if any(final.endswith(suffix) for suffix in STRUCTURAL_SUFFIXES):
         return "STRUCTURAL_BASE"
-    if " | " in expression or expression.startswith(("Union[", "Optional[")):
-        return "UNION_OR_OPTIONAL"
     if "[" in expression:
         return "GENERIC"
     if "." in expression:

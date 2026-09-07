@@ -19,6 +19,8 @@ class ContractAuditTest(unittest.TestCase):
         self.assertEqual("DYNAMIC", audit_contracts.classify_return({"state": "DYNAMIC", "expression": None}))
         self.assertEqual("BROAD_BUILTIN", audit_contracts.classify_return({"state": "KNOWN", "expression": "list"}))
         self.assertEqual("STRUCTURAL_BASE", audit_contracts.classify_return({"state": "KNOWN", "expression": "sage.foo.Foo_generic"}))
+        self.assertEqual("UNION_OR_OPTIONAL", audit_contracts.classify_return({"state": "KNOWN", "expression": "'sage.foo.Foo_generic' | 'sage.foo.Foo_gap'"}))
+        self.assertEqual("STRUCTURAL_BASE", audit_contracts.classify_return({"state": "KNOWN", "expression": "'sage.foo.Foo_base' | 'sage.foo.Foo_gap'"}))
         self.assertEqual("TYPE_VARIABLE", audit_contracts.classify_return({"state": "KNOWN", "expression": "T"}, [{"name": "T"}]))
         self.assertEqual("NO_RETURN", audit_contracts.classify_return({"state": "KNOWN", "expression": "NoReturn"}))
         self.assertEqual("CONCRETE", audit_contracts.classify_return({"state": "KNOWN", "expression": "sage.foo.Foo"}))

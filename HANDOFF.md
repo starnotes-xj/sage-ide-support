@@ -24,9 +24,9 @@
 - canonical 索引：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.json`
 - 最终审计：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.audit.final.json`
 - Sage 10.9 / Python 3.13：`entries=85801`、`callableEntries=52747`、`signatures=52451`。
-- 返回分类：`UNKNOWN=7980`、`CONCRETE=8686`、`TYPE_VARIABLE=3663`、`UNION_OR_OPTIONAL=4634`、`NO_RETURN=278`；`audit_contracts.py` exit 0。
-- 最新增量：Cython 无分支/副作用/同型条件分支/多行头规则合同实际新增应用 `54` 个（累计由 `8142` 降至 `7980`）；索引参数合同只有所有重载一致且源码 `return 参数` 才生效，动态或冲突实现保持 UNKNOWN。抽象 ABC 仅按文档“唯一直接子类”解析，`ComplexField -> ComplexField_class`、`RealIntervalField -> RealIntervalField_class` 已由 WSL `sage -c` 实跑确认。
-- 测试：`PYTHONUTF8=1 PYTHONIOENCODING=utf-8 python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`，`310` 项通过（70.730 秒）；`compileall`、`git diff --check` 通过；Cython/源码合同重复应用均 `applied=0`。
+- 返回分类：`UNKNOWN=7977`、`CONCRETE=8686`、`TYPE_VARIABLE=3663`、`UNION_OR_OPTIONAL=4643`、`STRUCTURAL_BASE=95`、`NO_RETURN=278`；`audit_contracts.py` exit 0。
+- 最新增量：Cython 无分支/副作用/同型条件分支/多行头规则累计应用 `54` 个；本批把 3 个源码证明的多实现联合合同写入 stub（累计 UNKNOWN 由 `8142` 降至 `7977`）。`*_generic` 仅在与非结构叶类或 `type` 工厂同一联合中允许；单独 `_generic`、`_base`、`_parent`、`_element`、`_factory` 仍拒绝。`PowerSeriesRing(ZZ,'t')` 实跑为 `PowerSeriesRing_domain_with_category`，`AffineSpace(GF(5),2)` 实跑为 `AffineSpace_finite_field_with_category`。
+- 测试：全量回归 `310` 项通过（53.813 秒）；本批聚焦审计/源合同测试与 Cython 测试均通过；`compileall`、`git diff --check` 通过；合同重复应用均 `applied=0`。
 - `generate.py` 产生 `missing=14`、已知 `conflicts=2`（本次命令 exit 1，索引仍已生成）；最终 `audit_contracts.py` exit 0。expected-high-value 仅是旧 fixture 覆盖清单，不能冒充 10.9 完整质量门。
 
 ## 4. 下一步与限制
