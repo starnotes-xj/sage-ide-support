@@ -80,7 +80,13 @@ def _normalise_special(expression: str) -> str:
     )
 
 
-def _safe_expression(expression: str, classes: dict[str, dict[str, Any]], children: dict[str, set[str]]) -> bool:
+def _safe_expression(
+    expression: str,
+    classes: dict[str, dict[str, Any]],
+    children: dict[str, set[str]],
+    *,
+    allow_generic: bool = False,
+) -> bool:
     """Accept exact values, receiver-dependent values, or leaf Sage classes."""
 
     expression = expression.strip()
@@ -88,7 +94,25 @@ def _safe_expression(expression: str, classes: dict[str, dict[str, Any]], childr
         return True
     if " | " in expression:
         parts = [part.strip() for part in expression.split(" | ")]
-        return bool(parts) and all(_safe_expression(part, classes, children) for part in parts)
+        sage_parts = [part for part in parts if part.startswith("sage.")]
+        has_non_generic_leaf = any(
+            not part.rsplit(".", 1)[-1].lower().endswith("_generic")
+            for part in sage_parts
+        )
+        has_type_factory = "type" in parts
+        # A generic implementation is safe to preserve only as one arm of an
+        # already-proven finite union with a concrete implementation (or a
+        # class-object factory).  A standalone generic remains structural.
+        allow_union_generic = has_non_generic_leaf or has_type_factory
+        return bool(parts) and all(
+            _safe_expression(
+                part,
+                classes,
+                children,
+                allow_generic=allow_union_generic,
+            )
+            for part in parts
+        )
     # Generic public base contracts (ParentElement[Self], CodomainElement[...])
     # are deliberately not copied as a final child type.
     if "[" in expression or not expression.startswith("sage."):
@@ -97,6 +121,8 @@ def _safe_expression(expression: str, classes: dict[str, dict[str, Any]], childr
     if class_entry is None:
         return False
     final = expression.rsplit(".", 1)[-1].lower()
+    if final.endswith("_generic"):
+        return allow_generic
     return not children.get(expression) and not final.endswith(_STRUCTURAL_SUFFIXES)
 
 
@@ -154,7 +180,7 @@ def infer_parent_contracts(index: Path) -> dict[str, str]:
 
     methods: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for entry in entries:
-        if entry.get("kind") != "METHOD":
+        if entry.get("kind") not in {"METHOD", "PROPERTY"}:
             continue
         qualified_name = entry.get("qualifiedName")
         if not isinstance(qualified_name, str) or "." not in qualified_name:
