@@ -6,6 +6,7 @@ from pathlib import Path
 from apply_source_contracts import _valid_annotation, apply
 from infer_source_returns import (
     _index_class_aliases,
+    _index_class_bases,
     _index_constant_types,
     _index_contracts,
     _index_classes,
@@ -83,6 +84,291 @@ class SourceContractTest(unittest.TestCase):
                 _index_contracts(index)["sage.factory.make"],
                 "'sage.a.First' | 'sage.b.Second'",
             )
+
+    def test_index_contracts_normalize_receiver_and_relation_generics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.parent.Parent",
+                                "kind": "CLASS",
+                            },
+                            {
+                                "qualifiedName": "sage.parent.Parent.same",
+                                "kind": "METHOD",
+                                "signatures": [
+                                    {
+                                        "returnType": {
+                                            "state": "KNOWN",
+                                            "expression": "typing.Self",
+                                        }
+                                    }
+                                ],
+                            },
+                            {
+                                "qualifiedName": "sage.parent.Parent.element",
+                                "kind": "METHOD",
+                                "signatures": [
+                                    {
+                                        "returnType": {
+                                            "state": "KNOWN",
+                                            "expression": "sage.type_contracts.ParentElement[Self]",
+                                        }
+                                    }
+                                ],
+                            },
+                            {
+                                "qualifiedName": "sage.parent.Parent.unbounded",
+                                "kind": "METHOD",
+                                "signatures": [
+                                    {
+                                        "returnType": {
+                                            "state": "KNOWN",
+                                            "expression": "T",
+                                        }
+                                    }
+                                ],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            contracts = _index_contracts(index)
+            self.assertEqual(contracts["sage.parent.Parent.same"], "Self")
+            self.assertEqual(
+                contracts["sage.parent.Parent.element"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+            self.assertNotIn("sage.parent.Parent.unbounded", contracts)
+
+    def test_source_wrapper_reuses_receiver_and_relation_generic_contracts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "parent.py").write_text(
+                """class Parent:
+    def same(self):
+        return self._same()
+
+    def element(self):
+        return self._element()
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.parent.Parent._same": "Self",
+                    "sage.parent.Parent._element": "'sage.type_contracts.ParentElement[Self]'",
+                },
+            )
+            self.assertEqual(contracts["sage.parent.Parent.same"], "Self")
+            self.assertEqual(
+                contracts["sage.parent.Parent.element"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_element_class_call_uses_parent_element_relation_only_with_proven_element(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "parent.py").write_text(
+                """class Element:
+    pass
+
+class Parent:
+    Element = Element
+
+    def make(self):
+        return self.element_class(self, 1)
+
+class DynamicParent:
+    def make(self):
+        return self.element_class(self, 1)
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(
+                contracts["sage.parent.Parent.make"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+            self.assertNotIn("sage.parent.DynamicParent.make", contracts)
+
+    def test_element_class_descriptor_type_never_becomes_constructor_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "child.py").write_text(
+                """class DynamicParent(Base):
+    def make(self):
+        return self.element_class(self, 1)
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={"sage.external.Base.element_class": "type"},
+                known_bases={"sage.child.DynamicParent": ("sage.external.Base",)},
+            )
+            self.assertNotIn("sage.child.DynamicParent.make", contracts)
+
+    def test_dynamic_element_class_uses_indexed_parent_protocol_relation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "parent.py").write_text(
+                """class DynamicParent(Base):
+    def make(self):
+        return self.element_class(self, 1)
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.external.Base.element_class": "type",
+                    "sage.external.Base.first": "'sage.type_contracts.ParentElement[Self]'",
+                },
+                known_bases={"sage.parent.DynamicParent": ("sage.external.Base",)},
+            )
+            self.assertEqual(
+                contracts["sage.parent.DynamicParent.make"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_indexed_parent_chain_reaches_generated_element_descriptor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "child.py").write_text(
+                """class Child(Base):
+    def make(self):
+        return self.element_class(self, 1)
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.structure.parent.Parent.element_class": "type",
+                    "sage.external.Base.first": "'sage.type_contracts.ParentElement[Self]'",
+                },
+                known_bases={
+                    "sage.child.Child": ("sage.external.Base",),
+                    "sage.external.Base": ("sage.structure.parent.Parent",),
+                },
+            )
+            self.assertEqual(
+                contracts["sage.child.Child.make"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_indexed_type_descriptor_is_not_instance_method_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "child.py").write_text(
+                """class Child(Base):
+    def make(self):
+        return self.parent()
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={"sage.external.Base.parent": "type"},
+                known_bases={"sage.child.Child": ("sage.external.Base",)},
+            )
+            self.assertNotIn("sage.child.Child.make", contracts)
+
+    def test_indexed_structural_base_is_not_published_from_class_base_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "child.py").write_text(
+                """class Child(Base):
+    def make(self):
+        return self.__class__.__base__()
+
+class Another(Base):
+    pass
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_classes={"sage.structure.parent.Parent"},
+                known_bases={
+                    "sage.child.Child": ("sage.structure.parent.Parent",),
+                    "sage.child.Another": ("sage.structure.parent.Parent",),
+                },
+            )
+            self.assertNotIn("sage.child.Child.make", contracts)
+
+    def test_indexed_parent_edges_complete_source_mro_for_member_lookup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "child.py").write_text(
+                """class Child(Base):
+    def wrap(self):
+        return self.parent_value()
+""",
+                encoding="utf-8",
+            )
+            index = Path(directory) / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.child.Child",
+                                "kind": "CLASS",
+                                "parents": ["sage.external.Base"],
+                            },
+                            {
+                                "qualifiedName": "sage.external.Base",
+                                "kind": "CLASS",
+                                "parents": [],
+                            },
+                            {
+                                "qualifiedName": "sage.external.Base.parent_value",
+                                "kind": "METHOD",
+                                "signatures": [
+                                    {
+                                        "returnType": {
+                                            "state": "KNOWN",
+                                            "expression": "sage.result.Value",
+                                        }
+                                    }
+                                ],
+                            },
+                            {
+                                "qualifiedName": "sage.result.Value",
+                                "kind": "CLASS",
+                                "parents": [],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            bases = _index_class_bases(index)
+            self.assertEqual(bases["sage.child.Child"], ("sage.external.Base",))
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.external.Base.parent_value": "'sage.result.Value'",
+                },
+                known_classes={"sage.child.Child", "sage.external.Base", "sage.result.Value"},
+                known_bases=bases,
+            )
+            self.assertEqual(contracts["sage.child.Child.wrap"], "'sage.result.Value'")
 
     def test_index_factory_contracts_retain_concrete_arms_with_structural_base(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -306,6 +592,76 @@ F = Factory('sage.factory.F')
             self.assertEqual(contracts["sage.element"], "'sage.rings.integer.Integer'")
             self.assertEqual(contracts["sage.alias_element"], "'sage.rings.integer.Integer'")
 
+    def test_external_parent_relation_specializes_through_exact_constructor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "__init__.py").write_text(
+                "from sage.all import ZZ\n\ndef one():\n    return ZZ.one()\n",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.rings.integer_ring.IntegerRing_class.one":
+                    "'sage.type_contracts.ParentElement[Self]'",
+                    "sage.rings.integer_ring.IntegerRing_class.__call__":
+                    "'sage.rings.integer.Integer'",
+                },
+                known_constants={
+                    "sage.all.ZZ": "sage.rings.integer_ring.IntegerRing_class",
+                },
+            )
+            self.assertEqual(contracts["sage.one"], "'sage.rings.integer.Integer'")
+
+    def test_external_parent_relation_stays_symbolic_without_exact_constructor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "__init__.py").write_text(
+                "from sage.all import P\n\ndef one():\n    return P.one()\n",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.external.Parent.one":
+                    "'sage.type_contracts.ParentElement[Self]'",
+                },
+                known_constants={"sage.all.P": "sage.external.Parent"},
+            )
+            self.assertEqual(
+                contracts["sage.one"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_imported_parent_relation_specializes_through_short_alias(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "__init__.py").write_text(
+                "from sage.rings.integer_ring import ZZ\n\ndef zero():\n    return ZZ.zero()\n",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.rings.ring.Ring.zero":
+                    "'sage.type_contracts.ParentElement[Self]'",
+                    "sage.rings.integer_ring.IntegerRing_class.__call__":
+                    "'sage.rings.integer.Integer'",
+                },
+                known_constants={
+                    "ZZ": "sage.rings.integer_ring.IntegerRing_class",
+                },
+                known_bases={
+                    "sage.rings.integer_ring.IntegerRing_class":
+                    ("sage.rings.ring.CommutativeRing",),
+                    "sage.rings.ring.CommutativeRing": ("sage.rings.ring.Ring",),
+                },
+            )
+            self.assertEqual(contracts["sage.zero"], "'sage.rings.integer.Integer'")
+
     def test_indexed_receiver_uses_exact_getitem_contract(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "sage"
@@ -374,10 +730,37 @@ F = Factory('sage.factory.F')
             "'sage.sample.Result_gap' | 'sage.sample.Result_generic'"
         ))
         self.assertTrue(_valid_annotation("type | 'sage.sample.Result_generic'"))
+        self.assertTrue(_valid_annotation("'sage.type_contracts.ParentElement[Self]'"))
         self.assertFalse(_valid_annotation("None | 'sage.sample.Result_generic'"))
         self.assertFalse(_valid_annotation(
             "'sage.sample.Result_base' | 'sage.sample.Result_generic'"
         ))
+
+    def test_apply_rejects_indexed_base_even_without_structural_suffix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.base.Parent",
+                                "kind": "CLASS",
+                                "parents": [],
+                            },
+                            {
+                                "qualifiedName": "sage.leaf.Child",
+                                "kind": "CLASS",
+                                "parents": ["sage.base.Parent"],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertFalse(_valid_annotation("'sage.base.Parent'", index))
+            self.assertTrue(_valid_annotation("'sage.base.Parent'", index, source_proven=True))
+            self.assertTrue(_valid_annotation("'sage.leaf.Child'", index))
 
     def test_infer_requires_a_unique_non_fallthrough_shape(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -164,6 +165,7 @@ def _generic_element(value: str | None) -> str | None:
 
 _CLASS_OBJECT_PREFIX = "@class:"
 _FACTORY_RESULT_PREFIX = "@factory:"
+_PARENT_ELEMENT_OWNERS_CACHE: dict[int, set[str]] = {}
 _STRUCTURAL_SUFFIXES = ("_base", "_generic", "_element", "_parent", "_factory")
 
 
@@ -300,6 +302,27 @@ class _FunctionAnalyzer:
         self.class_methods = class_methods or set()
         self.locals: dict[str, str | None] = {}
 
+    def _parent_element_owners(self) -> set[str]:
+        """Return owners with an indexed parent-element relation member.
+
+        The cache is keyed by the mutable contract-map identity used for one
+        inference pass.  This avoids rescanning the large generated index for
+        every function while keeping relation evidence scoped to that pass.
+        """
+        key = id(self.known_contracts)
+        owners = _PARENT_ELEMENT_OWNERS_CACHE.get(key)
+        if owners is None:
+            relation = "sage.type_contracts.ParentElement[Self]"
+            owners = {
+                qualified.rsplit(".", 1)[0]
+                for qualified, contract in self.known_contracts.items()
+                if isinstance(contract, str)
+                and contract.strip("'") == relation
+                and "." in qualified
+            }
+            _PARENT_ELEMENT_OWNERS_CACHE[key] = owners
+        return owners
+
     def _resolve_name(self, name: str) -> str | None:
         if name in self.imports:
             return self.imports[name]
@@ -412,6 +435,77 @@ class _FunctionAnalyzer:
             for parent in self.class_bases.get(receiver, ())
         )
 
+    def _element_class_relation(self, receiver: str) -> str | None:
+        """Return the parent-element relation for a concrete ``Element``.
+
+        ``Parent.element_class`` is a runtime-generated class built from the
+        receiver's ``Element`` attribute.  When source analysis has proved
+        that attribute is one concrete class object, a call through
+        ``receiver.element_class(...)`` is therefore an element of that
+        parent.  Keep the symbolic relation instead of publishing the
+        generated class itself; the IDE can bind it to the receiver's exact
+        element factory at the call site.
+        """
+        attributes = self.class_attributes.get(receiver, {})
+        if self._nested_class_attribute(receiver, "element_class") is not None:
+            return None
+        element = attributes.get("Element")
+        if isinstance(element, str) and element.startswith(_CLASS_OBJECT_PREFIX):
+            return "'sage.type_contracts.ParentElement[Self]'"
+        # A generated Parent descriptor can also be proven from the indexed
+        # protocol when the concrete receiver already exposes an exact
+        # ``ParentElement[Self]`` member elsewhere in its MRO.  This covers
+        # parents such as ``Partitions_n`` whose ``Element`` class is created
+        # dynamically and therefore cannot appear as a source assignment.
+        # Explicit nested ``element_class`` classes remain ordinary class
+        # objects and are handled by the caller before this relation is used.
+        if self._member_contract(receiver, "element_class") == "type":
+            owners = self._parent_element_owners()
+            seen: set[str] = set()
+
+            def has_relation(owner: str) -> bool:
+                if owner in seen:
+                    return False
+                seen.add(owner)
+                if owner in owners:
+                    return True
+                return any(has_relation(parent) for parent in self.class_bases.get(owner, ()))
+
+            if has_relation(receiver):
+                return "'sage.type_contracts.ParentElement[Self]'"
+        return None
+
+    def _specialize_parent_element_relation(
+        self, receiver: str, contract: str
+    ) -> str:
+        """Resolve a parent-element relation through an exact constructor.
+
+        ``ParentElement[Self]`` is intentionally receiver-relative: for a
+        source method on a generic parent it must remain symbolic.  A call on
+        an *external exact parent value* (for example ``ZZ.one()``), however,
+        has a concrete constructor contract in the generated index.  In that
+        case the relation can be specialized to the element class without a
+        function-name allow-list.  If no exact constructor is available the
+        symbolic relation is retained and the caller remains conservative.
+        """
+        relation = "'sage.type_contracts.ParentElement[Self]'"
+        if contract != relation:
+            return contract
+        candidates: list[str] = []
+        for member in ("__call__", "_element_constructor_"):
+            proven = self._member_contract(receiver, member)
+            if proven is None or proven == "type":
+                continue
+            arms = proven.split(" | ")
+            if all(
+                arm.startswith("'sage.") and arm.endswith("'")
+                for arm in arms
+            ):
+                candidates.append(proven)
+        if candidates and len(set(candidates)) == 1:
+            return candidates[0]
+        return contract
+
     def _resolve_call(self, node: ast.Call) -> str | None:
         dotted = _dotted(node.func)
         # A factory instance imported from another Sage module is represented
@@ -462,7 +556,23 @@ class _FunctionAnalyzer:
                 return _union(*callable_contracts)
         if dotted == "self.__class__.__base__" and self.owner is not None:
             parents = self.class_bases.get(self.owner, ())
-            if len(parents) == 1 and _is_final_class_path(parents[0]):
+            # ``__base__`` is a class object used for implementation
+            # dispatch.  An indexed parent with descendants is a structural
+            # node, not a stable public result (for example
+            # ``structure.parent.Parent``); keep it available for member
+            # lookup but do not publish it as this method's return type.
+            # A single implementation subclass is not enough to classify a
+            # parent as a public dispatch node (many Sage leaf classes have a
+            # compatibility wrapper subclass).  Require a stable fan-out in
+            # the indexed/source hierarchy before suppressing the class-base
+            # result; this keeps ordinary one-child inheritance contracts
+            # usable while filtering broad nodes such as ``Parent``.
+            has_descendants = (
+                sum(parents[0] in declared for declared in self.class_bases.values()) >= 2
+                if len(parents) == 1
+                else True
+            )
+            if len(parents) == 1 and _is_final_class_path(parents[0]) and not has_descendants:
                 return _quote(parents[0])
         if isinstance(node.func, ast.Attribute):
             receiver = node.func.value
@@ -471,6 +581,29 @@ class _FunctionAnalyzer:
             factory_result = self._factory_result(receiver_type)
             if factory_result is not None:
                 return factory_result
+            if method == "element_class":
+                receiver_path = self._receiver_class_path(receiver)
+                relation = self._element_class_relation(receiver_path) if receiver_path else None
+                if relation is not None:
+                    return relation
+                # A source class may intentionally define a nested class
+                # named ``element_class``.  That is an ordinary class-object
+                # constructor and is handled by the class-object branch
+                # below; the dynamic Parent descriptor rule must not mask
+                # this explicitly proven nested class.
+                if relation is None and not (
+                    receiver_path
+                    and self._nested_class_attribute(receiver_path, method) is not None
+                ):
+                    # ``Parent.element_class`` is a generated class-valued
+                    # descriptor.  Calling it constructs an element, but the
+                    # indexed descriptor itself is necessarily annotated as
+                    # ``type``.  Never let that descriptor annotation leak
+                    # into the result of ``receiver.element_class(...)``:
+                    # without a proven ``Element`` implementation the
+                    # runtime class is dynamic, so the only sound result is
+                    # unresolved.
+                    return None
             # Immutable/builtin literal protocols have deterministic result
             # shapes independent of Sage's overloaded element classes.
             if receiver_type in {"str", "bytes"}:
@@ -562,6 +695,16 @@ class _FunctionAnalyzer:
                     if proven is None:
                         resolved_contracts = []
                         break
+                    # ``type`` describes a class-valued attribute, not the
+                    # instance produced by invoking an arbitrary method.
+                    # Keep class-object construction on its explicit branch
+                    # and fail closed for stale/broad descriptor contracts.
+                    if proven == "type":
+                        resolved_contracts = []
+                        break
+                    proven = self._specialize_parent_element_relation(
+                        resolved_receiver, proven
+                    )
                     resolved_contracts.append(proven)
                 if resolved_contracts and len(resolved_contracts) == len(receiver_arms):
                     return _union(*resolved_contracts)
@@ -613,6 +756,11 @@ class _FunctionAnalyzer:
                     member = ".".join(bits[2:] if self_attribute_receiver else bits[1:])
                     proven = self._member_contract(resolved_receiver, member)
                     if proven is not None:
+                        if proven == "type":
+                            return None
+                        proven = self._specialize_parent_element_relation(
+                            resolved_receiver, proven
+                        )
                         return proven
         # Calling the receiver itself is common for Sage parents and
         # callable element wrappers.  Resolve it only through the receiver's
@@ -636,6 +784,8 @@ class _FunctionAnalyzer:
             # UNKNOWN instead of being replaced by a parent result.
             inherited = self._member_contract(self.owner, method_name)
             if inherited is not None:
+                if inherited == "type":
+                    return None
                 return inherited
         # Classcall/constructor helpers conventionally invoke ``cls(...)`` or
         # ``self.__class__(...)``.  The result is the receiver-dependent class,
@@ -1792,6 +1942,29 @@ def _index_contracts(index: Path | None) -> dict[str, str]:
         and isinstance(entry.get("qualifiedName"), str)
         and _is_final_class_path(entry.get("qualifiedName", ""))
     }
+    def normalize_arm(arm: str) -> str | None:
+        """Normalize one exact index arm usable by source propagation.
+
+        ``typing.Self`` is the spelling emitted by stubgen for a receiver-
+        preserving contract.  Sage's relation contracts (for example
+        ``ParentElement[Self]`` and ``CodomainElement[Self]``) are likewise
+        exact symbolic relationships, not public base classes.  Accept only
+        the structural ``*Element[Self]`` form from the dedicated contract
+        namespace; unconstrained type variables and arbitrary generics stay
+        fail-closed.
+        """
+        arm = arm.strip().replace("typing.Self", "Self").replace("typing.NoReturn", "NoReturn")
+        if arm in builtins or arm == "Self":
+            return arm
+        if arm in class_names:
+            return _quote(arm)
+        relation_prefix = "sage.type_contracts."
+        if arm.startswith(relation_prefix) and re.fullmatch(
+            r"sage\.type_contracts\.[A-Za-z_][A-Za-z0-9_]*Element\[Self\]", arm
+        ):
+            return _quote(arm)
+        return None
+
     result: dict[str, str] = {}
     for entry in payload.get("entries", []):
         if entry.get("kind") not in {"FUNCTION", "METHOD"}:
@@ -1811,10 +1984,9 @@ def _index_contracts(index: Path | None) -> dict[str, str]:
             for expression in sorted(expressions)
             for arm in expression.split(" | ")
         ]
-        if arms and all(arm in builtins or arm in class_names for arm in arms):
-            result[qualified] = _union(
-                *[arm if arm in builtins else _quote(arm) for arm in arms]
-            )
+        normalized = [normalize_arm(arm) for arm in arms]
+        if arms and all(arm is not None for arm in normalized):
+            result[qualified] = _union(*[arm for arm in normalized if arm is not None])
     return result
 
 
@@ -1868,6 +2040,34 @@ def _index_classes(index: Path | None) -> set[str]:
         and isinstance(entry.get("qualifiedName"), str)
         and _is_final_class_path(entry["qualifiedName"])
     }
+
+
+def _index_class_bases(index: Path | None) -> dict[str, tuple[str, ...]]:
+    """Load indexed inheritance edges for source classes with Cython bases.
+
+    Pure-Python Sage classes frequently inherit from extension classes whose
+    implementation is present only in the generated ``.pyi`` tree.  The
+    source-only MRO is therefore incomplete at exactly the call sites where
+    wrappers delegate to parent protocols.  These edges are used exclusively
+    for member lookup; the returned member contract still has to be an exact
+    indexed contract (or a symbolic relation such as ``ParentElement``).
+    """
+    payload = _read_index_payload(index)
+    result: dict[str, tuple[str, ...]] = {}
+    for entry in payload.get("entries", []):
+        if entry.get("kind") != "CLASS":
+            continue
+        qualified = entry.get("qualifiedName")
+        if not isinstance(qualified, str) or not qualified.startswith("sage."):
+            continue
+        parents = tuple(
+            parent
+            for parent in entry.get("parents", [])
+            if isinstance(parent, str) and parent.startswith("sage.")
+        )
+        if parents:
+            result[qualified] = parents
+    return result
 
 
 def _index_class_aliases(index: Path | None) -> dict[str, str]:
@@ -2280,6 +2480,7 @@ def infer(
     known_parameters: dict[str, tuple[str | None, ...]] | None = None,
     known_overloads: dict[str, tuple[tuple[tuple[str | None, ...], str], ...]] | None = None,
     known_constants: dict[str, str] | None = None,
+    known_bases: dict[str, tuple[str, ...]] | None = None,
 ) -> dict[str, str]:
     files: list[tuple[Path, str, ast.Module]] = []
     for path in sorted(source_root.rglob("*.py")):
@@ -2289,7 +2490,23 @@ def infer(
             continue
         files.append((path, _module_name(path, source_root), tree))
     classes = _class_names(files)
-    class_bases = _class_bases(files, classes)
+    source_bases = _class_bases(files, classes)
+    indexed_bases = known_bases or {}
+    # Add only absent/indexed edges.  Source-resolved bases remain first in
+    # MRO order, while Cython/extension parents fill the gaps for delegated
+    # member lookup.  Conflicting paths are handled by the existing
+    # unique-contract checks and consequently remain unresolved.
+    class_bases = {
+        owner: tuple(
+            dict.fromkeys((*source_bases.get(owner, ()), *indexed_bases.get(owner, ())))
+        )
+        for owner in set(source_bases) | set(indexed_bases)
+        # Keep indexed-only owners as well: a source class may inherit through
+        # several extension-class layers before reaching ``Parent``.  These
+        # edges are used solely for member lookup and never become a public
+        # return type by themselves.
+        if owner in classes or owner in indexed_bases
+    }
     external_contracts = known_contracts or {}
     external_generic_contracts = generic_contracts or {}
     external_classes = known_classes or set()
@@ -2587,6 +2804,7 @@ def main() -> int:
         _index_parameter_contracts(index),
         _index_overloads(index),
         _index_constant_types(index),
+        _index_class_bases(index),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(contracts, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")

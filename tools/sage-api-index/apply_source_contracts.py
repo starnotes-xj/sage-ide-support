@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 from pathlib import Path
 
 from annotate_stubs import _function_header_colon, _line_offsets, ensure_typing_name
@@ -23,6 +24,7 @@ _BUILTINS = {
     "slice", "str", "tuple", "type", "NoReturn",
 }
 _STRUCTURAL_SUFFIXES = ("_base", "_generic", "_element", "_parent", "_factory")
+_INDEX_CHILDREN_CACHE: dict[str, dict[str, set[str]]] = {}
 
 
 def _is_concrete_sage_path(value: str, *, allow_generic: bool = False) -> bool:
@@ -43,13 +45,59 @@ def _module_name(path: Path, root: Path) -> str:
     return ".".join(parts)
 
 
-def _valid_annotation(annotation: str) -> bool:
+def _index_class_children(index: Path | None) -> dict[str, set[str]]:
+    if index is None:
+        return {}
+    key = str(index.resolve())
+    cached = _INDEX_CHILDREN_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        payload = json.loads(index.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    children: dict[str, set[str]] = {}
+    for entry in payload.get("entries", []):
+        if entry.get("kind") != "CLASS":
+            continue
+        child = entry.get("qualifiedName")
+        if not isinstance(child, str):
+            continue
+        for parent in entry.get("parents", []):
+            if isinstance(parent, str):
+                children.setdefault(parent, set()).add(child)
+    _INDEX_CHILDREN_CACHE[key] = children
+    return children
+
+
+def _valid_annotation(
+    annotation: str,
+    index: Path | None = None,
+    *,
+    source_proven: bool = False,
+) -> bool:
+    children = _index_class_children(index)
+
+    def valid_sage_string(value: str, *, allow_generic: bool = False) -> bool:
+        if value.startswith("sage.type_contracts.") and re.fullmatch(
+            r"sage\.type_contracts\.[A-Za-z_][A-Za-z0-9_]*Element\[Self\]", value
+        ):
+            return True
+        if not value.startswith("sage."):
+            return False
+        # A class with indexed subclasses is a dispatch/base node, not a
+        # final return type.  Keep the rejection data-driven rather than
+        # relying on a class-name suffix list.
+        if value in children and not source_proven:
+            return False
+        return _is_concrete_sage_path(value, allow_generic=allow_generic)
+
     if annotation in _BUILTINS or annotation in {"Self", "Iterator"}:
         return True
     # A quoted PEP 604 union also starts and ends with a quote.  Only use the
     # fast path for one literal; unions must go through the AST validator.
     if annotation.startswith("'sage.") and annotation.endswith("'") and annotation.count("'") == 2:
-        return _is_concrete_sage_path(annotation[1:-1])
+        return valid_sage_string(annotation[1:-1])
     try:
         node = ast.parse(annotation, mode="eval").body
     except SyntaxError:
@@ -68,7 +116,7 @@ def _valid_annotation(annotation: str) -> bool:
             # Name), including when it appears in a proven ``T | None`` arm.
             return node.value is None or (
                 isinstance(node.value, str)
-                and _is_concrete_sage_path(node.value, allow_generic=allow_generic)
+                and valid_sage_string(node.value, allow_generic=allow_generic)
             )
         # Source inference may prove a finite set of successful branch
         # shapes.  Preserve that exact PEP 604 union instead of dropping the
@@ -140,7 +188,12 @@ def apply(stub_root: Path, contracts: dict[str, str], index: Path | None = None)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 qualified = f"{module}.{node.name}" if owner is None else f"{owner}.{node.name}"
                 annotation = contracts.get(qualified)
-                if not _is_overload(node) and node.returns is None and annotation and _valid_annotation(annotation):
+                if (
+                    not _is_overload(node)
+                    and node.returns is None
+                    and annotation
+                    and _valid_annotation(annotation, index, source_proven=True)
+                ):
                     if only_unknown is None or qualified in only_unknown:
                         colon = _function_header_colon(text, offsets, node)
                         if colon is not None:
