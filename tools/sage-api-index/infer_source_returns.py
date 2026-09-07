@@ -323,9 +323,16 @@ class _FunctionAnalyzer:
         if receiver in seen:
             return None
         seen.add(receiver)
-        direct = self.known_contracts.get(f"{receiver}.{member}")
+        target = f"{receiver}.{member}"
+        direct = self.known_contracts.get(target)
         if direct is not None:
             return direct
+        # An unresolved override is a real runtime dispatch boundary.  Do
+        # not silently replace it with a parent implementation while walking
+        # through a deeper hierarchy; only classes that do not define the
+        # member inherit the parent's exact contract.
+        if target in self.class_methods:
+            return None
         candidates = {
             contract
             for parent in self.class_bases.get(receiver, ())
@@ -333,6 +340,46 @@ class _FunctionAnalyzer:
             if contract is not None
         }
         return next(iter(candidates)) if len(candidates) == 1 else None
+
+    def _nested_class_attribute(self, receiver: str, member: str, seen: set[str] | None = None) -> str | None:
+        """Resolve a class-valued nested attribute through the source MRO.
+
+        Sage parents frequently expose their element implementation as a
+        nested ``element_class`` (or another nested class) rather than as a
+        normal constructor contract.  A nested class is a real Python class
+        attribute, so it is safe to use when the parsed source/index contains
+        exactly one such class and no unresolved method override shadows it.
+        Conflicting multiple-inheritance paths remain unresolved.
+        """
+        seen = set() if seen is None else seen
+        if receiver in seen:
+            return None
+        seen.add(receiver)
+        target = f"{receiver}.{member}"
+        if target in self.class_methods:
+            return None
+        if target in self.classes or target in self.known_classes:
+            return target
+        candidates = {
+            nested
+            for parent in self.class_bases.get(receiver, ())
+            for nested in [self._nested_class_attribute(parent, member, seen.copy())]
+            if nested is not None
+        }
+        return next(iter(candidates)) if len(candidates) == 1 else None
+
+    def _has_method_in_mro(self, receiver: str, member: str, seen: set[str] | None = None) -> bool:
+        """Return whether the source MRO explicitly provides ``member``."""
+        seen = set() if seen is None else seen
+        if receiver in seen:
+            return False
+        seen.add(receiver)
+        if f"{receiver}.{member}" in self.class_methods:
+            return True
+        return any(
+            self._has_method_in_mro(parent, member, seen.copy())
+            for parent in self.class_bases.get(receiver, ())
+        )
 
     def _resolve_call(self, node: ast.Call) -> str | None:
         dotted = _dotted(node.func)
@@ -348,6 +395,40 @@ class _FunctionAnalyzer:
             factory_result = self._factory_result(marker)
             if factory_result is not None:
                 return factory_result
+        # A statically indexed Sage value can itself be callable (for
+        # example the imported ``ZZ`` parent).  Resolve its exact ``__call__``
+        # contract before treating the expression as an ordinary function
+        # name.  This is driven solely by the proven value class and member
+        # contract, so it also covers aliases and custom callable elements
+        # without a symbol/name allow-list.
+        callable_type = self.expr_type(node.func)
+        if callable_type:
+            callable_contracts: list[str] = []
+            for arm in callable_type.split(" | "):
+                if arm == "Self" and self.owner is not None:
+                    receiver = self.owner
+                elif arm.startswith("'sage.") and arm.endswith("'"):
+                    receiver = arm[1:-1]
+                elif arm.startswith("sage."):
+                    receiver = arm
+                else:
+                    callable_contracts = []
+                    break
+                proven = self._member_contract(receiver, "__call__")
+                if proven is None and self._has_method_in_mro(receiver, "__call__"):
+                    # Sage Parent.__call__ delegates construction to the
+                    # receiver's element constructor.  This fallback is
+                    # accepted only when both the callable protocol and the
+                    # concrete constructor contract are present in the
+                    # source/index; an arbitrary private method is never
+                    # treated as a constructor by itself.
+                    proven = self._member_contract(receiver, "_element_constructor_")
+                if proven is None:
+                    callable_contracts = []
+                    break
+                callable_contracts.append(proven)
+            if callable_contracts:
+                return _union(*callable_contracts)
         if dotted == "self.__class__.__base__" and self.owner is not None:
             parents = self.class_bases.get(self.owner, ())
             if len(parents) == 1 and _is_final_class_path(parents[0]):
@@ -420,7 +501,7 @@ class _FunctionAnalyzer:
                 return "Self"
             parent_contracts: set[str] = set()
             for parent in self.class_bases.get(self.owner, ()):
-                proven = self.known_contracts.get(f"{parent}.{node.func.attr}")
+                proven = self._member_contract(parent, node.func.attr)
                 if proven is not None:
                     parent_contracts.add(proven)
             if parent_contracts and len(parent_contracts) == 1:
@@ -499,7 +580,7 @@ class _FunctionAnalyzer:
                     resolved_receiver = None
                 if resolved_receiver is not None:
                     member = ".".join(bits[2:] if self_attribute_receiver else bits[1:])
-                    proven = self.known_contracts.get(f"{resolved_receiver}.{member}")
+                    proven = self._member_contract(resolved_receiver, member)
                     if proven is not None:
                         return proven
         # Calling the receiver itself is common for Sage parents and
@@ -508,11 +589,12 @@ class _FunctionAnalyzer:
         # retain the conservative unknown result rather than assuming the
         # call returns ``Self``.
         if dotted == "self" and self.owner is not None:
-            proven = self.known_contracts.get(f"{self.owner}.__call__")
+            proven = self._member_contract(self.owner, "__call__")
             if proven is not None:
                 return proven
         if dotted.startswith("self.") and self.owner is not None:
-            target = f"{self.owner}.{dotted.split('.', 1)[1]}"
+            method_name = dotted.split(".", 1)[1]
+            target = f"{self.owner}.{method_name}"
             if target in self.known_contracts:
                 return self.known_contracts[target]
             # A direct ``self.method()`` dispatches to the current class only
@@ -521,8 +603,7 @@ class _FunctionAnalyzer:
             # is the same inheritance lookup Python will perform at runtime.
             # Overrides that are present but unresolved deliberately remain
             # UNKNOWN instead of being replaced by a parent result.
-            method_name = dotted.split(".", 1)[1]
-            inherited = self._inherited_contract(self.owner, method_name)
+            inherited = self._member_contract(self.owner, method_name)
             if inherited is not None:
                 return inherited
         # Classcall/constructor helpers conventionally invoke ``cls(...)`` or
@@ -606,6 +687,16 @@ class _FunctionAnalyzer:
             if candidates and all(item is not None for item in candidates):
                 return _union(*[item for item in candidates if item is not None])
         bits = dotted.split(".")
+        if len(bits) == 2:
+            receiver_path = None
+            if bits[0] == "self" and self.owner is not None:
+                receiver_path = self.owner
+            elif isinstance(node.func, ast.Attribute):
+                receiver_path = self._receiver_class_path(node.func.value)
+            if receiver_path is not None:
+                nested = self._nested_class_attribute(receiver_path, bits[1])
+                if nested is not None:
+                    return _quote(nested)
         head = self.imports.get(bits[0])
         if head is not None:
             resolved = ".".join([head, *bits[1:]])
@@ -808,7 +899,17 @@ class _FunctionAnalyzer:
                 return self.locals[node.id]
             if node.id in self.module_globals:
                 return self.module_globals[node.id]
+            # Imported constants are indexed under their resolved qualified
+            # name (for example ``sage.all.ZZ``), while source code normally
+            # refers to the local alias ``ZZ``.  Reuse the exact indexed
+            # value class through the import map before treating the name as
+            # unresolved; this enables generic receiver-member contracts
+            # such as ``ZZ.zero()``/``ZZ.one()`` without a symbol allow-list.
             constant_type = self.known_constants.get(node.id)
+            if constant_type is None:
+                resolved_constant = self._resolve_name(node.id)
+                if resolved_constant is not None:
+                    constant_type = self.known_constants.get(resolved_constant)
             if constant_type is not None:
                 factory_result = self._factory_result(constant_type)
                 if factory_result is not None:
@@ -829,6 +930,11 @@ class _FunctionAnalyzer:
                 direct = self.class_attributes.get(self.owner, {}).get(node.attr)
                 if direct is not None:
                     return direct
+            receiver = self._receiver_class_path(node.value)
+            if receiver is not None:
+                nested = self._nested_class_attribute(receiver, node.attr)
+                if nested is not None:
+                    return f"{_CLASS_OBJECT_PREFIX}{nested}"
             # Imported Sage modules may expose callable constants (for
             # example ``rings.ZZ``) through an attribute rather than a bare
             # name.  Resolve the dotted module alias first, then reuse only
@@ -847,7 +953,6 @@ class _FunctionAnalyzer:
                         if factory_result is not None:
                             return _FACTORY_RESULT_PREFIX + factory_result
                         return _quote(constant_type)
-            receiver = self._receiver_class_path(node.value)
             if receiver is not None:
                 direct = self.known_properties.get(f"{receiver}.{node.attr}")
                 if direct is not None:

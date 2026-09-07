@@ -282,6 +282,29 @@ F = Factory('sage.factory.F')
             )
             self.assertEqual(contracts["sage.make"], "'sage.rings.integer.Integer'")
 
+    def test_imported_constant_alias_uses_indexed_member_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "__init__.py").write_text(
+                "from sage.all import ZZ\n\ndef zero():\n    return ZZ.zero()\n\ndef element():\n    return ZZ(1)\n",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.rings.integer_ring.IntegerRing_class.zero":
+                    "'sage.rings.integer.Integer'",
+                    "sage.rings.integer_ring.IntegerRing_class.__call__":
+                    "'sage.rings.integer.Integer'",
+                },
+                known_constants={
+                    "sage.all.ZZ": "sage.rings.integer_ring.IntegerRing_class",
+                },
+            )
+            self.assertEqual(contracts["sage.zero"], "'sage.rings.integer.Integer'")
+            self.assertEqual(contracts["sage.element"], "'sage.rings.integer.Integer'")
+
     def test_indexed_receiver_uses_exact_getitem_contract(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "sage"
@@ -669,12 +692,38 @@ class CallableContainer:
     def invoke(self, value):
         return self(value)
 
+class CallableChild(CallableContainer):
+    def invoke_inherited(self, value):
+        return self(value)
+
+class ProtocolParent:
+    def __call__(self, value):
+        return external_builder(value)
+
+    def _element_constructor_(self, value):
+        return 1
+
+class ProtocolChild(ProtocolParent):
+    def make(self, value):
+        return self(value)
+
 class NestedFactory:
     def child(self):
         return Nested()
 
     def child_value(self):
         return self.child().value()
+
+class NestedElementOwner:
+    class element_class:
+        pass
+
+    def make_element(self):
+        return self.element_class(self)
+
+class NestedElementChild(NestedElementOwner):
+    def make_element(self):
+        return self.element_class(self)
 
 class Result:
     pass
@@ -699,6 +748,17 @@ class MethodChild(MethodBase):
     def wrapped(self):
         return self.helper()
 
+class MethodGrandChild(MethodChild):
+    def transitive(self):
+        return self.helper()
+
+class MethodOverrideUnknown(MethodBase):
+    def helper(self, value):
+        return value
+
+    def wrapped(self):
+        return self.helper(1)
+
 class ExternalMethodBase:
     pass
 
@@ -716,6 +776,10 @@ class PropertyChild(PropertyBase):
         return self.value
 
 class SuperChild(MethodBase):
+    def wrapped(self):
+        return super().helper()
+
+class SuperGrandChild(MethodChild):
     def wrapped(self):
         return super().helper()
 
@@ -850,15 +914,29 @@ def make():
             self.assertEqual(contracts["sage.Container.child_alias_value"], "int")
             self.assertEqual(contracts["sage.CallableContainer.__call__"], "int")
             self.assertEqual(contracts["sage.CallableContainer.invoke"], "int")
+            self.assertEqual(contracts["sage.CallableChild.invoke_inherited"], "int")
+            self.assertEqual(contracts["sage.ProtocolChild.make"], "int")
             self.assertEqual(contracts["sage.NestedFactory.child_value"], "int")
+            self.assertEqual(
+                contracts["sage.NestedElementOwner.make_element"],
+                "'sage.NestedElementOwner.element_class'",
+            )
+            self.assertEqual(
+                contracts["sage.NestedElementChild.make_element"],
+                "'sage.NestedElementOwner.element_class'",
+            )
             # An explicitly assigned class object is a proven constructor;
             # arbitrary parent/factory attributes remain unresolved.
             self.assertEqual(contracts["sage.Factory.make"], "'sage.Result'")
             self.assertEqual(contracts["sage.AttributeChild.inherited_class_attribute"], "type")
             self.assertEqual(contracts["sage.MethodChild.wrapped"], "list")
+            self.assertEqual(contracts["sage.MethodGrandChild.transitive"], "list")
+            self.assertNotIn("sage.MethodOverrideUnknown.helper", contracts)
+            self.assertNotIn("sage.MethodOverrideUnknown.wrapped", contracts)
             self.assertEqual(contracts["sage.ExternalMethodChild.wrapped"], "int")
             self.assertEqual(contracts["sage.PropertyChild.wrapped"], "int")
             self.assertEqual(contracts["sage.SuperChild.wrapped"], "list")
+            self.assertEqual(contracts["sage.SuperGrandChild.wrapped"], "list")
             self.assertEqual(contracts["sage.DerivedFactory.make_base"], "'sage.BaseFactory'")
             self.assertEqual(contracts["sage.ClassCallChild.make"], "Self")
             self.assertEqual(contracts["sage.DirectClassCall.__classcall_private__"], "Self")
