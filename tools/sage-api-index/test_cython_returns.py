@@ -223,6 +223,100 @@ class Worker:
         self.assertEqual(contracts['sage.sample.Worker.payload'], 'tuple')
         self.assertNotIn('sage.sample.Worker.dynamic', contracts)
 
+    def test_implicit_none_covers_side_effect_wrappers_but_not_raise_only_paths(self):
+        source = '''
+def mutate(value):
+    value.clear()
+def nested(value):
+    def helper():
+        return value
+    value.clear()
+def raises_after_setup(value):
+    value.clear()
+    raise ValueError
+'''
+        found = {q: t for q, t, _ in declarations(source)}
+        self.assertEqual(found['mutate'], 'None')
+        self.assertEqual(found['nested'], 'None')
+        self.assertNotIn('raises_after_setup', found)
+
+    def test_multiline_headers_and_uniform_conditional_returns(self):
+        source = '''
+def choose(
+    flag,
+):
+    if flag:
+        return []
+    return []
+def maybe(
+    flag,
+):
+    if flag:
+        return self
+'''
+        found = {q: t for q, t, _ in declarations(source)}
+        self.assertEqual(found['choose'], 'list')
+        self.assertEqual(found['maybe'], 'Self | None')
+
+    def test_uniform_conditional_returns_keep_dynamic_arms_unknown(self):
+        source = '''
+def choose(flag, value):
+    if flag:
+        return value
+    return []
+def conflict(flag):
+    if flag:
+        return []
+    return {}
+'''
+        found = {q: t for q, t, _ in declarations(source)}
+        self.assertNotIn('choose', found)
+        self.assertNotIn('conflict', found)
+
+    def test_identity_parameter_uses_agreeing_index_parameter_contract(self):
+        source = '''
+class Worker:
+    def echo(self, value):
+        return value
+    def dynamic(self, value):
+        return value
+'''
+        index = {
+            'entries': [
+                {
+                    'qualifiedName': 'sage.sample.Worker.echo',
+                    'kind': 'METHOD',
+                    'signatures': [{'parameters': [
+                        {'name': 'value', 'type': {
+                            'state': 'KNOWN', 'expression': 'sage.sample.Element'
+                        }}
+                    ]}],
+                },
+                {
+                    'qualifiedName': 'sage.sample.Worker.dynamic',
+                    'kind': 'METHOD',
+                    'signatures': [{'parameters': [
+                        {'name': 'value', 'type': {
+                            'state': 'KNOWN', 'expression': 'sage.sample.Element'
+                        }}
+                    ]}, {'parameters': [
+                        {'name': 'value', 'type': {
+                            'state': 'KNOWN', 'expression': 'sage.other.Element'
+                        }}
+                    ]}],
+                },
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'index.json'
+            path.write_text(json.dumps(index), encoding='utf-8')
+            root = Path(tmp) / 'sage'
+            root.mkdir()
+            (root / 'sample.pyx').write_text(source, encoding='utf-8')
+            contracts, _ = infer(root, path)
+        self.assertEqual(contracts['sage.sample.Worker.echo'], "'sage.sample.Element'")
+        self.assertNotIn('sage.sample.Worker.dynamic', contracts)
+
     def test_pxd_pyx_conflict_and_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'sage'

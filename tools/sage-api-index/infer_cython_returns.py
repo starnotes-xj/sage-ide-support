@@ -17,7 +17,7 @@ import json
 import re
 import tokenize
 from pathlib import Path
-from infer_source_returns import _may_fall_through, _returns
+from infer_source_returns import _implicit_none_is_safe, _may_fall_through, _returns
 
 
 INTEGER = r"(?:(?:signed|unsigned)\s+)?(?:char|short(?:\s+int)?|int|long(?:\s+long)?(?:\s+int)?)|Py_ssize_t"
@@ -154,6 +154,15 @@ def _safe_index_return(expression: object) -> str | None:
     return expression if valid(node) else None
 
 
+def _safe_index_parameter(expression: object) -> str | None:
+    """Normalize one exact indexed parameter type for identity propagation."""
+    if not isinstance(expression, str):
+        return None
+    if expression.startswith("sage.") and _is_concrete_index_path(expression):
+        return f"'{expression}'"
+    return _safe_index_return(expression)
+
+
 def _unique_callable_returns(index: Path | None) -> dict[str, str]:
     """Index methods/functions whose every overload has one safe return."""
     if index is None:
@@ -182,6 +191,47 @@ def _unique_callable_returns(index: Path | None) -> dict[str, str]:
             expressions.append(safe)
         if expressions and len(set(expressions)) == 1:
             result[qualified] = expressions[0]
+    return result
+
+
+def _unique_parameter_contracts(index: Path | None) -> dict[str, dict[str, str]]:
+    """Index parameter types that agree across every callable overload."""
+    if index is None:
+        return {}
+    try:
+        payload = json.loads(index.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    result: dict[str, dict[str, str]] = {}
+    for entry in payload.get("entries", []):
+        if entry.get("kind") not in {"FUNCTION", "METHOD", "PROPERTY"}:
+            continue
+        qualified = entry.get("qualifiedName")
+        signatures = entry.get("signatures", [])
+        if not isinstance(qualified, str) or not signatures:
+            continue
+        by_name: dict[str, set[str]] = {}
+        seen_name: dict[str, int] = {}
+        for signature in signatures:
+            signature_names: set[str] = set()
+            for parameter in signature.get("parameters", []):
+                name = parameter.get("name")
+                parameter_type = parameter.get("type") or {}
+                if not isinstance(name, str) or parameter_type.get("state") != "KNOWN":
+                    continue
+                safe = _safe_index_parameter(parameter_type.get("expression"))
+                if safe is not None:
+                    by_name.setdefault(name, set()).add(safe)
+                    signature_names.add(name)
+            for name in signature_names:
+                seen_name[name] = seen_name.get(name, 0) + 1
+        stable = {
+            name: next(iter(values))
+            for name, values in by_name.items()
+            if len(values) == 1 and seen_name.get(name) == len(signatures)
+        }
+        if stable:
+            result[qualified] = stable
     return result
 
 
@@ -270,6 +320,7 @@ def _def_trivial_return(
     callable_returns: dict[str, str] | None = None,
     qualified: str | None = None,
     module: str | None = None,
+    parameter_types: dict[str, str] | None = None,
 ) -> str | None:
     """Infer a branch-free ``def`` that immediately returns a literal/value.
 
@@ -349,6 +400,8 @@ def _def_trivial_return(
                 target = class_types.get(constructor)
                 if target is not None:
                     return f"'{target}'"
+        if isinstance(expression_node, ast.Name) and parameter_types is not None:
+            return parameter_types.get(expression_node.id)
         if (
             isinstance(expression_node, ast.Call)
             and callable_returns is not None
@@ -383,11 +436,171 @@ def _def_trivial_return(
         return None
 
 
+def _def_implicit_none(
+    lines: list[str], masked: list[list[str]], row: int, indent: int, starts: set[int]
+) -> bool:
+    """Prove an ordinary Python-visible ``def`` has no return value.
+
+    Cython wrappers often perform an in-place operation and simply fall off
+    the end.  Scan only the function's own lexical scope: nested functions may
+    contain ``return`` statements without changing the outer function's
+    implicit ``None`` result.  Any return/yield token in the outer scope makes
+    the proof fail closed and is handled by the more precise rules instead.
+    """
+    nested_indent: int | None = None
+    for j in range(row, len(lines)):
+        visible = "".join(masked[j]).expandtabs(8)
+        stripped = visible.strip()
+        if not stripped:
+            continue
+        col = len(visible) - len(visible.lstrip())
+        if j + 1 in starts and col <= indent:
+            break
+        if nested_indent is not None:
+            if col <= nested_indent:
+                nested_indent = None
+            else:
+                continue
+        if j + 1 in starts and col == indent + 4 and (
+            stripped.startswith("def ") or stripped.startswith("async def ")
+        ):
+            nested_indent = col
+            continue
+        if stripped.startswith("return") and (len(stripped) == 6 or stripped[6].isspace()):
+            return False
+        if stripped.startswith("yield") and (len(stripped) == 5 or stripped[5].isspace()):
+            return False
+        # A direct raise leaves no successful return path.  Do not mislabel
+        # such helpers as implicit-None merely because they have no return
+        # token; the dedicated NoReturn rule may still prove the stricter
+        # docstring/raise shape above.
+        if col == indent + 4 and stripped.startswith("raise") and (
+            len(stripped) == 5 or stripped[5].isspace()
+        ):
+            return False
+    return True
+
+
+def _def_uniform_return(
+    lines: list[str],
+    masked: list[list[str]],
+    row: int,
+    indent: int,
+    starts: set[int],
+    class_types: dict[str, str] | None = None,
+    callable_returns: dict[str, str] | None = None,
+    qualified: str | None = None,
+    module: str | None = None,
+    parameter_types: dict[str, str] | None = None,
+) -> str | None:
+    """Prove a Python-visible function whose explicit branches agree.
+
+    This is intentionally structural: parse a pure-Python body, require all
+    reachable paths to terminate (or expose the ordinary implicit ``None``),
+    and classify every explicit return with the same literal/index contract
+    used by the branch-free rule.  Cython declarations and dynamic expressions
+    fail closed instead of being widened to a public base or ``Any``.
+    """
+    body: list[str] = []
+    for j in range(row, len(lines)):
+        visible = "".join(masked[j]).expandtabs(8)
+        stripped = visible.strip()
+        col = len(visible) - len(visible.lstrip())
+        if j + 1 in starts and stripped and col <= indent:
+            break
+        if stripped.startswith(("cdef ", "cpdef ", "cimport ", "from ")):
+            return None
+        expanded = lines[j].expandtabs(8)
+        prefix = indent + 4
+        if expanded.strip() and len(expanded) < prefix:
+            return None
+        body.append("    " + expanded[prefix:])
+    if not body:
+        return None
+    try:
+        function = ast.parse("def _probe():\n" + "".join(body)).body[0]
+    except (SyntaxError, ValueError):
+        return None
+    if not isinstance(function, ast.FunctionDef):
+        return None
+    returns, has_yield = _returns(function.body)
+    if has_yield or not returns:
+        return None
+    # A conditional raise is not an implicit-None path: it either terminates
+    # or reaches another branch.  Keep this data-dependent shape unresolved.
+    if any(isinstance(node, ast.Raise) for node in ast.walk(function)):
+        return None
+    fallthrough = _may_fall_through(function.body)
+    if fallthrough and not _implicit_none_is_safe(function.body):
+        return None
+    inferred: list[str] = []
+    for result in returns:
+        expression = ast.unparse(result.value) if result.value is not None else "None"
+        synthetic = ["    return " + expression + "\n"]
+        synthetic_masked = [list(synthetic[0])]
+        annotation = _def_trivial_return(
+            synthetic,
+            synthetic_masked,
+            0,
+            0,
+            {1},
+            class_types,
+            callable_returns,
+            qualified,
+            module,
+            parameter_types,
+        )
+        if annotation is None:
+            return None
+        inferred.append(annotation)
+    if len(set(inferred)) != 1:
+        return None
+    if fallthrough:
+        inferred.append("None")
+    unique = list(dict.fromkeys(inferred))
+    return unique[0] if len(unique) == 1 else " | ".join(unique)
+
+
+def _def_header(
+    lines: list[str], masked: list[list[str]], row: int
+) -> tuple[str, int] | None:
+    """Read a single- or multi-line Python-visible ``def`` header.
+
+    Cython uses multiline signatures frequently.  We only accept a header
+    whose closing colon is unambiguous (outside the parameter parentheses)
+    and whose line has no inline body; all body proofs remain lexical and
+    fail closed as before.
+    """
+    if row < 1 or row > len(lines):
+        return None
+    first = "".join(masked[row - 1]).expandtabs(8)
+    stripped = first.lstrip()
+    match = re.match(r"^def\s+([A-Za-z_]\w*)\s*\(", stripped)
+    if not match:
+        return None
+    depth = 0
+    seen_open = False
+    for index in range(row - 1, min(len(lines), row + 63)):
+        visible = "".join(masked[index]).expandtabs(8)
+        for position, character in enumerate(visible):
+            if character == "(":
+                depth += 1
+                seen_open = True
+            elif character == ")" and depth:
+                depth -= 1
+            elif character == ":" and seen_open and depth == 0:
+                if visible[position + 1:].strip():
+                    return None
+                return match.group(1), index + 1
+    return None
+
+
 def declarations(
     text: str,
     class_types: dict[str, str] | None = None,
     callable_returns: dict[str, str] | None = None,
     module: str | None = None,
+    parameter_contracts: dict[str, dict[str, str]] | None = None,
 ) -> list[tuple[str, str, int]]:
     """Read supported headers at module/class scope after masking literals.
 
@@ -452,20 +665,31 @@ def declarations(
         elif direct:
             # Only complete single-line def headers; nested definitions are
             # excluded by the same module/class scope guard as cpdef.
-            header = re.match(r'^def\s+([A-Za-z_]\w*)\(.*\)\s*:\s*$', stripped)
+            header = _def_header(lines, masked, row)
             previous = next((''.join(masked[j]).strip() for j in range(row-2, -1, -1) if ''.join(masked[j]).strip()), '')
             if header:
-                qualified = '.'.join([s[1] for s in scopes] + [header.group(1)])
+                function_name, body_row = header
+                qualified = '.'.join([s[1] for s in scopes] + [function_name])
                 lookup_qualified = f"{module}.{qualified}" if module else qualified
-                if _def_always_raises(lines, masked, row, indent, starts):
+                parameter_types = parameter_contracts.get(lookup_qualified) if parameter_contracts else None
+                if _def_always_raises(lines, masked, body_row, indent, starts):
                     result.append((qualified, 'NoReturn', row))
-                elif (annotation := _def_trivial_return(
-                    lines, masked, row, indent, starts, class_types,
+                elif (annotation := _def_uniform_return(
+                    lines, masked, body_row, indent, starts, class_types,
                     callable_returns, lookup_qualified, module,
+                    parameter_types,
+                )):
+                    result.append((qualified, annotation, row))
+                elif _def_implicit_none(lines, masked, body_row, indent, starts):
+                    result.append((qualified, 'None', row))
+                elif (annotation := _def_trivial_return(
+                    lines, masked, body_row, indent, starts, class_types,
+                    callable_returns, lookup_qualified, module,
+                    parameter_types,
                 )):
                     result.append((qualified, annotation, row))
                 elif not previous.startswith('@'):
-                    annotation = local_return(lines, masked, row, indent, starts)
+                    annotation = local_return(lines, masked, body_row, indent, starts)
                     if annotation:
                         result.append((qualified, annotation, row))
     return result
@@ -476,6 +700,7 @@ def infer(root: Path, index: Path | None = None) -> tuple[dict[str, str], list[d
     types: dict[str, set[str]] = {}
     class_types = _unique_class_types(index)
     callable_returns = _unique_callable_returns(index)
+    parameter_contracts = _unique_parameter_contracts(index)
     for path in sorted(p for p in root.rglob('*') if p.suffix in {'.pyx', '.pxd'}):
         data = path.read_bytes()
         try:
@@ -486,7 +711,9 @@ def infer(root: Path, index: Path | None = None) -> tuple[dict[str, str], list[d
         if parts[-1] == '__init__':
             parts.pop()
         module = '.'.join([root.name, *parts])
-        for name, annotation, line in declarations(text, class_types, callable_returns, module):
+        for name, annotation, line in declarations(
+            text, class_types, callable_returns, module, parameter_contracts
+        ):
             qualified = module + '.' + name
             types.setdefault(qualified, set()).add(annotation)
             evidence.append({'qualifiedName': qualified, 'returnType': annotation,

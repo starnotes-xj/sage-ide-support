@@ -23,15 +23,15 @@
 
 - canonical 索引：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.json`
 - 最终审计：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.audit.final.json`
-- Sage 10.9 / Python 3.13：`entries=85799`、`callableEntries=52747`、`signatures=52451`。
-- 返回分类：`UNKNOWN=8142`、`CONCRETE=8661`、`TYPE_VARIABLE=3659`、`UNION_OR_OPTIONAL=4631`、`NO_RETURN=278`；`audit_contracts.py` exit 0。
-- 最新增量：Cython 无分支构造器/调用链/属性合同实际应用 `55+5=60` 个；抽象 ABC 仅按文档“唯一直接子类”解析，`ComplexField -> ComplexField_class`、`RealIntervalField -> RealIntervalField_class` 已由 WSL `sage -c` 实跑确认。
-- 测试：`PYTHONUTF8=1 PYTHONIOENCODING=utf-8 python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`，`306` 项通过；`compileall`、`git diff --check` 通过；源码/Cython 合同重复应用均 `applied=0`。
-- `generate.py` 仍因已知 `conflicts=2` 返回 exit 3；`missing=0`，这不是本轮回归。
+- Sage 10.9 / Python 3.13：`entries=85801`、`callableEntries=52747`、`signatures=52451`。
+- 返回分类：`UNKNOWN=7980`、`CONCRETE=8686`、`TYPE_VARIABLE=3663`、`UNION_OR_OPTIONAL=4634`、`NO_RETURN=278`；`audit_contracts.py` exit 0。
+- 最新增量：Cython 无分支/副作用/同型条件分支/多行头规则合同实际新增应用 `54` 个（累计由 `8142` 降至 `7980`）；索引参数合同只有所有重载一致且源码 `return 参数` 才生效，动态或冲突实现保持 UNKNOWN。抽象 ABC 仅按文档“唯一直接子类”解析，`ComplexField -> ComplexField_class`、`RealIntervalField -> RealIntervalField_class` 已由 WSL `sage -c` 实跑确认。
+- 测试：`PYTHONUTF8=1 PYTHONIOENCODING=utf-8 python -m unittest discover -s tools/sage-api-index -p 'test_*.py'`，`310` 项通过（70.730 秒）；`compileall`、`git diff --check` 通过；Cython/源码合同重复应用均 `applied=0`。
+- `generate.py` 产生 `missing=14`、已知 `conflicts=2`（本次命令 exit 1，索引仍已生成）；最终 `audit_contracts.py` exit 0。expected-high-value 仅是旧 fixture 覆盖清单，不能冒充 10.9 完整质量门。
 
 ## 4. 下一步与限制
 
-- 继续按 UNKNOWN 分布批量处理动态后端、条件返回、多实现泛型和副作用接口；必须有源码/索引/参数或实际运行的可重复证据，不能用单样本观测或公共基类兜底。
+- 继续按 UNKNOWN 分布批量处理动态后端、条件返回、多实现泛型和副作用接口；下一批优先查找“同一具体接收者/参数合同在所有实现一致”的源证据。必须有源码/索引/参数或实际运行的可重复证据，不能用单样本观测或公共基类兜底。
 - 完成后重建插件 ZIP，执行 CTF ECC/矩阵/多项式/有限域场景的 fresh PyCharm completion、Quick Documentation、语法糖和运行日志 smoke。
 - Gradle 产品构建、installer smoke、`verify-upstream-staging.ps1 -FinalCheck` 尚未完成；官方 checkout 当前 SHA 为 `3b652e714c12009bb69f0a2d2416dad02259fe5d`，与规定基线不符，因此不能宣称产品验收完成。
 - WSL Sage 可用；接口包装器的 `sage0` 缺失模块属于外部环境，不作为插件回归证据。
