@@ -24,6 +24,40 @@ class ContractAuditTest(unittest.TestCase):
         self.assertEqual("TYPE_VARIABLE", audit_contracts.classify_return({"state": "KNOWN", "expression": "T"}, [{"name": "T"}]))
         self.assertEqual("NO_RETURN", audit_contracts.classify_return({"state": "KNOWN", "expression": "NoReturn"}))
         self.assertEqual("CONCRETE", audit_contracts.classify_return({"state": "KNOWN", "expression": "sage.foo.Foo"}))
+        self.assertEqual(
+            "CONCRETE",
+            audit_contracts.classify_return(
+                {"state": "KNOWN", "expression": "sage.foo.Foo_generic"},
+                structural_leaf_paths={"sage.foo.Foo_generic"},
+            ),
+        )
+
+    def test_audit_uses_index_hierarchy_to_classify_structural_leaves(self):
+        index = {
+            "entries": [
+                {
+                    "qualifiedName": "sage.foo.Foo_generic",
+                    "kind": "CLASS",
+                    "parents": ["sage.foo.Protocol"],
+                },
+                {"qualifiedName": "sage.foo.Protocol", "kind": "CLASS", "parents": []},
+                {
+                    "qualifiedName": "sage.foo.make",
+                    "kind": "FUNCTION",
+                    "signatures": [
+                        {
+                            "returnType": {
+                                "state": "KNOWN",
+                                "expression": "sage.foo.Foo_generic",
+                            }
+                        }
+                    ],
+                },
+            ]
+        }
+        report = audit_contracts.audit_index(index)
+        self.assertEqual(1, report["counts"]["returnClasses"]["CONCRETE"])
+        self.assertNotIn("STRUCTURAL_BASE", report["counts"]["returnClasses"])
 
     def test_audit_reports_callable_and_source_gaps(self):
         index = {

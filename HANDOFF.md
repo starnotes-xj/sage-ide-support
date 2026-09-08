@@ -24,7 +24,7 @@
 - canonical 索引：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.json`
 - 最终审计：`G:\sage-build\staging-build6\sage-api-curated-type-contracts.audit.final.json`
 - Sage 10.9 / Python 3.13：`entries=85828`、`callableEntries=52747`、`signatures=52451`。
-- 当前返回分类：`UNKNOWN=7325`、`CONCRETE=8800`、`TYPE_VARIABLE=3691`、`UNION_OR_OPTIONAL=4768`、`STRUCTURAL_BASE=95`、`NO_RETURN=338`；`audit_contracts.py` exit 0。
+- 当前返回分类：`UNKNOWN=7322`、`CONCRETE=8821`、`TYPE_VARIABLE=3691`、`UNION_OR_OPTIONAL=4768`、`STRUCTURAL_BASE=77`、`NO_RETURN=338`；`audit_contracts.py` exit 0。
 - 最新增量：Cython 无分支/副作用/同型条件分支/多行头规则累计应用 `54` 个；本轮修正引号联合解析并写入 `21` 个源码证明的多实现联合合同，再传播 `99` 个唯一父类实现合同（累计 UNKNOWN 由 `8142` 降至 `7857`）。父合同传播同时覆盖 METHOD/PROPERTY，且只保留最近层唯一同值合同；`*_generic` 仅在与非结构叶类或 `type` 工厂同一联合中允许；单独 `_generic`、`_base`、`_parent`、`_element`、`_factory` 仍拒绝。`PowerSeriesRing(ZZ,'t')` 实跑为 `PowerSeriesRing_domain_with_category`，`AffineSpace(GF(5),2)` 实跑为 `AffineSpace_finite_field_with_category`。
 - 测试：全量回归 `311` 项通过（45.974 秒）；本轮聚焦审计/源合同测试、父合同测试与 Cython 测试均通过；`compileall`、`git diff --check` 通过；源/父/Cython 合同重复应用均 `applied=0`。重新运行既有结构化注解流水线报告 378 个文件编辑，但 canonical 声明/UNKNOWN 无变化，未计入新增减少。
 - `generate.py` 产生 `missing=14`、已知 `conflicts=2`（本次命令 exit 1，索引仍已生成）；最终 `audit_contracts.py` exit 0。expected-high-value 仅是旧 fixture 覆盖清单，不能冒充 10.9 完整质量门。
@@ -41,10 +41,13 @@
 - 关系容器归一化复核：索引桥现在递归保留已验证的 `Iterator/tuple/list/set/dict` 关系元素合同，仍拒绝任意泛型和未约束 TypeVar。源码重推断 `73304` 条合同；当前 UNKNOWN 交集未出现可安全写入的具体合同（唯一候选来自任意 callable 的不充分推断，按 fail-closed 拒绝），canonical 保持 `UNKNOWN=7368`。新增源合同测试 `35` 项通过。
 - 父对象工厂数据流批次：对未被源码覆盖的 `self.parent()` 建立仅供局部传播的内部父对象标记；调用父对象构造器或索引中已证明的 `*Element[Self]` 关系方法时解析为 `ParentElement[Self]`。关系方法集合由索引合同自动派生，不使用函数名白名单；任意 callable（`PoorManMap.__call__`）明确拒绝。WSL Sage 10.9 源码重推断 `73720` 条，安全交集写入 `42` 条（35 条父元素关系、7 条有限 Self/None/list 联合），重建 canonical `entries=85828`、`UNKNOWN=7326`、`UNION_OR_OPTIONAL=4767`、`GENERIC=2491`，审计 exit 0。
 - 父合同固定点复核：更新后的继承/成员合同只新增 1 条可证明的 `sage.interfaces.mathematica.MathematicaElement._reduce -> str | Self`（源码文档明确字符串回退或对应 Sage 对象），没有其他安全父合同。重建 canonical 后 `UNKNOWN=7325`、`UNION_OR_OPTIONAL=4768`，`propagate_parent_contracts.py` 再次运行 `applied=0`。
+- 结构叶类合同批次：新增数据驱动的索引层级规则，仅当源码合同指向 `_generic`/`_base`/`_element`/`_parent`/`_factory` 类且父边集合证明没有子类时才允许具体返回值；不维护类名白名单。WSL Sage 10.9 重复运行证明 `QuarticCurve(...)` 返回 `QuarticCurve_generic_with_category`、`toric_varieties.P2().K()` 返回 `ToricDivisor_generic`；`PoorManMap.__call__` 的任意 callable 联合、`Schemes_over_base` 和 `PolynomialSequence_generic` 均因动态/子类分支拒绝。生成并提升 canonical 后 `UNKNOWN=7323`（`7325 -> 7323`）、`CONCRETE=8820`、`STRUCTURAL_BASE=77`，索引与 formal copy SHA256 为 `c39e5ae75362bffe92d30cdb397e4b371aa05f562a5a5a6fac08e434bb2531f2`。
+- Cython 叶类合同复核：全量 Sage 10.9 `.pyx/.pxd` 源码推断仅剩 `IdentityFunctor` 一个 UNKNOWN 交集；源码第 609 行明确 `return IdentityFunctor_generic(C)`，索引无子类且两次 WSL 实跑均为 `sage.categories.functor.IdentityFunctor_generic`，按同一层级规则写入。canonical/formal copy SHA256 为 `6e394f1844b3674d6f08a9208ddd60698bc8a24abeed00ea37c2aaaf9fe49c05`，`UNKNOWN=7322`（`7323 -> 7322`）、`CONCRETE=8821`，Cython 重复应用 `applied=0`。
+- 可变参数防回归：源码推断新增通用 AST 检查，未注解 `*args` 取元素（`args[0]`）不再因局部数据流偶合而生成 Sage 具体合同；返回整个可变参数容器仍准确保留 `tuple`，已有 `vararg_identity` 回归测试通过。重新推断合同数为 `73694`，与当前 UNKNOWN 的交集只剩 `Schemes.__classcall_private__` 和 `Ideal_1poly_field.groebner_basis` 两个有子类结构分支，及无稳定输出的任意 callable 已被排除；应用结果 `applied=0`，canonical 保持 `UNKNOWN=7322`。
 
 ## 4. 下一步与限制
 
-- 继续按 UNKNOWN 分布批量处理动态后端、条件返回、多实现泛型和副作用接口；下一批优先查找“同一具体接收者/参数合同在所有实现一致”的源证据。必须有源码/索引/参数或实际运行的可重复证据，不能用单样本观测或公共基类兜底。当前 `7325` 个 UNKNOWN 中，动态后端/条件分支/副作用接口仍占主要部分，继续保持 fail-closed。
+- 继续按 UNKNOWN 分布批量处理动态后端、条件返回、多实现泛型和副作用接口；下一批优先查找“同一具体接收者/参数合同在所有实现一致”的源证据。必须有源码/索引/参数或实际运行的可重复证据，不能用单样本观测或公共基类兜底。当前 `7322` 个 UNKNOWN 中，动态后端/条件分支/副作用接口仍占主要部分，继续保持 fail-closed。
 - 完成后重建插件 ZIP，执行 CTF ECC/矩阵/多项式/有限域场景的 fresh PyCharm completion、Quick Documentation、语法糖和运行日志 smoke。
 - Gradle 产品构建、installer smoke、`verify-upstream-staging.ps1 -FinalCheck` 尚未完成；官方 checkout 当前 SHA 为 `3b652e714c12009bb69f0a2d2416dad02259fe5d`，与规定基线不符，因此不能宣称产品验收完成。
 - WSL Sage 可用；接口包装器的 `sage0` 缺失模块属于外部环境，不作为插件回归证据。

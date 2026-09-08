@@ -27,14 +27,31 @@ _STRUCTURAL_SUFFIXES = ("_base", "_generic", "_element", "_parent", "_factory")
 _INDEX_CHILDREN_CACHE: dict[str, dict[str, set[str]]] = {}
 
 
-def _is_concrete_sage_path(value: str, *, allow_generic: bool = False) -> bool:
-    """Accept only leaf-like Sage classes, never public structural bases."""
+def _is_concrete_sage_path(
+    value: str,
+    *,
+    allow_generic: bool = False,
+    indexed_children: dict[str, set[str]] | None = None,
+) -> bool:
+    """Accept a Sage class only when its indexed hierarchy proves it is a leaf.
+
+    Structural suffixes are a useful fail-closed default for source maps that
+    have no class index.  When a generated index is available, however, a
+    source-proven class with one of those suffixes is still a valid concrete
+    implementation if no indexed class derives from it.  This distinguishes
+    real leaves such as ``QuarticCurve_generic`` from dispatch bases such as
+    ``PolynomialSequence_generic`` without maintaining a class-name list.
+    """
     if not value.startswith("sage."):
         return False
     final = value.rsplit(".", 1)[-1].lower()
     if final.endswith("_generic"):
+        if indexed_children is not None and value not in indexed_children:
+            return True
         return allow_generic
-    return not any(final.endswith(suffix) for suffix in _STRUCTURAL_SUFFIXES)
+    if any(final.endswith(suffix) for suffix in _STRUCTURAL_SUFFIXES):
+        return indexed_children is not None and value not in indexed_children
+    return True
 
 
 def _module_name(path: Path, root: Path) -> str:
@@ -90,7 +107,11 @@ def _valid_annotation(
         # relying on a class-name suffix list.
         if value in children and not source_proven:
             return False
-        return _is_concrete_sage_path(value, allow_generic=allow_generic)
+        return _is_concrete_sage_path(
+            value,
+            allow_generic=allow_generic,
+            indexed_children=children if index is not None else None,
+        )
 
     if annotation in _BUILTINS or annotation in {"Self", "Iterator"}:
         return True

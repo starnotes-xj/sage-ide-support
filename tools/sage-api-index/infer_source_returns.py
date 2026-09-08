@@ -1468,6 +1468,26 @@ def _returns(nodes: Iterable[ast.stmt]) -> tuple[list[ast.Return], bool]:
     return returns, has_yield
 
 
+def _returns_untyped_vararg_item(value: ast.AST | None, vararg_name: str | None) -> bool:
+    """Reject an inferred contract that selects an item from ``*args``.
+
+    A variadic parameter has no element type unless its declaration or an
+    indexed overload supplies one.  Returning ``args[0]`` (including after a
+    local reassignment) therefore forwards an arbitrary callable/result and
+    must not be turned into a Sage class merely because a data-flow pass found
+    a coincidental class-shaped value.  Returning the vararg container itself
+    remains valid as the exact Python ``tuple`` protocol.
+    """
+    if value is None or not vararg_name:
+        return False
+    return any(
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == vararg_name
+        for node in ast.walk(value)
+    )
+
+
 def _yields(nodes: Iterable[ast.stmt]) -> list[tuple[ast.AST | None, bool]]:
     """Collect generator expressions without descending into nested scopes."""
     result: list[tuple[ast.AST | None, bool]] = []
@@ -2848,22 +2868,29 @@ def infer(
                     elif returns and (
                         not _may_fall_through(body) or _implicit_none_is_safe(body)
                     ):
-                        inferred = [_public_type(analyzer.expr_type(r.value)) for r in returns]
-                        if _may_fall_through(body) and _implicit_none_is_safe(body):
-                            inferred.append("None")
-                        # A non-fallthrough body reaches one of these explicit
-                        # returns.  Preserve every independently proven
-                        # expression shape as an exact union instead of
-                        # discarding a parameter/branch-sensitive factory.
-                        # ``expr_type`` is deliberately fail-closed, so an
-                        # unresolved arm still prevents publication.
-                        if inferred and all(value is not None for value in inferred):
-                            unique = list(dict.fromkeys(inferred))
-                            publish(
-                                qualified,
-                                unique[0] if len(unique) == 1 else _union(*unique),
-                                property_node=property_node,
+                        if not any(
+                            _returns_untyped_vararg_item(
+                                result.value,
+                                node.args.vararg.arg if node.args.vararg is not None else None,
                             )
+                            for result in returns
+                        ):
+                            inferred = [_public_type(analyzer.expr_type(r.value)) for r in returns]
+                            if _may_fall_through(body) and _implicit_none_is_safe(body):
+                                inferred.append("None")
+                            # A non-fallthrough body reaches one of these explicit
+                            # returns.  Preserve every independently proven
+                            # expression shape as an exact union instead of
+                            # discarding a parameter/branch-sensitive factory.
+                            # ``expr_type`` is deliberately fail-closed, so an
+                            # unresolved arm still prevents publication.
+                            if inferred and all(value is not None for value in inferred):
+                                unique = list(dict.fromkeys(inferred))
+                                publish(
+                                    qualified,
+                                    unique[0] if len(unique) == 1 else _union(*unique),
+                                    property_node=property_node,
+                                )
                 elif not returns:
                     # Python's implicit fall-through value is exactly None.
                     # This is safe for functions with no explicit return at
@@ -2938,6 +2965,14 @@ def infer(
             if has_yield or not returns:
                 continue
             if _may_fall_through(list(node.body)) and not _implicit_none_is_safe(list(node.body)):
+                continue
+            if any(
+                _returns_untyped_vararg_item(
+                    result.value,
+                    node.args.vararg.arg if node.args.vararg is not None else None,
+                )
+                for result in returns
+            ):
                 continue
             module = owner.rsplit(".", 1)[0] if owner else qualified.rsplit(".", 1)[0]
             analyzer = _FunctionAnalyzer(

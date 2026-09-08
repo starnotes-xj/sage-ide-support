@@ -955,6 +955,61 @@ class Parent:
             self.assertTrue(_valid_annotation("'sage.base.Parent'", index, source_proven=True))
             self.assertTrue(_valid_annotation("'sage.leaf.Child'", index))
 
+    def test_apply_accepts_indexed_structural_leaf_when_no_child_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.impl.Result_generic",
+                                "kind": "CLASS",
+                                "parents": ["sage.protocol.Protocol"],
+                            },
+                            {
+                                "qualifiedName": "sage.protocol.Protocol",
+                                "kind": "CLASS",
+                                "parents": [],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            # The suffix alone is not enough to publish a type, but the
+            # indexed hierarchy proves this source-defined implementation has
+            # no concrete subclass and is therefore a leaf result.
+            self.assertTrue(
+                _valid_annotation("'sage.impl.Result_generic'", index, source_proven=True)
+            )
+
+    def test_apply_still_rejects_indexed_structural_class_with_children(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.impl.Result_generic",
+                                "kind": "CLASS",
+                                "parents": [],
+                            },
+                            {
+                                "qualifiedName": "sage.impl.Result_leaf",
+                                "kind": "CLASS",
+                                "parents": ["sage.impl.Result_generic"],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertFalse(
+                _valid_annotation("'sage.impl.Result_generic'", index, source_proven=True)
+            )
+
     def test_infer_requires_a_unique_non_fallthrough_shape(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "sage"
@@ -1097,6 +1152,9 @@ def typed_zip(left: list[int], right: set[str]):
 
 def vararg_identity(*args):
     return args
+
+def vararg_item(*args):
+    return args[0]
 
 def kwarg_identity(**kwargs):
     return kwargs
@@ -1454,6 +1512,7 @@ def make():
             self.assertEqual(contracts["sage.typed_zip"], "Iterator[tuple[int, str]]")
             self.assertEqual(contracts["sage.ClassIdentity.identity"], "type")
             self.assertEqual(contracts["sage.vararg_identity"], "tuple")
+            self.assertNotIn("sage.vararg_item", contracts)
             self.assertEqual(contracts["sage.kwarg_identity"], "dict")
             self.assertEqual(contracts["sage.first_or_none"], "int | None")
             self.assertEqual(contracts["sage.first_tuple_or_none"], "tuple[int, str] | None")

@@ -109,7 +109,7 @@ python tools/sage-api-index/audit_contracts.py `
 
 ### 纯 Python 源码批量合同（非白名单）
 
-WSL Sage 安装同时包含可审计的纯 Python 实现。`infer_source_returns.py` 用 AST 扫描这些源文件：只接受所有成功返回路径形状一致的字面量/容器/迭代器/具体 Sage 构造、明确的 Python 返回注解、简单局部变量、稳定 `self.attr` 赋值、身份/成员比较与同型闭运算，以及同类或同模块包装函数传播；无条件抛异常标注为 `NoReturn`，没有显式 `return` 的普通函数按 Python 语义标注为 `None`。循环、动态属性、参数相关分支和无法解析的工厂会保留未知，不会降级为 `Any` 或公共基类。
+WSL Sage 安装同时包含可审计的纯 Python 实现。`infer_source_returns.py` 用 AST 扫描这些源文件：只接受所有成功返回路径形状一致的字面量/容器/迭代器/具体 Sage 构造、明确的 Python 返回注解、简单局部变量、稳定 `self.attr` 赋值、身份/成员比较与同型闭运算，以及同类或同模块包装函数传播；无条件抛异常标注为 `NoReturn`，没有显式 `return` 的普通函数按 Python 语义标注为 `None`。未注解的可变参数若被取元素后返回（如 `args[0]`）会被识别为任意调用结果并保持未知；只有返回整个 `tuple`/`dict` 等参数容器时才保留 Python 外层类型。循环、动态属性、参数相关分支和无法解析的工厂会保留未知，不会降级为 `Any` 或公共基类。
 
 ```powershell
 wsl.exe -d Ubuntu -- python3 tools/sage-api-index/infer_source_returns.py `
@@ -142,6 +142,8 @@ wsl.exe -d Ubuntu -- python3 tools/sage-api-index/infer_source_returns.py `
 ### 父对象合同传播（非白名单）
 
 `propagate_parent_contracts.py` 读取已生成索引中的继承图和父类方法合同，按最近继承层传播唯一且精确的返回类型。它只接受内建/容器、`Self`、`NoReturn` 或继承图中的叶 Sage 类；公共基类、泛化 `ParentElement[...]`、多父冲突和动态分支均保持未知，因此不会把公共基类当作最终返回类型。
+
+结构后缀也按同一索引规则处理：`_generic`、`_base`、`_element`、`_parent`、`_factory` 单独出现时默认拒绝；只有源代码已经给出该限定名，且完整索引中没有任何子类继承它时，才把它视为结构叶类并允许作为具体返回值。这个判断来自父边集合，不维护类名白名单；一旦索引发现子类，返回值重新保持 `STRUCTURAL_BASE`/`UNKNOWN`。
 
 ### 运行时动态合同探针
 

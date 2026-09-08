@@ -70,7 +70,11 @@ def _expression(value: Any) -> str | None:
     return expression if isinstance(expression, str) and expression else None
 
 
-def classify_return(return_type: Any, type_parameters: Iterable[dict[str, Any]] = ()) -> str:
+def classify_return(
+    return_type: Any,
+    type_parameters: Iterable[dict[str, Any]] = (),
+    structural_leaf_paths: Iterable[str] = (),
+) -> str:
     """Return a conservative quality class for one indexed return type.
 
     ``CONCRETE`` means the expression is a named type from the source
@@ -80,6 +84,7 @@ def classify_return(return_type: Any, type_parameters: Iterable[dict[str, Any]] 
     never silently counted as a concrete Sage result.
     """
     state = _state(return_type)
+    structural_leaves = set(structural_leaf_paths)
     if state == "UNKNOWN":
         return "UNKNOWN"
     if state == "DYNAMIC":
@@ -107,13 +112,20 @@ def classify_return(return_type: Any, type_parameters: Iterable[dict[str, Any]] 
             for arm in expression.replace("Union[", "").replace("Optional[", "").strip("[]").split(" | ")
         ]
         if any(
-            any(arm.rsplit(".", 1)[-1].lower().endswith(suffix) for suffix in ("_base", "_element", "_parent", "_factory"))
+            any(
+                arm.rsplit(".", 1)[-1].lower().endswith(suffix)
+                and arm not in structural_leaves
+                for suffix in ("_base", "_element", "_parent", "_factory")
+            )
             for arm in arms
         ):
             return "STRUCTURAL_BASE"
+        # ``*_generic`` is intentionally retained as a union quality class.
+        # A union has already exposed its alternatives, so the generic arm is
+        # not by itself evidence that the public result is a dispatch base.
         return "UNION_OR_OPTIONAL"
     final = expression.rsplit(".", 1)[-1].lower()
-    if any(final.endswith(suffix) for suffix in STRUCTURAL_SUFFIXES):
+    if any(final.endswith(suffix) for suffix in STRUCTURAL_SUFFIXES) and expression not in structural_leaves:
         return "STRUCTURAL_BASE"
     if "[" in expression:
         return "GENERIC"
@@ -122,7 +134,10 @@ def classify_return(return_type: Any, type_parameters: Iterable[dict[str, Any]] 
     return "UNQUALIFIED"
 
 
-def _signature_quality(signature: Any) -> dict[str, Any]:
+def _signature_quality(
+    signature: Any,
+    structural_leaf_paths: Iterable[str] = (),
+) -> dict[str, Any]:
     if not isinstance(signature, dict):
         signature = {}
     parameters = signature.get("parameters")
@@ -138,7 +153,7 @@ def _signature_quality(signature: Any) -> dict[str, Any]:
         type_parameters = []
     return_type = signature.get("returnType")
     return {
-        "return": classify_return(return_type, type_parameters),
+        "return": classify_return(return_type, type_parameters, structural_leaf_paths),
         "returnState": _state(return_type),
         "returnExpression": _expression(return_type),
         "parameterStates": dict(sorted(parameter_states.items())),
@@ -147,11 +162,14 @@ def _signature_quality(signature: Any) -> dict[str, Any]:
     }
 
 
-def _entry_quality(entry: dict[str, Any]) -> dict[str, Any]:
+def _entry_quality(
+    entry: dict[str, Any],
+    structural_leaf_paths: Iterable[str] = (),
+) -> dict[str, Any]:
     signatures = entry.get("signatures")
     if not isinstance(signatures, list):
         signatures = []
-    qualities = [_signature_quality(signature) for signature in signatures]
+    qualities = [_signature_quality(signature, structural_leaf_paths) for signature in signatures]
     returns = Counter(item["return"] for item in qualities)
     parameter_states = Counter()
     for item in qualities:
@@ -216,6 +234,29 @@ def audit_index(index: dict[str, Any], *, source_root: Path | None = None, sampl
     entries = index.get("entries") if isinstance(index, dict) else None
     if not isinstance(entries, list):
         raise ValueError("index entries must be an array")
+    class_paths = {
+        entry.get("qualifiedName")
+        for entry in entries
+        if isinstance(entry, dict)
+        and entry.get("kind") == "CLASS"
+        and isinstance(entry.get("qualifiedName"), str)
+    }
+    indexed_children: defaultdict[str, set[str]] = defaultdict(set)
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("kind") != "CLASS":
+            continue
+        child = entry.get("qualifiedName")
+        if not isinstance(child, str):
+            continue
+        for parent in entry.get("parents", ()):
+            if isinstance(parent, str):
+                indexed_children[parent].add(child)
+    structural_leaf_paths = {
+        path
+        for path in class_paths
+        if any(path.rsplit(".", 1)[-1].lower().endswith(suffix) for suffix in STRUCTURAL_SUFFIXES)
+        and path not in indexed_children
+    }
     kind_counts = Counter()
     callable_entries = [entry for entry in entries if isinstance(entry, dict) and entry.get("kind") in CALLABLE_KINDS]
     return_classes = Counter()
@@ -236,7 +277,7 @@ def audit_index(index: dict[str, Any], *, source_root: Path | None = None, sampl
         kind_counts[kind] += 1
         if kind not in CALLABLE_KINDS:
             continue
-        quality = _entry_quality(entry)
+        quality = _entry_quality(entry, structural_leaf_paths)
         signatures = entry.get("signatures") if isinstance(entry.get("signatures"), list) else []
         if not signatures:
             no_signature += 1
@@ -245,7 +286,7 @@ def audit_index(index: dict[str, Any], *, source_root: Path | None = None, sampl
         documented += quality["hasDocumentation"]
         type_parameter_entries += quality["hasTypeParameters"]
         for signature in signatures:
-            detail = _signature_quality(signature)
+            detail = _signature_quality(signature, structural_leaf_paths)
             result = detail["return"]
             return_classes[result] += 1
             parameter_states.update(detail["parameterStates"])
