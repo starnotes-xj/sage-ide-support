@@ -2077,6 +2077,34 @@ def _index_contracts(index: Path | None) -> dict[str, str]:
             r"sage\.type_contracts\.[A-Za-z_][A-Za-z0-9_]*Element\[Self\]", arm
         ):
             return _quote(arm)
+        # Preserve only builtin container shapes whose arguments are each
+        # independently exact.  Sage source wrappers can then propagate an
+        # iterator/tuple of related elements without widening it to ``dict``
+        # or ``Any``.  Arbitrary generic bases and unconstrained type
+        # variables remain rejected by the recursive normalization.
+        generic = _generic_parts(arm)
+        if generic is not None:
+            base, arguments = generic
+            base = {
+                "typing.Iterator": "Iterator",
+                "collections.abc.Iterator": "Iterator",
+                "typing.List": "list",
+                "typing.Set": "set",
+                "typing.Tuple": "tuple",
+                "typing.Dict": "dict",
+            }.get(base, base)
+            if base not in {"Iterator", "list", "set", "tuple", "dict"}:
+                return None
+            normalized_arguments: list[str] = []
+            for argument in arguments:
+                if argument == "..." and base == "tuple":
+                    normalized_arguments.append(argument)
+                    continue
+                normalized = normalize_arm(argument)
+                if normalized is None:
+                    return None
+                normalized_arguments.append(normalized)
+            return f"{base}[{', '.join(normalized_arguments)}]"
         return None
 
     result: dict[str, str] = {}

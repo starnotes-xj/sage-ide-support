@@ -145,6 +145,52 @@ class SourceContractTest(unittest.TestCase):
             )
             self.assertNotIn("sage.parent.Parent.unbounded", contracts)
 
+    def test_index_contracts_retain_builtin_containers_of_relation_elements(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.parent.Parent.items",
+                                "kind": "METHOD",
+                                "signatures": [
+                                    {
+                                        "returnType": {
+                                            "state": "KNOWN",
+                                            "expression": "typing.Iterator[sage.type_contracts.ParentElement[Self]]",
+                                        }
+                                    }
+                                ],
+                            },
+                            {
+                                "qualifiedName": "sage.parent.Parent.pair",
+                                "kind": "METHOD",
+                                "signatures": [
+                                    {
+                                        "returnType": {
+                                            "state": "KNOWN",
+                                            "expression": "tuple[sage.type_contracts.ParentElement[Self], ...]",
+                                        }
+                                    }
+                                ],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            contracts = _index_contracts(index)
+            self.assertEqual(
+                contracts["sage.parent.Parent.items"],
+                "Iterator['sage.type_contracts.ParentElement[Self]']",
+            )
+            self.assertEqual(
+                contracts["sage.parent.Parent.pair"],
+                "tuple['sage.type_contracts.ParentElement[Self]', ...]",
+            )
+
     def test_source_wrapper_reuses_receiver_and_relation_generic_contracts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "sage"

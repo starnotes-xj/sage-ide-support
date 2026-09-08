@@ -38,6 +38,7 @@
 - 外部父对象关系特化批次：对 `ParentElement[Self]` 只在接收者是索引中精确父类、且其 `__call__`/`_element_constructor_` 唯一收敛到具体 Sage 类时特化；否则保留关系合同。该规则无函数名白名单，并避免把 `ZZ.one()/zero()` 的关系误解释为调用方所属类。Sage 10.9 源码合同 `72464` 条，首轮写入 `31` 个缺失返回；复核后撤回 1 个由 `self.__class__.__base__()` 误得的公共 `Parent` 返回，保留 `30` 个可复核合同。canonical `entries=85828`，`UNKNOWN=7430`（安全批次基线 `7460 -> 7429` 后撤回误合同），`CONCRETE=8800`，最终审计 exit 0。WSL 实跑 `A001110.g(1/2)` 为 `Integer/int`、`A001055.nwf`、`Stream_zero()[1]`、`abs(RootsOfUnityGroup()(…))`、`Order.krull_dimension()` 均为 `Integer`；源合同聚焦测试 `29` 项通过。
 - 父元素协议/动态工厂批次：源码推断新增“接收者与 `element_class` 首参相同”结构合同，并对 `@lazy_attribute`/`@cached_property` 返回的字符串类映射进行内部数据流传播；动态键、未证明父类和描述符映射不会泄漏为公开类。Sage 10.9 源码合同 `73260` 条，与当前 UNKNOWN 交集安全写入 `57` 条（46 条 `ParentElement[Self]`、8 条有限 `Self` 联合及 3 条其他精确关系/类合同），重建 canonical `entries=85828`、`callableEntries=52747`、`signatures=52451`，`UNKNOWN=7373`（`7430 -> 7373`）、`UNION_OR_OPTIONAL=4760`、`GENERIC=2451`，审计 exit 0。新增源合同聚焦测试 `34` 项；完整工具测试 `333` 项通过（83.606 秒）。WSL 实跑 Partition/ExteriorAlgebra 动态元素均返回具体 `element_class` 实例，支持关系合同的运行时依据。
 - 固定点传播复核：在上述 57 条关系合同写入后重新推断得到 `73294` 条源码合同，再安全写入 5 条唯一父元素包装合同；重建后 `UNKNOWN=7368`、`GENERIC=2456`，审计 exit 0。再次推断未发现新的安全交集，当前规则批次收敛。
+- 关系容器归一化复核：索引桥现在递归保留已验证的 `Iterator/tuple/list/set/dict` 关系元素合同，仍拒绝任意泛型和未约束 TypeVar。源码重推断 `73304` 条合同；当前 UNKNOWN 交集未出现可安全写入的具体合同（唯一候选来自任意 callable 的不充分推断，按 fail-closed 拒绝），canonical 保持 `UNKNOWN=7368`。新增源合同测试 `35` 项通过。
 
 ## 4. 下一步与限制
 
