@@ -137,6 +137,8 @@ wsl.exe -d Ubuntu -- python3 tools/sage-api-index/infer_source_returns.py `
 
 源码推断还会对数据流中可证明的类映射做结构化传播：字面量字典的字符串键和值若全部解析为 Sage 类对象，会保留为内部 `@classmap:` 标记；对字面量键的下标调用（包括 `@lazy_attribute`/`@cached_property` 描述符返回的映射）具体化为对应叶类，动态键仍保持未知。`P.element_class(P, value)` 这类接收者与构造首参相同的协议调用只产生 `ParentElement[Self]` 关系，不把动态父类冒充成具体类；描述符自身公开合同仍是 `dict`，内部标记不会泄漏到 `.pyi`。
 
+父对象工厂也采用同一数据流规则：源码中未被子类覆盖的 `self.parent()` 只在推断器内部记为父对象工厂，随后 `parent(value)` 或其已由索引关系合同证明的元素方法才解析为 `ParentElement[Self]`。关系方法集合从索引中已有的 `*Element[Self]` 合同自动派生，不使用函数名白名单；`self.parent()` 本身不会作为公开返回类型，任意 callable（例如 `PoorManMap.__call__`）和不一致分支仍保持 `UNKNOWN`。
+
 ### 父对象合同传播（非白名单）
 
 `propagate_parent_contracts.py` 读取已生成索引中的继承图和父类方法合同，按最近继承层传播唯一且精确的返回类型。它只接受内建/容器、`Self`、`NoReturn` 或继承图中的叶 Sage 类；公共基类、泛化 `ParentElement[...]`、多父冲突和动态分支均保持未知，因此不会把公共基类当作最终返回类型。

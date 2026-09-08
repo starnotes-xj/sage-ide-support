@@ -166,7 +166,9 @@ def _generic_element(value: str | None) -> str | None:
 _CLASS_OBJECT_PREFIX = "@class:"
 _FACTORY_RESULT_PREFIX = "@factory:"
 _CLASS_MAP_PREFIX = "@classmap:"
+_PARENT_OBJECT_PREFIX = "@parent:"
 _PARENT_ELEMENT_OWNERS_CACHE: dict[int, set[str]] = {}
+_RELATION_METHOD_NAMES_CACHE: dict[int, set[str]] = {}
 _STRUCTURAL_SUFFIXES = ("_base", "_generic", "_element", "_parent", "_factory")
 
 
@@ -219,6 +221,8 @@ def _public_type(value: str | None) -> str | None:
     # assignment itself; leaking the marker would make the generated index
     # unparsable and would overstate a dynamic factory object as a Sage class.
     if any(arm.startswith(_FACTORY_RESULT_PREFIX) for arm in value.split(" | ")):
+        return None
+    if any(arm.startswith(_PARENT_OBJECT_PREFIX) for arm in value.split(" | ")):
         return None
     # Literal class maps are an internal data-flow marker used to resolve a
     # subsequent ``classes["key"](...)`` call.  The descriptor itself still
@@ -356,6 +360,34 @@ class _FunctionAnalyzer:
             }
             _PARENT_ELEMENT_OWNERS_CACHE[key] = owners
         return owners
+
+    def _relation_method_names(self) -> set[str]:
+        """Return member names proven to produce a relation element.
+
+        This is derived from the indexed contracts rather than a hard-coded
+        method-name list, so a parent protocol extension automatically gains
+        the same conservative propagation while unrelated methods remain
+        unresolved.
+        """
+        key = id(self.known_contracts)
+        names = _RELATION_METHOD_NAMES_CACHE.get(key)
+        if names is None:
+            names = {
+                qualified.rsplit(".", 1)[-1]
+                for qualified, contract in self.known_contracts.items()
+                if isinstance(contract, str)
+                and any(
+                    arm.strip("'").startswith("sage.type_contracts.")
+                    and re.fullmatch(
+                        r"sage\.type_contracts\.[A-Za-z_][A-Za-z0-9_]*Element\[Self\]",
+                        arm.strip("'"),
+                    )
+                    for arm in contract.split(" | ")
+                )
+                and "." in qualified
+            }
+            _RELATION_METHOD_NAMES_CACHE[key] = names
+        return names
 
     def _resolve_name(self, name: str) -> str | None:
         if name in self.imports:
@@ -577,6 +609,18 @@ class _FunctionAnalyzer:
             and _dotted(node.func.value) != "self"
         ):
             return "'sage.type_contracts.ParentElement[Self]'"
+        # ``self.parent()`` is a Sage parent factory.  Keep an internal
+        # marker for local data flow (``P = self.parent(); P(x)``) while
+        # suppressing it from the public return map.  Source-defined parent
+        # overrides are left to their own contracts.
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "parent"
+            and self.owner is not None
+            and f"{self.owner}.parent" not in self.class_methods
+            and self.expr_type(node.func.value) in {"Self", "@parent:"}
+        ):
+            return _PARENT_OBJECT_PREFIX
         # A factory instance imported from another Sage module is represented
         # in ``known_constants`` by a source-derived ``@factory:...`` marker.
         # Resolve the marker before ordinary name lookup so calls such as
@@ -599,6 +643,11 @@ class _FunctionAnalyzer:
         if callable_type:
             callable_contracts: list[str] = []
             for arm in callable_type.split(" | "):
+                if arm == _PARENT_OBJECT_PREFIX:
+                    callable_contracts.append(
+                        "'sage.type_contracts.ParentElement[Self]'"
+                    )
+                    continue
                 if arm == "Self" and self.owner is not None:
                     receiver = self.owner
                 elif arm.startswith("'sage.") and arm.endswith("'"):
@@ -746,6 +795,11 @@ class _FunctionAnalyzer:
         if isinstance(node.func, ast.Attribute):
             receiver_type = self.expr_type(node.func.value)
             if receiver_type:
+                if (
+                    receiver_type == _PARENT_OBJECT_PREFIX
+                    and node.func.attr in self._relation_method_names()
+                ):
+                    return "'sage.type_contracts.ParentElement[Self]'"
                 receiver_arms = receiver_type.split(" | ")
                 resolved_contracts: list[str] = []
                 for arm in receiver_arms:

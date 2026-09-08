@@ -757,6 +757,47 @@ class Parent:
                 "'sage.type_contracts.ParentElement[Self]'",
             )
 
+    def test_parent_factory_marker_propagates_through_local_constructor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "parent_factory.py").write_text(
+                """class Element:
+    def make(self, value):
+        parent = self.parent()
+        return parent(value)
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(
+                contracts["sage.parent_factory.Element.make"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_parent_factory_relation_method_is_derived_from_index_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "parent_factory_zero.py").write_text(
+                """class Element:
+    def make_zero(self):
+        return self.parent().zero()
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.external.Parent.zero":
+                    "'sage.type_contracts.ParentElement[Self]'",
+                },
+            )
+            self.assertEqual(
+                contracts["sage.parent_factory_zero.Element.make_zero"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
     def test_local_literal_class_map_subscript_call_resolves_concrete_class(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "sage"

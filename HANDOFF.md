@@ -39,10 +39,12 @@
 - 父元素协议/动态工厂批次：源码推断新增“接收者与 `element_class` 首参相同”结构合同，并对 `@lazy_attribute`/`@cached_property` 返回的字符串类映射进行内部数据流传播；动态键、未证明父类和描述符映射不会泄漏为公开类。Sage 10.9 源码合同 `73260` 条，与当前 UNKNOWN 交集安全写入 `57` 条（46 条 `ParentElement[Self]`、8 条有限 `Self` 联合及 3 条其他精确关系/类合同），重建 canonical `entries=85828`、`callableEntries=52747`、`signatures=52451`，`UNKNOWN=7373`（`7430 -> 7373`）、`UNION_OR_OPTIONAL=4760`、`GENERIC=2451`，审计 exit 0。新增源合同聚焦测试 `34` 项；完整工具测试 `333` 项通过（83.606 秒）。WSL 实跑 Partition/ExteriorAlgebra 动态元素均返回具体 `element_class` 实例，支持关系合同的运行时依据。
 - 固定点传播复核：在上述 57 条关系合同写入后重新推断得到 `73294` 条源码合同，再安全写入 5 条唯一父元素包装合同；重建后 `UNKNOWN=7368`、`GENERIC=2456`，审计 exit 0。再次推断未发现新的安全交集，当前规则批次收敛。
 - 关系容器归一化复核：索引桥现在递归保留已验证的 `Iterator/tuple/list/set/dict` 关系元素合同，仍拒绝任意泛型和未约束 TypeVar。源码重推断 `73304` 条合同；当前 UNKNOWN 交集未出现可安全写入的具体合同（唯一候选来自任意 callable 的不充分推断，按 fail-closed 拒绝），canonical 保持 `UNKNOWN=7368`。新增源合同测试 `35` 项通过。
+- 父对象工厂数据流批次：对未被源码覆盖的 `self.parent()` 建立仅供局部传播的内部父对象标记；调用父对象构造器或索引中已证明的 `*Element[Self]` 关系方法时解析为 `ParentElement[Self]`。关系方法集合由索引合同自动派生，不使用函数名白名单；任意 callable（`PoorManMap.__call__`）明确拒绝。WSL Sage 10.9 源码重推断 `73720` 条，安全交集写入 `42` 条（35 条父元素关系、7 条有限 Self/None/list 联合），重建 canonical `entries=85828`、`UNKNOWN=7326`、`UNION_OR_OPTIONAL=4767`、`GENERIC=2491`，审计 exit 0。
+- 父合同固定点复核：更新后的继承/成员合同只新增 1 条可证明的 `sage.interfaces.mathematica.MathematicaElement._reduce -> str | Self`（源码文档明确字符串回退或对应 Sage 对象），没有其他安全父合同。重建 canonical 后 `UNKNOWN=7325`、`UNION_OR_OPTIONAL=4768`，`propagate_parent_contracts.py` 再次运行 `applied=0`。
 
 ## 4. 下一步与限制
 
-- 继续按 UNKNOWN 分布批量处理动态后端、条件返回、多实现泛型和副作用接口；下一批优先查找“同一具体接收者/参数合同在所有实现一致”的源证据。必须有源码/索引/参数或实际运行的可重复证据，不能用单样本观测或公共基类兜底。当前 `7368` 个 UNKNOWN 中，动态后端/条件分支/副作用接口仍占主要部分，继续保持 fail-closed。
+- 继续按 UNKNOWN 分布批量处理动态后端、条件返回、多实现泛型和副作用接口；下一批优先查找“同一具体接收者/参数合同在所有实现一致”的源证据。必须有源码/索引/参数或实际运行的可重复证据，不能用单样本观测或公共基类兜底。当前 `7325` 个 UNKNOWN 中，动态后端/条件分支/副作用接口仍占主要部分，继续保持 fail-closed。
 - 完成后重建插件 ZIP，执行 CTF ECC/矩阵/多项式/有限域场景的 fresh PyCharm completion、Quick Documentation、语法糖和运行日志 smoke。
 - Gradle 产品构建、installer smoke、`verify-upstream-staging.ps1 -FinalCheck` 尚未完成；官方 checkout 当前 SHA 为 `3b652e714c12009bb69f0a2d2416dad02259fe5d`，与规定基线不符，因此不能宣称产品验收完成。
 - WSL Sage 可用；接口包装器的 `sage0` 缺失模块属于外部环境，不作为插件回归证据。
