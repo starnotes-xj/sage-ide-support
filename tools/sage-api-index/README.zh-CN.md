@@ -134,6 +134,8 @@ wsl.exe -d Ubuntu -- python3 tools/sage-api-index/infer_source_returns.py `
 
 `--index` 只导入唯一、已知的具体 `CLASS` 成员合同，以及“返回值 TypeVar 与多个实参同型”的参数合同（例如 `gcd(a: T, b: T) -> T`）。同时，`typing.Self` 会归一化为接收者合同，`sage.type_contracts.*Element[Self]` 只作为已命名的父对象/域关系合同保留；这两类关系不是公共基类，最终由具体接收者和调用上下文解析。索引中的父边只补全 Cython/扩展类的成员查找，不改变最终返回类型。`receiver.element_class(...)` 只有在源码证明 `Element` 类时才产生父对象关系，否则保持未知；因此 `element_class -> type` 不会伪装成元素返回。多重载、公共结构基类、无约束 TypeVar 和动态工厂会被拒绝。这样可解析 `self.codomain().zero()`、`self.attr.method()` 等嵌套调用，同时保持“公共基类只用于成员查找，不能作为最终返回类型”的约束。
 
+源码推断还会对数据流中可证明的类映射做结构化传播：字面量字典的字符串键和值若全部解析为 Sage 类对象，会保留为内部 `@classmap:` 标记；对字面量键的下标调用（包括 `@lazy_attribute`/`@cached_property` 描述符返回的映射）具体化为对应叶类，动态键仍保持未知。`P.element_class(P, value)` 这类接收者与构造首参相同的协议调用只产生 `ParentElement[Self]` 关系，不把动态父类冒充成具体类；描述符自身公开合同仍是 `dict`，内部标记不会泄漏到 `.pyi`。
+
 ### 父对象合同传播（非白名单）
 
 `propagate_parent_contracts.py` 读取已生成索引中的继承图和父类方法合同，按最近继承层传播唯一且精确的返回类型。它只接受内建/容器、`Self`、`NoReturn` 或继承图中的叶 Sage 类；公共基类、泛化 `ParentElement[...]`、多父冲突和动态分支均保持未知，因此不会把公共基类当作最终返回类型。

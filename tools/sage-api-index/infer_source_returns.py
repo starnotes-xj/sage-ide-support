@@ -165,6 +165,7 @@ def _generic_element(value: str | None) -> str | None:
 
 _CLASS_OBJECT_PREFIX = "@class:"
 _FACTORY_RESULT_PREFIX = "@factory:"
+_CLASS_MAP_PREFIX = "@classmap:"
 _PARENT_ELEMENT_OWNERS_CACHE: dict[int, set[str]] = {}
 _STRUCTURAL_SUFFIXES = ("_base", "_generic", "_element", "_parent", "_factory")
 
@@ -219,6 +220,12 @@ def _public_type(value: str | None) -> str | None:
     # unparsable and would overstate a dynamic factory object as a Sage class.
     if any(arm.startswith(_FACTORY_RESULT_PREFIX) for arm in value.split(" | ")):
         return None
+    # Literal class maps are an internal data-flow marker used to resolve a
+    # subsequent ``classes["key"](...)`` call.  The descriptor itself still
+    # returns an ordinary mapping at runtime; never leak the serialized map
+    # marker into the generated public contract.
+    if any(arm.startswith(_CLASS_MAP_PREFIX) for arm in value.split(" | ")):
+        return "dict"
     arms = ["type" if arm.startswith(_CLASS_OBJECT_PREFIX) else arm for arm in value.split(" | ")]
     return _union(*arms)
 
@@ -230,6 +237,20 @@ def _assigned_type(node: ast.AST, analyzer: "_FunctionAnalyzer") -> str | None:
         canonical = analyzer.class_aliases.get(resolved, resolved) if resolved else None
         if canonical and (canonical in analyzer.classes or canonical in analyzer.known_classes):
             return f"{_CLASS_OBJECT_PREFIX}{canonical}"
+    if isinstance(node, ast.Attribute):
+        # A class-valued dictionary often uses a module-qualified class (for
+        # example ``word.FiniteWord_list``) rather than a direct import.  The
+        # import head and the remaining attribute path are resolved exactly;
+        # only a class already present in the source/index class set is kept.
+        dotted = _dotted(node)
+        if dotted:
+            bits = dotted.split(".")
+            resolved = analyzer._resolve_name(bits[0])
+            if resolved is not None and len(bits) > 1:
+                resolved = ".".join([resolved, *bits[1:]])
+            canonical = analyzer.class_aliases.get(resolved, resolved) if resolved else None
+            if canonical and (canonical in analyzer.classes or canonical in analyzer.known_classes):
+                return f"{_CLASS_OBJECT_PREFIX}{canonical}"
     # Preserve element information for materialized builtin containers when
     # they flow through a local variable.  The direct expression contract
     # remains the ordinary builtin shape, but an assignment such as
@@ -253,6 +274,19 @@ def _assigned_type(node: ast.AST, analyzer: "_FunctionAnalyzer") -> str | None:
             base = "list" if isinstance(node, ast.ListComp) else "set"
             return f"{base}[{element}]"
     if isinstance(node, ast.Dict):
+        class_map: dict[str, str] = {}
+        class_map_complete = True
+        for key, value in zip(node.keys, node.values):
+            if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+                class_map_complete = False
+                break
+            assigned = _assigned_type(value, analyzer)
+            if not assigned or not assigned.startswith(_CLASS_OBJECT_PREFIX):
+                class_map_complete = False
+                break
+            class_map[key.value] = assigned[len(_CLASS_OBJECT_PREFIX):]
+        if class_map_complete and class_map and len(class_map) == len(node.keys):
+            return _CLASS_MAP_PREFIX + json.dumps(class_map, ensure_ascii=False, sort_keys=True)
         keys = [analyzer.expr_type(key) for key in node.keys if key is not None]
         values = [analyzer.expr_type(value) for value in node.values]
         if values and all(value is not None for value in values):
@@ -346,6 +380,19 @@ class _FunctionAnalyzer:
             return None
         result = expression[len(_FACTORY_RESULT_PREFIX):]
         return result or None
+
+    @staticmethod
+    def _class_map_value(expression: str | None, key: str | None) -> str | None:
+        if not isinstance(expression, str) or not expression.startswith(_CLASS_MAP_PREFIX):
+            return None
+        if key is None:
+            return None
+        try:
+            mapping = json.loads(expression[len(_CLASS_MAP_PREFIX):])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        value = mapping.get(key) if isinstance(mapping, dict) else None
+        return f"{_CLASS_OBJECT_PREFIX}{value}" if isinstance(value, str) else None
 
     def _receiver_class_path(self, node: ast.AST) -> str | None:
         """Resolve an expression to one concrete class for property lookup."""
@@ -507,7 +554,29 @@ class _FunctionAnalyzer:
         return contract
 
     def _resolve_call(self, node: ast.Call) -> str | None:
+        if isinstance(node.func, ast.Subscript):
+            index = node.func.slice
+            key = index.value if isinstance(index, ast.Constant) and isinstance(index.value, str) else None
+            class_object = self._class_map_value(self.expr_type(node.func.value), key)
+            if class_object is not None:
+                return _quote(class_object[len(_CLASS_OBJECT_PREFIX):])
         dotted = _dotted(node.func)
+        # Sage parents expose ``element_class`` as the constructor for their
+        # elements.  Calls conventionally pass the same parent as the first
+        # constructor argument (``P.element_class(P, data)``); that structural
+        # identity is enough to retain the receiver-relative relation even
+        # when ``P`` itself came from a dynamic ``parent()`` call.  It is not
+        # a concrete class guess and can therefore be specialized later only
+        # when the parent has an exact indexed constructor contract.
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "element_class"
+            and node.args
+            and _dotted(node.func.value) is not None
+            and _dotted(node.func.value) == _dotted(node.args[0])
+            and _dotted(node.func.value) != "self"
+        ):
+            return "'sage.type_contracts.ParentElement[Self]'"
         # A factory instance imported from another Sage module is represented
         # in ``known_constants`` by a source-derived ``@factory:...`` marker.
         # Resolve the marker before ordinary name lookup so calls such as
@@ -1193,6 +1262,9 @@ class _FunctionAnalyzer:
             # to values whose element is visible in the source itself.
             index = node.slice
             if isinstance(index, ast.Constant):
+                class_object = self._class_map_value(self.expr_type(node.value), index.value if isinstance(index.value, str) else None)
+                if class_object is not None:
+                    return class_object
                 if isinstance(node.value, ast.Tuple) and isinstance(index.value, int):
                     position = index.value
                     if position < 0:
@@ -1369,6 +1441,26 @@ def _is_property_node(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         if isinstance(decorator, ast.Name) and decorator.id == "property":
             return True
         if isinstance(decorator, ast.Attribute) and decorator.attr == "getter":
+            return True
+    return False
+
+
+def _is_descriptor_node(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Return whether a function is evaluated as an attribute descriptor.
+
+    Besides Python's ``property``, Sage uses ``lazy_attribute`` and
+    ``cached_property`` decorators for class-valued maps such as
+    ``_element_classes``.  This is a protocol check on the decorator shape,
+    not a method-name allow-list.
+    """
+    for decorator in node.decorator_list:
+        if isinstance(decorator, ast.Name) and decorator.id in {
+            "property", "lazy_attribute", "cached_property",
+        }:
+            return True
+        if isinstance(decorator, ast.Attribute) and decorator.attr in {
+            "property", "lazy_attribute", "cached_property",
+        }:
             return True
     return False
 
@@ -1725,6 +1817,28 @@ def _class_attributes(
 
                         for statement in child.body:
                             walk(statement)
+                        # Descriptor methods are accessed without a call in
+                        # the source (``self._element_classes['list']``).
+                        # If the descriptor returns one literal map of
+                        # proven class objects, retain that map as an
+                        # internal class attribute so a later subscript-call
+                        # can resolve its concrete constructor.  The public
+                        # method contract remains the ordinary ``dict``
+                        # shape; the marker is used only for this data-flow
+                        # step and is never emitted to the index.
+                        if _is_descriptor_node(child):
+                            descriptor_returns, descriptor_yield = _returns(child.body)
+                            if (
+                                not descriptor_yield
+                                and len(descriptor_returns) == 1
+                                and not _may_fall_through(child.body)
+                            ):
+                                _local_types(child.body, analyzer)
+                                inferred = _assigned_type(
+                                    descriptor_returns[0].value, analyzer
+                                )
+                                if inferred and inferred.startswith(_CLASS_MAP_PREFIX):
+                                    values.setdefault(child.name, set()).add(inferred)
                     # Class-level constants are also visible through
                     # ``self.NAME`` and obey the same conflict checks.
                     analyzer = _FunctionAnalyzer(

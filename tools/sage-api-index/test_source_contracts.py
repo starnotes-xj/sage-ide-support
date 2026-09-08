@@ -662,6 +662,112 @@ F = Factory('sage.factory.F')
             )
             self.assertEqual(contracts["sage.zero"], "'sage.rings.integer.Integer'")
 
+    def test_literal_class_map_subscript_call_resolves_concrete_element(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "elements.py").write_text(
+                """class ListElement:
+    pass
+
+class StrElement:
+    pass
+
+class Parent:
+    _element_classes = {"list": ListElement, "str": StrElement}
+
+    def make_list(self, value):
+        return self._element_classes["list"](self, value)
+
+    def make_str(self, value):
+        return self._element_classes["str"](self, value)
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(
+                contracts["sage.elements.Parent.make_list"],
+                "'sage.elements.ListElement'",
+            )
+            self.assertEqual(
+                contracts["sage.elements.Parent.make_str"],
+                "'sage.elements.StrElement'",
+            )
+
+    def test_parent_element_class_identity_call_keeps_receiver_relation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "parent_element.py").write_text(
+                """class Parent:
+    def make(self, P, value):
+        return P.element_class(P, value)
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(
+                contracts["sage.parent_element.Parent.make"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_local_literal_class_map_subscript_call_resolves_concrete_class(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "local_map.py").write_text(
+                """class A:
+    pass
+
+def make():
+    classes = {"a": A}
+    return classes["a"]()
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(contracts["sage.local_map.make"], "'sage.local_map.A'")
+
+    def test_dynamic_class_map_key_remains_unresolved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "dynamic_map.py").write_text(
+                """class A:
+    pass
+
+def make(kind):
+    classes = {"a": A}
+    return classes[kind]()
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertNotIn("sage.dynamic_map.make", contracts)
+
+    def test_lazy_descriptor_class_map_subscript_call_resolves_concrete_class(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "descriptor_map.py").write_text(
+                """class A:
+    pass
+
+class Parent:
+    @lazy_attribute
+    def classes(self):
+        values = {"a": A}
+        return values
+
+    def make(self):
+        return self.classes["a"]()
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(contracts["sage.descriptor_map.Parent.classes"], "dict")
+            self.assertEqual(contracts["sage.descriptor_map.Parent.make"], "'sage.descriptor_map.A'")
+
     def test_indexed_receiver_uses_exact_getitem_contract(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "sage"
