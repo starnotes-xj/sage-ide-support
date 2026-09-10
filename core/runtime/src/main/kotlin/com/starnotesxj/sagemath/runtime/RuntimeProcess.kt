@@ -10,6 +10,8 @@ data class RuntimeProcessRequest(
     val command: List<String>, val workingDirectory: Path? = null,
     val environment: Map<String, String> = emptyMap(),
     val control: RuntimeControl = RuntimeControl(), val maxOutputBytes: Int = 1024 * 1024,
+    /** Optional payload written directly to stdin, never through a shell. */
+    val standardInput: ByteArray? = null,
 ) { init { require(command.isNotEmpty() && command.all(String::isNotEmpty)); require(maxOutputBytes > 0) } }
 data class RuntimeProcessResult(val status: RuntimeExecutionStatus, val exitCode: Int?, val standardOutput: String, val standardError: String, val durationMillis: Long, val outputTruncated: Boolean, val failure: Throwable? = null)
 fun interface RuntimeProcessExecutor { fun execute(request: RuntimeProcessRequest): RuntimeProcessResult }
@@ -24,13 +26,21 @@ class JdkRuntimeProcessExecutor(private val pollInterval: Duration = Duration.of
         val out = BoundedOutput(request.maxOutputBytes); val err = BoundedOutput(request.maxOutputBytes)
         val outThread = thread(isDaemon = true, name = "sage-runtime-stdout") { process.inputStream.use { out.read(it) } }
         val errThread = thread(isDaemon = true, name = "sage-runtime-stderr") { process.errorStream.use { err.read(it) } }
+        val inputThread = thread(isDaemon = true, name = "sage-runtime-stdin") {
+            runCatching {
+                process.outputStream.use { output ->
+                    request.standardInput?.let(output::write)
+                    output.flush()
+                }
+            }
+        }
         var status = RuntimeExecutionStatus.SUCCESS
         while (true) {
             request.control.status()?.let { status = it; process.destroy(); if (!process.waitFor(100, TimeUnit.MILLISECONDS) && process.isAlive) process.destroyForcibly(); break }
             if (process.waitFor(pollInterval.toNanos().coerceAtLeast(1), TimeUnit.NANOSECONDS)) break
         }
         if (process.isAlive) process.destroyForcibly()
-        outThread.join(1000); errThread.join(1000)
+        inputThread.join(1000); outThread.join(1000); errThread.join(1000)
         return result(status, if (status == RuntimeExecutionStatus.SUCCESS) process.exitValue() else null, out.text(), err.text(), started, out.truncated || err.truncated)
     }
     private fun result(s: RuntimeExecutionStatus, e: Int?, o: String, x: String, started: Long, t: Boolean, f: Throwable? = null) = RuntimeProcessResult(s, e, o, x, (System.nanoTime()-started)/1_000_000, t, f)

@@ -35,6 +35,8 @@ class SageRunSettings : PersistentStateComponent<SageRunSettings.State> {
         var wslCondaEnvironment: String = "sage"
         /** Optional absolute WSL path to conda; blank uses standard locations. */
         var wslCondaExecutable: String = ""
+        /** Opt-in: execute bounded current-document prefixes to observe live Sage types. */
+        var liveTypeProbingEnabled: Boolean = false
         var containerExecutable: String = "docker"
         var dockerImage: String = "sagemath/sagemath"
         var dockerContainerDir: String = "/mnt/sage"

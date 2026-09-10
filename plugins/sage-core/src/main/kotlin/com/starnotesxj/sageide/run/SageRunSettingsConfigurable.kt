@@ -4,6 +4,7 @@ import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBTextField
+import com.intellij.ui.components.JBCheckBox
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnostic
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnosticCode
 import com.starnotesxj.sagemath.runtime.RuntimeOperationResult
@@ -40,6 +41,7 @@ class SageRunSettingsConfigurable : Configurable {
     private val dockerContainerDirField = JBTextField()
     private val dockerCommandField = JBTextField()
     private val sageParametersField = JBTextField()
+    private val liveTypeProbingCheckBox = JBCheckBox("Enable live type snapshots (executes the current Sage prefix in an isolated process)")
     private val sshCard = JPanel(GridBagLayout())
     private val sshHostField = JBTextField()
     private val sshUserField = JBTextField()
@@ -226,8 +228,10 @@ class SageRunSettingsConfigurable : Configurable {
         panel.add(sageParametersField, c)
         c.gridy = 4
         c.weighty = 0.0
-        panel.add(detectButton, c)
+        panel.add(liveTypeProbingCheckBox, c)
         c.gridy = 5
+        panel.add(detectButton, c)
+        c.gridy = 6
         panel.add(statusLabel, c)
         rootComponent = panel
         return panel
@@ -243,6 +247,7 @@ class SageRunSettingsConfigurable : Configurable {
             s.wslDistribution != wslDistributionField.text ||
             s.wslCondaEnvironment != wslCondaEnvironmentField.text ||
             s.wslCondaExecutable != wslCondaExecutableField.text ||
+            s.liveTypeProbingEnabled != liveTypeProbingCheckBox.isSelected ||
             s.containerExecutable != containerExecutableField.text ||
             s.dockerImage != dockerImageField.text ||
             s.dockerContainerDir != dockerContainerDirField.text ||
@@ -274,6 +279,7 @@ class SageRunSettingsConfigurable : Configurable {
             wslDistribution = wslDistributionField.text
             wslCondaEnvironment = wslCondaEnvironmentField.text
             wslCondaExecutable = wslCondaExecutableField.text
+            liveTypeProbingEnabled = liveTypeProbingCheckBox.isSelected
             containerExecutable = containerExecutableField.text
             dockerImage = dockerImageField.text
             dockerContainerDir = dockerContainerDirField.text
@@ -336,6 +342,7 @@ class SageRunSettingsConfigurable : Configurable {
         wslDistributionField.text = s.wslDistribution
         wslCondaEnvironmentField.text = s.wslCondaEnvironment
         wslCondaExecutableField.text = s.wslCondaExecutable
+        liveTypeProbingCheckBox.isSelected = s.liveTypeProbingEnabled
         containerExecutableField.text = s.containerExecutable
         dockerImageField.text = s.dockerImage
         dockerContainerDirField.text = s.dockerContainerDir

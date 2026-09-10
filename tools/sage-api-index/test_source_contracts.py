@@ -1,3 +1,4 @@
+import ast
 import json
 import tempfile
 import unittest
@@ -17,6 +18,122 @@ from infer_source_returns import (
 
 
 class SourceContractTest(unittest.TestCase):
+    def test_constructor_field_contract_requires_direct_required_parameter(self):
+        """Stored-value generics reject transforms and later field writes."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "__init__.py").write_text(
+                "class Stored:\n"
+                "    def __init__(self, value):\n"
+                "        self.value = value\n"
+                "    def get(self):\n"
+                "        return self.value\n\n"
+                "class Defaulted:\n"
+                "    def __init__(self, value=None):\n"
+                "        if value is None:\n"
+                "            value = []\n"
+                "        self.value = value\n"
+                "    def get(self):\n"
+                "        return self.value\n\n"
+                "class OptionalStored:\n"
+                "    def __init__(self, value=None):\n"
+                "        self.value = value\n"
+                "    def get(self):\n"
+                "        return self.value\n\n"
+                "class Rebound:\n"
+                "    def __init__(self, value):\n"
+                "        value = list(value)\n"
+                "        self.value = value\n"
+                "    def get(self):\n"
+                "        return self.value\n\n"
+                "class Rewritten:\n"
+                "    def __init__(self, value):\n"
+                "        self.value = value\n"
+                "    def reset(self):\n"
+                "        self.value = []\n"
+                "    def get(self):\n"
+                "        return self.value\n\n"
+                "class ReusedName:\n"
+                "    def __init__(self, value):\n"
+                "        self.value = value\n"
+                "    def accepts(self, value):\n"
+                "        return value\n"
+                "    def get(self):\n"
+                "        return self.value\n",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(
+                contracts["sage.Stored.get"], "@constructor_parameter:value"
+            )
+            self.assertNotEqual(
+                contracts.get("sage.Defaulted.get"), "@constructor_parameter:value"
+            )
+            self.assertEqual(
+                contracts["sage.OptionalStored.get"], "@constructor_parameter:value"
+            )
+            self.assertNotEqual(
+                contracts.get("sage.Rebound.get"), "@constructor_parameter:value"
+            )
+            self.assertNotIn("sage.Rewritten.get", contracts)
+            self.assertEqual(
+                contracts["sage.ReusedName.get"], "@constructor_parameter:value"
+            )
+
+    def test_percent_formatting_returns_string_or_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "__init__.py").write_text(
+                "def text(value):\n"
+                "    return 'value=%s' % (value,)\n"
+                "def binary(value):\n"
+                "    return b'value=%s' % value\n",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(contracts["sage.text"], "str")
+            self.assertEqual(contracts["sage.binary"], "bytes")
+
+    def test_builtin_bitwise_predicate_returns_bool(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "__init__.py").write_text(
+                "def is2pow(n: int):\n"
+                "    return n > 0 and (n & (n - 1)) == 0\n",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(contracts["sage.is2pow"], "bool")
+
+    def test_indexed_rich_comparison_contract_returns_bool(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "comparison.py").write_text(
+                "class Element:\n"
+                "    def __lt__(self, other):\n"
+                "        return self._lt(other)\n"
+                "\n"
+                "    def predicate(self, other: Element):\n"
+                "        return self < other\n"
+                "\n"
+                "    def chained(self, other: Element, third: Element):\n"
+                "        return self < other <= third\n",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.comparison.Element.__lt__": "bool",
+                    "sage.comparison.Element.__le__": "bool",
+                },
+            )
+            self.assertEqual(contracts["sage.comparison.Element.predicate"], "bool")
+            self.assertEqual(contracts["sage.comparison.Element.chained"], "bool")
+
     def test_relative_imports_resolve_against_module_package(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "sage"
@@ -244,6 +361,68 @@ class DynamicParent:
                 "'sage.type_contracts.ParentElement[Self]'",
             )
             self.assertNotIn("sage.parent.DynamicParent.make", contracts)
+
+    def test_parent_call_delegation_uses_parent_element_relation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "parent.py").write_text(
+                """from sage.structure.parent import Parent
+
+class ConcreteParent(Parent):
+    def __call__(self, value):
+        return self._element_constructor_(value)
+
+    def _element_constructor_(self, value):
+        return value
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(
+                contracts["sage.parent.ConcreteParent.__call__"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_next_uses_parameterized_iter_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "iterators.py").write_text(
+                """class Numbers:
+    def __iter__(self):
+        yield 1
+
+    def __next__(self):
+        return next(iter(self))
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(contracts["sage.iterators.Numbers.__iter__"], "Iterator[int]")
+            self.assertEqual(contracts["sage.iterators.Numbers.__next__"], "int")
+
+    def test_conditional_literal_returns_use_one_builtin_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "literals.py").write_text(
+                """class Literals:
+    def values(self, flag):
+        if flag:
+            return []
+        return [1, 2]
+
+    def labels(self, flag):
+        if flag:
+            return ('a',)
+        return ('b', 'c')
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(root)
+            self.assertEqual(contracts["sage.literals.Literals.values"], "list")
+            self.assertEqual(contracts["sage.literals.Literals.labels"], "tuple")
 
     def test_element_class_descriptor_type_never_becomes_constructor_result(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -796,6 +975,76 @@ class Parent:
             self.assertEqual(
                 contracts["sage.parent_factory_zero.Element.make_zero"],
                 "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_related_parent_methods_propagate_matching_element_relation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "related_parent.py").write_text(
+                """class Action:
+    def make_zero(self):
+        return self.codomain().zero()
+
+    def make_one(self):
+        return self.base_ring().one()
+
+    def make_parent_gen(self):
+        return self.parent().gen()
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.related_parent.Action.codomain":
+                    "'sage.type_contracts.Codomain[Self]'",
+                    "sage.external.Codomain.zero":
+                    "'sage.type_contracts.CodomainElement[Self]'",
+                    "sage.related_parent.Action.base_ring":
+                    "'sage.type_contracts.BaseRing[Self]'",
+                    "sage.external.BaseRing.one":
+                    "'sage.type_contracts.BaseRingElement[Self]'",
+                    "sage.related_parent.Action.parent": "'sage.type_contracts.Parent[Self]'",
+                    "sage.external.Parent.gen":
+                    "'sage.type_contracts.ParentElement[Self]'",
+                },
+            )
+            self.assertEqual(
+                contracts["sage.related_parent.Action.make_zero"],
+                "'sage.type_contracts.CodomainElement[Self]'",
+            )
+            self.assertEqual(
+                contracts["sage.related_parent.Action.make_one"],
+                "'sage.type_contracts.BaseRingElement[Self]'",
+            )
+            self.assertEqual(
+                contracts["sage.related_parent.Action.make_parent_gen"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
+    def test_related_parent_does_not_treat_unproven_method_as_constructor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sage"
+            root.mkdir()
+            (root / "related_parent_negative.py").write_text(
+                """class Action:
+    def invoke(self):
+        return self.codomain().invoke()
+""",
+                encoding="utf-8",
+            )
+            contracts = infer(
+                root,
+                known_contracts={
+                    "sage.external.Action.codomain":
+                    "'sage.type_contracts.Codomain[Self]'",
+                    "sage.external.Codomain.zero":
+                    "'sage.type_contracts.CodomainElement[Self]'",
+                },
+            )
+            self.assertNotIn(
+                "sage.related_parent_negative.Action.invoke", contracts
             )
 
     def test_local_literal_class_map_subscript_call_resolves_concrete_class(self):
@@ -1517,7 +1766,10 @@ def make():
             self.assertEqual(contracts["sage.first_or_none"], "int | None")
             self.assertEqual(contracts["sage.first_tuple_or_none"], "tuple[int, str] | None")
             self.assertEqual(contracts["sage.while_first_or_none"], "int | None")
-            self.assertNotIn("sage.unsafe_loop", contracts)
+            # Loop scaffolding no longer blocks a proven value shape.  The
+            # iterator may be empty, so the implicit fall-through is retained
+            # as the explicit ``None`` arm.
+            self.assertEqual(contracts["sage.unsafe_loop"], "int | None")
             self.assertEqual(contracts["sage.class_metadata"], "str")
             self.assertEqual(contracts["sage.class_object_type"], "type")
             self.assertEqual(contracts["sage.unpacked_value"], "str")
@@ -1676,6 +1928,104 @@ class Holder:
             changed = apply(root, {"sage.sample.maybe": "None | tuple"}, index)
             self.assertEqual(changed, ["sage.sample.maybe"])
             self.assertIn("def maybe(flag) -> None | tuple:", stub.read_text(encoding="utf-8"))
+
+    def test_apply_preserves_constructor_stored_parameter_as_class_generic(self):
+        """A getter can expose the precise type supplied to ``__init__``."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "stubs"
+            module = root / "sage"
+            module.mkdir(parents=True)
+            stub = module / "sample.pyi"
+            stub.write_text(
+                "class Holder:\n"
+                "    def __init__(self, value): ...\n"
+                "    def value(self): ...\n"
+                "    def value_or_self(self): ...\n",
+                encoding="utf-8",
+            )
+            index = root / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.sample.Holder.value",
+                                "kind": "METHOD",
+                                "signatures": [{"returnType": {"state": "UNKNOWN"}}],
+                            },
+                            {
+                                "qualifiedName": "sage.sample.Holder.value_or_self",
+                                "kind": "METHOD",
+                                "signatures": [{"returnType": {"state": "UNKNOWN"}}],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            contracts = {
+                "sage.sample.Holder.value": "@constructor_parameter:value",
+                "sage.sample.Holder.value_or_self": "Self | @constructor_parameter:value",
+            }
+
+            changed = apply(root, contracts, index)
+            self.assertEqual(
+                changed,
+                ["sage.sample.Holder.value", "sage.sample.Holder.value_or_self"],
+            )
+            patched = stub.read_text(encoding="utf-8")
+            typevar = "_SageStoredsagesampleHolderValueT"
+            self.assertIn("Generic", patched)
+            self.assertIn("TypeVar", patched)
+            self.assertIn(f'{typevar} = TypeVar("{typevar}")', patched)
+            self.assertIn(f"class Holder(Generic[{typevar}]):", patched)
+            self.assertIn(f"def __init__(self, value: {typevar}):", patched)
+            self.assertIn(f"def value(self) -> {typevar}:", patched)
+            self.assertIn(f"def value_or_self(self) -> {typevar} | Self:", patched)
+            ast.parse(patched, filename=str(stub), type_comments=True)
+            self.assertEqual(apply(root, contracts, index), [])
+
+    def test_apply_preserves_optional_constructor_parameter_as_class_generic(self):
+        """A direct optional parameter is still the value exposed by its getter."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "stubs"
+            module = root / "sage"
+            module.mkdir(parents=True)
+            stub = module / "sample.pyi"
+            stub.write_text(
+                "class Holder:\n"
+                "    def __init__(self, value=None): ...\n"
+                "    def value(self): ...\n",
+                encoding="utf-8",
+            )
+            index = root / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.sample.Holder.value",
+                                "kind": "METHOD",
+                                "signatures": [{"returnType": {"state": "UNKNOWN"}}],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            changed = apply(
+                root,
+                {"sage.sample.Holder.value": "@constructor_parameter:value"},
+                index,
+            )
+            self.assertEqual(changed, ["sage.sample.Holder.value"])
+            patched = stub.read_text(encoding="utf-8")
+            typevar = "_SageStoredsagesampleHolderValueT"
+            self.assertIn(f"class Holder(Generic[{typevar}]):", patched)
+            self.assertIn(f"def __init__(self, value: {typevar}=None):", patched)
+            self.assertIn(f"def value(self) -> {typevar}:", patched)
+            ast.parse(patched, filename=str(stub), type_comments=True)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,18 @@ def wrapped():
 '''
         self.assertEqual([(q, t) for q, t, _ in declarations(source)], [('count', 'int')])
 
+    def test_untyped_cpdef_body_uses_same_lexical_contracts_as_def(self):
+        source = '''
+cpdef make_pair(value):
+    return (value, value)
+cpdef identity(value):
+    return value
+'''
+        self.assertEqual(
+            [(q, t) for q, t, _ in declarations(source)],
+            [('make_pair', 'tuple')],
+        )
+
     def test_wrapper_conversion_and_scopes(self):
         source = '''
 cpdef unsigned long count(object x):
@@ -105,6 +117,52 @@ def conditional(flag):
         self.assertEqual(
             [(q, t) for q, t, _ in declarations(source)],
             [('identity', 'Self'), ('empty_payload', 'list')],
+        )
+
+    def test_def_builtin_protocol_calls_have_exact_python_shapes(self):
+        source = '''
+def is_morphism(value):
+    return isinstance(value, Morphism)
+def item_count(value):
+    return len(value)
+def render(value):
+    return repr(value)
+def unknown_call(value):
+    return factory(value)
+'''
+        self.assertEqual(
+            [(q, t) for q, t, _ in declarations(source)],
+            [
+                ('is_morphism', 'bool'),
+                ('item_count', 'int'),
+                ('render', 'str'),
+            ],
+        )
+
+    def test_def_builtin_protocol_calls_allow_python_imports(self):
+        source = '''
+def is_morphism(value):
+    from sage.misc.superseded import deprecation_cython
+    deprecation_cython(1, 'deprecated')
+    return isinstance(value, object)
+'''
+        self.assertEqual(
+            [(q, t) for q, t, _ in declarations(source)],
+            [('is_morphism', 'bool')],
+        )
+
+    def test_def_cython_scalar_comparison_is_bool(self):
+        source = '''
+def is_power_of_two(unsigned int value):
+    while value and not value % 2:
+        value = value >> 1
+    return value == 1
+def sage_comparison(value):
+    return value == 1
+'''
+        self.assertEqual(
+            [(q, t) for q, t, _ in declarations(source)],
+            [('is_power_of_two', 'bool')],
         )
 
     def test_def_trivial_constructor_uses_builtin_or_unique_class_contract(self):
@@ -328,6 +386,23 @@ class Worker:
             self.assertEqual(len(evidence), 2)
             self.assertEqual(len(evidence[0]['sha256']), 64)
 
+    def test_untyped_pxd_signature_does_not_become_none_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'sage'
+            root.mkdir()
+            (root / 'sample.pyx').write_text(
+                'cpdef pair():\n'
+                '    return (1, 2)\n',
+                encoding='utf-8',
+            )
+            (root / 'sample.pxd').write_text(
+                'cpdef pair()\n',
+                encoding='utf-8',
+            )
+            contracts, evidence = infer(root)
+        self.assertEqual(contracts['sage.sample.pair'], 'tuple')
+        self.assertEqual(len(evidence), 1)
+
     def test_python_and_unique_extension_class_declarations(self):
         source = '''
 cpdef inline tuple pair():
@@ -358,6 +433,70 @@ cpdef AmbiguousElement ambiguous():
             (root / 'sample.pyx').write_text('cpdef UniqueElement element():\n    return None\n', encoding='utf-8')
             contracts, _ = infer(root, index)
             self.assertEqual(contracts['sage.sample.element'], "'sage.sample.UniqueElement'")
+
+    def test_def_lexical_cython_locals_and_internal_helper_contracts(self):
+        source = '''
+cdef inline UniqueElement build():
+    return None
+def make_graph():
+    cdef object graph
+    graph = Graph(3)
+    return graph
+def wrap_element():
+    return build()
+def make_pair():
+    cdef object pair
+    pair = (1,
+            2)
+    return pair
+'''
+        found = {
+            q: t
+            for q, t, _ in declarations(
+                source,
+                {
+                    'Graph': 'sage.graphs.graph.Graph',
+                    'UniqueElement': 'sage.sample.UniqueElement',
+                },
+                {},
+                'sage.sample',
+                {},
+                _cdef_helper_returns_for_test(source),
+            )
+        }
+        self.assertEqual(found['make_graph'], "'sage.graphs.graph.Graph'")
+        self.assertEqual(found['wrap_element'], "'sage.sample.UniqueElement'")
+        self.assertEqual(found['make_pair'], 'tuple')
+
+    def test_cross_file_cimport_helper_uses_unambiguous_declared_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'sage'
+            root.mkdir()
+            (root / 'richcmp.pxd').write_text(
+                'cpdef inline bint rich_to_bool(int op, int c)\n',
+                encoding='utf-8',
+            )
+            (root / 'wrapper.pyx').write_text(
+                'from sage.richcmp cimport rich_to_bool\n'
+                'def is_equal(int value):\n'
+                '    return rich_to_bool(2, value)\n',
+                encoding='utf-8',
+            )
+            contracts, _ = infer(root)
+        self.assertEqual(contracts['sage.wrapper.is_equal'], 'bool')
+
+
+def _cdef_helper_returns_for_test(source):
+    """Keep the fixture independent from the private helper import surface."""
+    from infer_cython_returns import _cdef_helper_returns
+
+    return _cdef_helper_returns(
+        source,
+        {
+            'UniqueElement': 'sage.sample.UniqueElement',
+            'Graph': 'sage.graphs.graph.Graph',
+        },
+    )
 
 
 if __name__ == '__main__':

@@ -120,6 +120,13 @@ class SageTypeProvider : PyTypeProviderBase() {
         if (!SageFileUtils.isSageFile(file)) return null
         if (referenceExpression.isQualified) return null
 
+        // A completed live snapshot is more specific than static inference,
+        // but never blocks an editor query: the service only returns a cached
+        // exact observed class and schedules any missing work off the EDT.
+        SageLiveTypeSnapshotService.getInstance(referenceExpression.project)
+            .typeForReference(referenceExpression)
+            ?.let { return it }
+
         // Unannotated parameters in a .sage function are ordinary reference
         // expressions when the editor asks for the type of a receiver.  Do not
         // leave this path to Python's structural/protocol inference: the same
@@ -363,15 +370,22 @@ class SageTypeProvider : PyTypeProviderBase() {
         callSite: PyCallSiteExpression,
         context: TypeEvalContext,
     ): Ref<PyType>? {
-        val qualifiedName = sageQualifiedName(function) ?: return null
-        val query = SageApiIndexService.getInstance().query() ?: return null
+        fun liveCallType(): Ref<PyType>? {
+            val type = (callSite as? PyCallExpression)
+                ?.let { SageLiveTypeSnapshotService.getInstance(it.project).typeForCall(it) }
+                ?: return null
+            return Ref.create(type)
+        }
+        val qualifiedName = sageQualifiedName(function)
+        if (qualifiedName == null) return liveCallType()
+        val query = SageApiIndexService.getInstance().query() ?: return liveCallType()
         receiverSpecificMemberReturn(callSite, context, query, function)?.let { return Ref.create(it) }
         val signatures = query.signatures(qualifiedName)
         val lowered = SageTypeLowering.lowerCallReturnType(signatures, callSite, context, query, qualifiedName, function)
             ?: signatures.singleOrNull()
                 ?.takeIf { it.parameters.isEmpty() }
                 ?.let { SageTypeLowering.lower(it.returnType, callSite, context, query) }
-            ?: return null
+            ?: return liveCallType()
         return Ref.create(lowered)
     }
 
@@ -461,6 +475,12 @@ class SageTypeProvider : PyTypeProviderBase() {
         }
         val isSageFile = SageFileUtils.isSageFile(target.containingFile)
         val statement = PsiTreeUtil.getParentOfType(target, PyAssignmentStatement::class.java)
+
+        if (isSageFile) {
+            SageLiveTypeSnapshotService.getInstance(target.project)
+                .typeForTarget(target)
+                ?.let { return Ref.create(it) }
+        }
 
         if (isSageFile && statement != null && !SageSugarAnalyzer.shapePredicate(statement)) {
             val rhsCall = target.findAssignedValue() as? PyCallExpression

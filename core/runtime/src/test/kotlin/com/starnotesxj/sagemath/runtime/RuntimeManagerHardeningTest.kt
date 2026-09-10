@@ -99,6 +99,24 @@ class RuntimeManagerHardeningTest {
     }
 
     @Test
+    fun `target executor forwards standard input to local WSL process request`() {
+        var localRequest: RuntimeProcessRequest? = null
+        val executor = JdkRuntimeTargetExecutor(
+            local = RuntimeProcessExecutor { request ->
+                localRequest = request
+                RuntimeProcessResult(RuntimeExecutionStatus.SUCCESS, 0, "", "", 1, false)
+            },
+            remote = { RuntimeProcessResult(RuntimeExecutionStatus.SUCCESS, 0, "", "", 1, false) },
+        )
+
+        executor.execute(
+            TargetProcessRequest(RuntimeTarget.Wsl("Ubuntu"), "/sage", listOf("-c", "fixed"), standardInput = byteArrayOf(1, 2, 3)),
+        )
+
+        assertEquals(byteArrayOf(1, 2, 3).toList(), localRequest?.standardInput?.toList())
+    }
+
+    @Test
     fun `path mapper rejects UNC and native traversal`() {
         val mapping = RuntimePathMapping(Path.of("/workspace"), "/mnt/workspace")
         val mapper = RuntimePathMapper()

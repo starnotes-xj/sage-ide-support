@@ -6,6 +6,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from annotate_stubs import (
+    GAP_ELEMENT_RETURN_UNION,
+    FUNCTIONAL_SYMBOLIC_RESULT_UNION,
+    MATRIX_ELEMENT_UNION,
+    MATRIX_SPACE_SUBMODULE_UNION,
+    _doc_batch_semantic_annotation,
+    _doc_conditional_outer_annotation,
+    _doc_output_annotation,
+)
+
 
 ROOT = Path(__file__).resolve().parent
 PATCHER = ROOT / "annotate_stubs.py"
@@ -13,6 +24,392 @@ GENERATOR = ROOT / "generate.py"
 
 
 class AnnotateStubsTest(unittest.TestCase):
+    def test_internal_element_division_hook_preserves_receiver(self):
+        node = ast.parse(
+            'def _div_(self, other):\n'
+            '    """Return the quotient of ``self`` and ``other``."""\n'
+        ).body[0]
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node,
+                "Return the quotient of ``self`` and ``other``.",
+                "ClusterAlgebraElement",
+                "sage.algebras.cluster_algebra",
+            ),
+            "Self",
+        )
+
+    def test_polynomial_element_protocol_contracts_are_receiver_relative(self):
+        """Polynomial Cython summaries resolve to parent/value relations."""
+        def node(name: str, doc: str):
+            return ast.parse(f"def {name}(self):\n    {doc!r}\n").body[0]
+
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("lc", '"""Leading coefficient of this polynomial with respect to the term order."""'),
+                "Leading coefficient of this polynomial with respect to the term order.",
+                "MPolynomial_libsingular",
+                "sage.rings.polynomial.multi_polynomial_libsingular",
+            ),
+            "'sage.type_contracts.BaseRingElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("__getitem__", '"""Same as ``self.monomial_coefficient`` but for exponent vectors."""'),
+                "Same as self.monomial_coefficient but for exponent vectors.",
+                "NCPolynomial_plural",
+                "sage.rings.polynomial.plural",
+            ),
+            "'sage.type_contracts.BaseRingElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("lm", '"""Return the lead monomial of ``self`` with respect to the term order."""'),
+                "Return the lead monomial of self with respect to the term order.",
+                "NCPolynomial_plural",
+                "sage.rings.polynomial.plural",
+            ),
+            "Self",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("total_degree", '"""Return the total degree of ``self``."""'),
+                "Return the total degree of self.",
+                "BooleanPolynomial",
+                "sage.rings.polynomial.pbori",
+            ),
+            "'sage.rings.integer.Integer' | int",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("left_quo_rem", '"""Return the quotient and remainder of the left Euclidean division."""'),
+                "Return the quotient and remainder of the left Euclidean division.",
+                "OrePolynomial",
+                "sage.rings.polynomial.ore_polynomial_element",
+            ),
+            "tuple[Self, Self]",
+        )
+
+    def test_batch_semantic_backend_and_parent_noun_contracts(self):
+        """Backend wrappers and noun-only parent summaries stay concrete."""
+        def node(name: str, doc: str):
+            return ast.parse(f"def {name}(self):\n    {doc!r}\n").body[0]
+
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_libgap_", '"""Return a libgap object."""'),
+                "Return a libgap object.",
+                "SageObject",
+                "sage.structure.sage_object",
+            ),
+            GAP_ELEMENT_RETURN_UNION,
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_macaulay2_", '"""Convert this vector to a Macaulay2 vector."""'),
+                "Convert this vector to a Macaulay2 vector.",
+                "FreeModuleElement",
+                "sage.modules.free_module_element",
+            ),
+            "'sage.interfaces.macaulay2.Macaulay2Element'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("group", '"""Return the underlying group."""'),
+                "Return the underlying group.",
+                "FusionDouble",
+                "sage.algebras.fusion_rings.fusion_double",
+            ),
+            "'sage.type_contracts.Group[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("coboundaries", '"""The n-th coboundary group of the algebra."""'),
+                "The n-th coboundary group of the algebra.",
+                "DifferentialGCAlgebra",
+                "sage.algebras.commutative_dga",
+            ),
+            MATRIX_SPACE_SUBMODULE_UNION,
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("lift", '"""Return x as an element of :meth:`ambient`."""'),
+                "Return x as an element of :meth:`ambient`.",
+                "ClusterAlgebra",
+                "sage.algebras.cluster_algebra",
+            ),
+            "'sage.type_contracts.AmbientElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_eval_", '"""Evaluate a special function."""'),
+                "Evaluate a special function.",
+                "FunctionAiryAiGeneral",
+                "sage.functions.airy",
+            ),
+            f"{FUNCTIONAL_SYMBOLIC_RESULT_UNION} | None",
+        )
+
+    def test_sparse_cython_signature_keeps_parent_relation(self):
+        node = ast.parse(
+            'def codomain(self):\n'
+            '    """Action.codomain(self)\\n\\nFile: action.pyx"""\n'
+        ).body[0]
+        self.assertEqual(
+            _doc_output_annotation(node, owner_name="Action", module_name="sage.categories.action"),
+            "'sage.type_contracts.Codomain[Self]'",
+        )
+    def test_batch_semantic_parent_and_scalar_contracts(self):
+        """High-frequency summaries map to relations, not public bases."""
+        def node(name: str, doc: str):
+            return ast.parse(f"def {name}(self):\n    {doc!r}\n").body[0]
+
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("precision", '"""Return the bit precision used by this field."""'),
+                "Return the bit precision used by this field.",
+                "RealField_class",
+                "sage.rings.real_mpfr",
+            ),
+            "'sage.rings.integer.Integer' | int",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("counit", '"""Return the counit of ``x``."""'),
+                "Return the counit of x.",
+                "ExteriorAlgebraElement",
+                "sage.algebras.clifford_algebra_element",
+            ),
+            "'sage.type_contracts.BaseRingElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("product", '"""Return the product of two elements ``u`` and ``v``."""'),
+                "Return the product of two elements u and v.",
+                "GroupSemidirectProduct",
+                "sage.groups.group_semidirect_product",
+            ),
+            "'sage.type_contracts.ParentElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("reduce", '"""Return the reduction in the residue field."""'),
+                "Return the reduction in the residue field.",
+                "pAdicValuation_padic",
+                "sage.rings.padics.padic_valuation",
+            ),
+            "'sage.type_contracts.ResidueFieldElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_get_json", '"""Return the json response or raise an error."""'),
+                "Return the json response or raise an error.",
+                None,
+                "sage.databases.findstat",
+            ),
+            "dict",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("keys", '"""Return the keys sorted according to order parameter."""'),
+                "Return the keys sorted according to order parameter.",
+                "BinaryTree",
+                "sage.misc.binary_tree",
+            ),
+            "list",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("m", '"""Return the value `m`."""'),
+                "Return the value m.",
+                "QuantumMatrixCoordinateAlgebra",
+                "sage.algebras.quantum_matrix_coordinate_algebra",
+            ),
+            "int",
+        )
+
+    def test_batch_semantic_lattice_and_valuation_contracts(self):
+        """Crystal weights and valuation bounds keep their proven relations."""
+        def node(name: str, doc: str):
+            return ast.parse(f"def {name}(self):\n    {doc!r}\n").body[0]
+
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("weight", '"""Return the weight of ``self``."""'),
+                "Return the weight of self.",
+                "CrystalOfLettersElement",
+                "sage.combinat.crystals.letters",
+            ),
+            "'sage.type_contracts.WeightLatticeElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("weight_lattice_realization", '"""Return the weight lattice realization used to express weights."""'),
+                "Return the weight lattice realization used to express weights.",
+                "ElementaryCrystal",
+                "sage.combinat.crystals.elementary_crystals",
+            ),
+            "'sage.type_contracts.Lattice[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("lower_bound", '"""Return a lower bound of this valuation at ``x``."""'),
+                "Return a lower bound of this valuation at x.",
+                "GaussValuation_generic",
+                "sage.rings.valuation.gauss_valuation",
+            ),
+            "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity'",
+        )
+
+    def test_batch_semantic_sympy_bridge_and_expression_contracts(self):
+        """SymPy adapters and symbolic conversions use source-defined targets."""
+        def node(name: str, doc: str):
+            return ast.parse(f"def {name}(self):\n    {doc!r}\n").body[0]
+
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_sympysage_abs", '"""EXAMPLES::"""'),
+                "EXAMPLES::",
+                None,
+                "sage.interfaces.sympy",
+            ),
+            "'sage.symbolic.expression.Expression'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_sympysage_matrix", '"""EXAMPLES::"""'),
+                "EXAMPLES::",
+                None,
+                "sage.interfaces.sympy",
+            ),
+            MATRIX_ELEMENT_UNION,
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_algebraic_", '"""Convert a symbolic expression to an algebraic number."""'),
+                "Convert a symbolic expression to an algebraic number.",
+                "Expression",
+                "sage.symbolic.expression",
+            ),
+            "'sage.rings.qqbar.AlgebraicNumber'",
+        )
+
+    def test_batch_semantic_terse_fixed_contracts(self):
+        """Terse Sage summaries still map to proven scalar/container shapes."""
+        def node(name: str, doc: str):
+            return ast.parse(f"def {name}(self):\n    {doc!r}\n").body[0]
+
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("moebius_function", '"""Return the value of the Möbius function of the poset"""'),
+                "Return the value of the Möbius function of the poset",
+                "HasseDiagram",
+                "sage.combinat.posets.hasse_diagram",
+            ),
+            "'sage.rings.integer.Integer' | int",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_tableau_height", '"""The height of the tableaux in ``self``."""'),
+                "The height of the tableaux in self.",
+                "KRTableaux",
+                "sage.combinat.rigged_configurations.kr_tableaux",
+            ),
+            "int",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("covering_radius", '"""Return the covering radius of ``self``."""'),
+                "Return the covering radius of self.",
+                "GolayCode",
+                "sage.coding.golay_code",
+            ),
+            "'sage.rings.integer.Integer' | int",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("samples", '"""Return a sample of the available Coxeter types."""'),
+                "Return a sample of the available Coxeter types.",
+                "CoxeterType",
+                "sage.combinat.root_system.coxeter_type",
+            ),
+            "list",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("element_with_valuation", '"""Return an element with valuation ``s``."""'),
+                "Return an element with valuation s.",
+                "MacLaneValuation",
+                "sage.rings.valuation.limit_valuation",
+            ),
+            "'sage.type_contracts.ParentElement[Self]'",
+        )
+
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_evalf_", '"""Evaluate numerically with an optional parent."""'),
+                "Evaluate numerically with an optional parent.",
+                "FunctionAiryAiGeneral",
+                "sage.functions.airy",
+            ),
+            "'sage.rings.integer.Integer | sage.rings.rational.Rational | sage.rings.real_mpfr.RealNumber | sage.rings.real_double.RealDoubleElement | sage.rings.real_double_element_gsl.RealDoubleElement_gsl | sage.rings.real_arb.RealBall | sage.rings.real_mpfi.RealIntervalFieldElement | sage.rings.complex_mpfr.ComplexNumber | sage.rings.complex_double.ComplexDoubleElement | sage.rings.complex_arb.ComplexBall | int | float | complex'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("_call_", '"""Return the image of ``x`` under this morphism."""'),
+                "Return the image of x under this morphism.",
+                "SchemeMorphism",
+                "sage.schemes.generic.morphism",
+            ),
+            "'sage.type_contracts.CodomainElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("domain", '"""Return the ambient lattice associated with ``self``."""'),
+                "Return the ambient lattice associated with self.",
+                "WeylGroupElement",
+                "sage.combinat.root_system.weyl_group",
+            ),
+            "'sage.type_contracts.Lattice[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("hecke_parameter", '"""Return the Hecke parameter `q` of ``self``."""'),
+                "Return the Hecke parameter q of self.",
+                "ArikiKoikeAlgebra",
+                "sage.algebras.hecke_algebras.ariki_koike_algebra",
+            ),
+            "'sage.type_contracts.BaseRingElement[Self]'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("level", '"""Return the restriction level of ``self`` or ``None`` if unbounded."""'),
+                "Return the restriction level of self or None if unbounded.",
+                "QSystem",
+                "sage.algebras.q_system",
+            ),
+            "'sage.rings.integer.Integer' | int | None",
+        )
+
+    def test_doc_conditional_outer_contracts_are_explicit(self):
+        self.assertEqual(
+            _doc_conditional_outer_annotation(
+                "This function returns a list of integers if it can find the vector, otherwise it returns None."
+            ),
+            "list | None",
+        )
+        self.assertEqual(
+            _doc_conditional_outer_annotation(
+                "Return a pair of values; otherwise None when no solution exists."
+            ),
+            "tuple | None",
+        )
+        self.assertIsNone(
+            _doc_conditional_outer_annotation(
+                "Returns an integer or Infinity depending on the input."
+            )
+        )
+
     def test_numeric_element_contracts_and_root_overloads(self):
         """Concrete scalar functions keep Sage's runtime result families."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -4200,7 +4597,8 @@ class AnnotateStubsTest(unittest.TestCase):
             root = Path(temporary)
             class_stub = root / "sage" / "graphs" / "digraph.pyi"
             user_stub = root / "sage" / "graphs" / "factory.pyi"
-            class_stub.parent.mkdir(parents=True)
+            class_stub.parent.mkdir(parents=True, exist_ok=True)
+            user_stub.parent.mkdir(parents=True, exist_ok=True)
             class_stub.write_text("class DiGraph: ...\n", encoding="utf-8")
             user_stub.write_text(
                 "def include_dirs():\n"
@@ -4800,6 +5198,40 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def flags() -> list:", patched)
             self.assertIn("def label() -> str:", patched)
 
+    def test_examples_only_rich_output_and_class_repr_use_source_index(self):
+        """Doctest container/class reprs resolve only through unique classes."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "rich_examples.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class OutputPlainText:\n"
+                "    pass\n"
+                "class Demo:\n"
+                "    def rich(self):\n"
+                "        \"\"\"EXAMPLES::\n\n"
+                "            sage: demo.rich()\n"
+                "            OutputPlainText container\n"
+                "        \"\"\"\n"
+                "    def class_value(self):\n"
+                "        \"\"\"EXAMPLES::\n\n"
+                "            sage: demo.class_value()\n"
+                "            <class 'sage.rich_examples.OutputPlainText'>\n"
+                "        \"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn(
+                "def rich(self) -> 'sage.rich_examples.OutputPlainText':", patched
+            )
+            self.assertIn("def class_value(self) -> type:", patched)
+
     def test_output_literal_enumeration_is_not_a_return_union(self):
         """Quoted tokens in OUTPUT prose do not make a container conditional."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -4879,6 +5311,71 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def __eq__(self, other) -> bool:", patched)
             self.assertIn("def maybe_values() -> list | None:", patched)
 
+    def test_short_scalar_and_coefficient_summaries_are_generic(self):
+        """Noun-only Sage summaries resolve without a method allow-list."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "summary_shapes.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class SeriesElement:\n"
+                "    def coefficient(self, n):\n"
+                "        \"\"\"Return the ``n``-th coefficient of ``self``.\"\"\"\n"
+                "def text():\n"
+                "    \"\"\"String representation of an element.\"\"\"\n"
+                "def image_index():\n"
+                "    \"\"\"Return the image of the integer ``i`` in ``self``.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn(
+                "def coefficient(self, n) -> 'sage.type_contracts.BaseRingElement[Self]':",
+                patched,
+            )
+            self.assertIn("def text() -> str:", patched)
+            self.assertIn("def image_index() -> 'sage.rings.integer.Integer':", patched)
+
+    def test_related_parent_summaries_use_receiver_relations(self):
+        """Parent accessors retain the concrete receiver relation."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "relations.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class Holder:\n"
+                "    def base_ring(self):\n"
+                "        \"\"\"Return the base ring of ``self``.\"\"\"\n"
+                "    def domain(self):\n"
+                "        \"\"\"Return the domain of self.\"\"\"\n"
+                "    def parent(self):\n"
+                "        \"\"\"Return the parent of self.\"\"\"\n"
+                "    def codomain(self):\n"
+                "        \"\"\"Return the codomain.\"\"\"\n"
+                "    def ambient(self):\n"
+                "        \"\"\"Return the ambient space of self.\"\"\"\n"
+                "    def base_field(self):\n"
+                "        \"\"\"Return the base field.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def base_ring(self) -> 'sage.type_contracts.BaseRing[Self]':", patched)
+            self.assertIn("def domain(self) -> 'sage.type_contracts.Domain[Self]':", patched)
+            self.assertIn("def codomain(self) -> 'sage.type_contracts.Codomain[Self]':", patched)
+            self.assertIn("def ambient(self) -> 'sage.type_contracts.Ambient[Self]':", patched)
+            self.assertIn("def base_field(self) -> 'sage.type_contracts.BaseField[Self]':", patched)
+
     def test_return_summary_unique_class_role_is_resolved(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -4942,6 +5439,66 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def check_value(x) -> bool:", patched)
             # The class role names an input here, not the generated string.
             self.assertIn("def generate_code(tree):", patched)
+
+    def test_embedded_return_and_conversion_roles_are_resolved(self):
+        """Embedded result verbs still identify one indexed concrete role."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            class_stub = root / "sage" / "ext" / "fast_callable.pyi"
+            user_stub = root / "sage" / "ext" / "fast_callable" / "factory.pyi"
+            class_stub.parent.mkdir(parents=True)
+            user_stub.parent.mkdir(parents=True)
+            class_stub.write_text(
+                "class SageInputExpression: ...\n"
+                "class Expression: ...\n",
+                encoding="utf-8",
+            )
+            user_stub.write_text(
+                "def from_sequence(values):\n"
+                "    \"\"\"Given a sequence, returns a :class:`SageInputExpression`.\"\"\"\n"
+                "def as_expression(value):\n"
+                "    \"\"\"Evaluate and convert the result to :class:`Expression`.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = user_stub.read_text(encoding="utf-8")
+            self.assertIn(
+                "def from_sequence(values) -> 'sage.ext.fast_callable.SageInputExpression':",
+                patched,
+            )
+            self.assertIn(
+                "def as_expression(value) -> 'sage.ext.fast_callable.Expression':",
+                patched,
+            )
+
+    def test_unconditional_container_sentence_is_resolved(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "graphs" / "views.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class EdgesView:\n"
+                "    def __mul__(self, right):\n"
+                "        \"\"\"This method returns a list of repeated edges.\"\"\"\n"
+                "class Conditional:\n"
+                "    def value(self, as_list=False):\n"
+                "        \"\"\"This method returns a list if ``as_list`` is true, or a graph otherwise.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = stub.read_text(encoding="utf-8")
+            self.assertIn("def __mul__(self, right) -> list:", patched)
+            self.assertIn("def value(self, as_list=False):", patched)
 
     def test_operator_summary_preserves_concrete_receiver_with_self(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -5249,6 +5806,126 @@ class AnnotateStubsTest(unittest.TestCase):
             self.assertIn("def copy_undirected(self) -> Self:", patched)
             self.assertIn("def coxeter_number(self) -> 'sage.rings.integer.Integer':", patched)
             self.assertIn("def dual_coxeter_number(self) -> 'sage.rings.integer.Integer':", patched)
+
+    def test_numeric_backend_and_chinese_polynomial_contracts_are_receiver_relative(self):
+        """Sage numeric backends and localized polynomial docs keep exact domains."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "rings" / "numeric_localized.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class RealDoubleElement_gsl:\n"
+                "    def exp(self):\n"
+                "        \"\"\"Return the exponential of self.\"\"\"\n"
+                "    def erf(self):\n"
+                "        \"\"\"Return the value of the error function on self.\"\"\"\n"
+                "    def __pow__(self, other):\n"
+                "        \"\"\"Return self raised to the real double power other.\"\"\"\n"
+                "class RealBall:\n"
+                "    def max(self, other):\n"
+                "        \"\"\"Return a ball containing the maximum of this ball and the other.\"\"\"\n"
+                "    def below_abs(self):\n"
+                "        \"\"\"Return a lower bound for the absolute value of this ball.\"\"\"\n"
+                "class Polynomial:\n"
+                "    def lc(self):\n"
+                "        \"\"\"返回该多项式的首项系数。\"\"\"\n"
+                "    def monomial_coefficient(self, m):\n"
+                "        \"\"\"返回单项式 m 在该多项式中的系数。\"\"\"\n"
+                "    def content_ideal(self):\n"
+                "        \"\"\"返回该多项式的内容理想：由多项式全部系数生成的基环理想。\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = path.read_text(encoding="utf-8")
+            self.assertIn("def exp(self) -> Self:", patched)
+            self.assertIn("def erf(self) -> Self:", patched)
+            self.assertIn("def __pow__(self, other) -> Self:", patched)
+            self.assertIn("def max(self, other) -> Self:", patched)
+            self.assertIn("def below_abs(self) -> Self:", patched)
+            self.assertIn("def lc(self) -> 'sage.type_contracts.BaseRingElement[Self]':", patched)
+            self.assertIn("def monomial_coefficient(self, m) -> 'sage.type_contracts.BaseRingElement[Self]':", patched)
+            self.assertIn("def content_ideal(self) -> 'sage.type_contracts.Ideal[Self]':", patched)
+
+    def test_descriptive_scalar_return_phrases_are_inferred_without_name_tables(self):
+        """Scalar contracts follow the documented result noun, not a method allow-list."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "descriptive_metrics.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class Metrics:\n"
+                "    def degree_on_basis(self, m):\n"
+                "        \"\"\"Return the degree of the basis element indexed by m.\"\"\"\n"
+                "    def number_of_fixed_points(self, B):\n"
+                "        \"\"\"Compute the number of fixed points of B.\"\"\"\n"
+                "    def valuation_at(self, x):\n"
+                "        \"\"\"Evaluate this valuation at x.\"\"\"\n"
+                "    def order_in_algebra(self):\n"
+                "        \"\"\"Return an order in this algebra.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = path.read_text(encoding="utf-8")
+            # Existing source-contract evidence is narrower than the generic
+            # scalar family and must win when available.
+            self.assertIn("def degree_on_basis(self, m) -> 'sage.rings.integer.Integer':", patched)
+            self.assertIn("def number_of_fixed_points(self, B) -> 'sage.rings.integer.Integer | int':", patched)
+            self.assertIn("def valuation_at(self, x) -> 'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity':", patched)
+            self.assertIn("def order_in_algebra(self):", patched)
+
+    def test_output_scalar_sentinels_and_runtime_word_contracts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "descriptive_outputs.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class FreeGradedModule:\n"
+                "    def connectivity(self):\n"
+                "        \"\"\"\n"
+                "        The connectivity.\n\n"
+                "        OUTPUT:\n\n"
+                "        An integer equal to the minimal degree, if this module is non-trivial. Otherwise, +\\infty.\n"
+                "        \"\"\"\n"
+                "class RegularSequenceRing:\n"
+                "    def _n_to_index_(self, n):\n"
+                "        \"\"\"\n"
+                "        Convert n to an index.\n\n"
+                "        OUTPUT: a word\n"
+                "        \"\"\"\n"
+                "class MoreOutputs:\n"
+                "    def polynomial_or_tuple(self):\n"
+                "        \"\"\"OUTPUT: a univariate polynomial or a tuple of such polynomials.\"\"\"\n"
+                "    def power_series_or_vector(self):\n"
+                "        \"\"\"OUTPUT: a power series or a vector.\"\"\"\n"
+                "    def matrix_or_vectors(self):\n"
+                "        \"\"\"OUTPUT: a square matrix or a list of vectors.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            patched = path.read_text(encoding="utf-8")
+            self.assertIn("def connectivity(self) -> 'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity':", patched)
+            self.assertIn("def _n_to_index_(self, n) -> 'sage.combinat.words.word.FiniteWord_char':", patched)
+            self.assertIn("def polynomial_or_tuple(self) ->", patched)
+            self.assertIn("def power_series_or_vector(self) ->", patched)
+            self.assertIn("def matrix_or_vectors(self) ->", patched)
 
     def test_arithmetic_sequence_and_integer_output_contracts(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -7299,7 +7976,7 @@ def generic_matroid():
                 "class Feature:\n"
                 "    pass\n\n"
                 "def module_feature(name):\n"
-                "    '''OUTPUT: a :class:`Feature` or None.'''\n",
+                "    '''OUTPUT: a :class:`Feature` or ``None``.'''\n",
                 encoding="utf-8",
             )
             command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
@@ -7307,6 +7984,25 @@ def generic_matroid():
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(
                 "def module_feature(name) -> 'sage.features.all.Feature' | None:",
+                stub.read_text(encoding="utf-8"),
+            )
+
+    def test_relative_package_reexport_resolves_sphinx_output_role(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "features" / "all.pyi"
+            stub.parent.mkdir(parents=True, exist_ok=True)
+            stub.write_text(
+                "from . import Feature\n\n"
+                "def module_feature(name):\n"
+                "    '''OUTPUT: a :class:`Feature` or None.'''\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(PATCHER), "--stub-root", str(root)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(
+                "def module_feature(name) -> 'sage.features.Feature' | None:",
                 stub.read_text(encoding="utf-8"),
             )
 
@@ -8396,6 +9092,7 @@ def generic_matroid():
             self.assertIn("def float_explanation() -> float:", text)
             self.assertIn("def integer_delimited() -> 'sage.rings.integer.Integer':", text)
             self.assertIn("def string_explanation() -> str:", text)
+
             self.assertIn("def boolean_explanation() -> bool:", text)
             self.assertIn("def preimage() -> 'sage.demo_roles.Foo' | 'sage.demo_roles.Bar':", text)
             self.assertIn("def ambiguous():", text)
@@ -8475,6 +9172,32 @@ def generic_matroid():
             heegner_text = heegner_path.read_text(encoding="utf-8")
             self.assertIn("def quadratic_field(self) -> 'sage.rings.number_field.number_field.NumberField_quadratic':", heegner_text)
 
+    def test_python_data_model_protocols_fill_sparse_sage_docs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "protocols.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class Item:\n"
+                "    def _cmp(self, other):\n"
+                "        \"\"\"TESTS::\"\"\"\n"
+                "    def __reduce__(self):\n"
+                "        \"\"\"EXAMPLES::\"\"\"\n"
+                "    def __new__(cls, value):\n"
+                "        \"\"\"EXAMPLES::\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("def _cmp(self, other) -> int:", text)
+            self.assertIn("def __reduce__(self) -> tuple | str:", text)
+            self.assertIn("def __new__(cls, value) -> Self:", text)
+
     def test_bare_scalar_output_heads_ignore_explanatory_prose(self):
         """Bare OUTPUT nouns remain atomic when later prose mentions inputs."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -8506,6 +9229,27 @@ def generic_matroid():
             self.assertIn("def discriminant() -> 'sage.rings.integer.Integer':", patched)
             self.assertIn("def no_result() -> None:", patched)
             self.assertIn("def ambiguous_none():", patched)
+
+    def test_explicit_integer_matrix_output_uses_dense_zz_backend(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stub = root / "sage" / "matrix_output.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "def normalize():\n"
+                "    \"\"\"OUTPUT: ``newM`` -- 2x2 integer matrix\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(
+                "def normalize() -> 'sage.matrix.matrix_integer_dense.Matrix_integer_dense':",
+                stub.read_text(encoding="utf-8"),
+            )
 
     def test_sphinx_roles_resolve_concrete_class_suffixes_and_outer_unions(self):
         """Role prose ignores non-type 'or' clauses and keeps explicit unions."""
@@ -8913,6 +9657,36 @@ def generic_matroid():
             self.assertIn("def conductor(self) -> 'sage.rings.integer.Integer':", heegner_text)
             self.assertIn("def quadratic_form(self) -> 'sage.quadratic_forms.quadratic_form.QuadraticForm':", heegner_text)
             self.assertIn("def conjugates_over_K(self) -> list:", heegner_text)
+
+    def test_elliptic_hom_evaluation_and_inverse_image_are_point_contracts(self):
+        """Common elliptic homomorphism prose resolves point-valued hooks."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "schemes" / "elliptic_curves" / "hom_scalar.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class EllipticCurveHom_scalar:\n"
+                "    def _call_(self, P):\n"
+                "        \"\"\"Evaluate this scalar-multiplication map at a point P.\"\"\"\n"
+                "    def _eval(self, P):\n"
+                "        \"\"\"OUTPUT: the result of evaluating self at the given point\"\"\"\n"
+                "class EllipticCurveHom_composite:\n"
+                "    def inverse_image(self, Q, all=False):\n"
+                "        \"\"\"Return an arbitrary element P in the domain such that self(P) == Q.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            expected = "'sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field |"
+            self.assertIn("def _call_(self, P) -> " + expected, text)
+            self.assertIn("def _eval(self, P) -> " + expected, text)
+            self.assertIn("def inverse_image(self, Q, all=False) -> " + expected, text)
 
     def test_semantic_family_contracts_use_runtime_selected_classes(self):
         """Family-level source contracts cover points, Lie families and weights."""
@@ -9654,6 +10428,210 @@ def generic_matroid():
             self.assertIn("def ratio(self) -> float:", text)
             self.assertIn("def stream(self) -> Iterator:", text)
 
+    def test_scalar_summary_ignores_mathematical_or_qualifiers(self):
+        """An explanatory mathematical ``or`` is not a return union."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "misc" / "scalar_or_qualifier.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class CohomologyClass:\n"
+                "    def index(self):\n"
+                "        \"\"\"Return the integer n so that this is a cohomology class in\n"
+                "        H^1(K,E[n]) or H^1(K,E)[n].\n"
+                "        \"\"\"\n"
+                "    def optional(self):\n"
+                "        \"\"\"Return an integer or None.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(
+                "def index(self) -> 'sage.rings.integer.Integer':", text
+            )
+            self.assertIn(
+                "def optional(self) -> 'sage.rings.integer.Integer' | None:", text
+            )
+
+    def test_related_parent_summary_contracts_are_receiver_relative(self):
+        """Named parent accessors use relation contracts, not public bases."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "misc" / "related_parent_contracts.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class ParentView:\n"
+                "    def base_ring(self):\n"
+                "        \"\"\"Return the base ring of self.\"\"\"\n"
+                "    def domain(self):\n"
+                "        \"\"\"Return the domain of self.\"\"\"\n"
+                "    def parent(self):\n"
+                "        \"\"\"Return the parent of self.\"\"\"\n"
+                "    def ambient(self):\n"
+                "        \"\"\"Return the ambient number field that contains self.\"\"\"\n"
+                "    def lie_algebra(self):\n"
+                "        \"\"\"Return the ambient untwisted affine Lie algebra of self.\"\"\"\n"
+                "    def element_base_ring(self):\n"
+                "        \"\"\"Return the base ring of this element's parent (if that makes sense).\"\"\"\n"
+                "    def dimension(self):\n"
+                "        \"\"\"Return the ambient dimension of self.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(
+                "def base_ring(self) -> 'sage.type_contracts.BaseRing[Self]':", text
+            )
+            self.assertIn(
+                "def domain(self) -> 'sage.type_contracts.Domain[Self]':", text
+            )
+            self.assertIn(
+                "def parent(self) -> 'sage.type_contracts.Parent[Self]':", text
+            )
+            self.assertIn(
+                "def ambient(self) -> 'sage.type_contracts.Ambient[Self]':", text
+            )
+            self.assertIn(
+                "def lie_algebra(self) -> 'sage.type_contracts.Ambient[Self]':", text
+            )
+            self.assertIn(
+                "def element_base_ring(self) -> 'sage.type_contracts.BaseRing[Self]':", text
+            )
+            self.assertIn(
+                "def dimension(self) -> 'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity':",
+                text,
+            )
+
+    def test_fixed_index_and_value_accessor_shapes_are_semantic(self):
+        """Specific storage protocols expose exact outer Python shapes."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "misc" / "fixed_index_contracts.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class Fmpz_poly:\n"
+                "    def __getitem__(self, i):\n"
+                "        \"\"\"Return the i-th coefficient of self.\"\"\"\n"
+                "class CharacterArt:\n"
+                "    def __getitem__(self, key):\n"
+                "        \"\"\"Return the line key of the ASCII art object.\"\"\"\n"
+                "class stl_int_vector:\n"
+                "    def __getitem__(self, i):\n"
+                "        \"\"\"Return the i-th element.\"\"\"\n"
+                "class Model:\n"
+                "    def get_values(self):\n"
+                "        \"\"\"Return values found by the previous call to `solve`.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(
+                "def __getitem__(self, i) -> 'sage.type_contracts.BaseRingElement[Self]':",
+                text,
+            )
+            self.assertIn("def __getitem__(self, key) -> str:", text)
+            self.assertIn("def __getitem__(self, i) -> int:", text)
+            self.assertIn("def get_values(self) -> list:", text)
+
+    def test_runtime_proven_scalar_and_ntl_protocol_contracts(self):
+        """Documented scalar/index protocols use their concrete Sage wrappers."""
+        def node(name: str, doc: str):
+            return ast.parse(f"def {name}(self):\n    {doc!r}\n").body[0]
+
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("__getitem__", '"""Return the n-th component of this quadratic form."""'),
+                "Return the n-th component of this quadratic form.",
+                "BinaryQF",
+                "sage.quadratic_forms.binary_qf",
+            ),
+            "'sage.rings.integer.Integer'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("discriminant", '"""Return the discriminant of self."""'),
+                "Return the discriminant of self.",
+                "BinaryQF",
+                "sage.quadratic_forms.binary_qf",
+            ),
+            "'sage.rings.integer.Integer'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("complex_point", '"""Return the point in the complex upper half-plane associated to self."""'),
+                "Return the point in the complex upper half-plane associated to self.",
+                "BinaryQF",
+                "sage.quadratic_forms.binary_qf",
+            ),
+            "'sage.rings.complex_mpfr.ComplexNumber'",
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("quotient", '"""Return the n-th partial quotient of self."""'),
+                "Return the n-th partial quotient of self.",
+                "ContinuedFraction_infinite",
+                "sage.rings.continued_fraction",
+            ),
+            "'sage.rings.integer.Integer'",
+        )
+        self.assertIsNone(
+            _doc_batch_semantic_annotation(
+                node("__getitem__", '"""Return the n-th partial quotient of self or a continued fraction."""'),
+                "Return the n-th partial quotient of self or a continued fraction.",
+                "ContinuedFraction_base",
+                "sage.rings.continued_fraction",
+            )
+        )
+        self.assertEqual(
+            _doc_batch_semantic_annotation(
+                node("coeff", '"""Return the coefficient of X^i in self."""'),
+                "Return the coefficient of X^i in self.",
+                "ntl_GF2X",
+                "sage.libs.ntl.ntl_GF2X",
+            ),
+            "'sage.libs.ntl.ntl_GF2.ntl_GF2'",
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "combinat" / "tableau.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class Tableau:\n"
+                "    def __call__(self, *cell):\n"
+                "        \"\"\"INPUT:\n\n"
+                "        OUTPUT: the value in the corresponding cell\n\n"
+                "        EXAMPLES::\n"
+                "            sage: t(1, 0)\n"
+                "            4\n\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(
+                "def __call__(self, *cell) -> 'sage.rings.integer.Integer':",
+                path.read_text(encoding="utf-8"),
+            )
+
     def test_cached_classcall_returns_the_declaring_class(self):
         """A canonical cached classcall result preserves the concrete class."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -9765,6 +10743,40 @@ def generic_matroid():
             self.assertIn(
                 "def product(self) -> 'sage.misc.plain_class_clause.FiniteStateMachine':",
                 path.read_text(encoding="utf-8"),
+            )
+
+    def test_definite_article_plain_class_summary_requires_leaf(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "sage" / "misc" / "definite_class.pyi"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "class CycleIndexSeries:\n"
+                "    pass\n"
+                "class ConcreteSeries(CycleIndexSeries):\n"
+                "    pass\n"
+                "class Projection:\n"
+                "    pass\n"
+                "class Builder:\n"
+                "    def series(self):\n"
+                "        \"\"\"The cycle index series of this species is returned.\"\"\"\n"
+                "    def projection(self):\n"
+                "        \"\"\"The projection of this object is returned.\"\"\"\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(PATCHER), "--stub-root", str(root)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            # The documented noun is a non-leaf family in this fixture, so
+            # the generic bridge must remain fail-closed.
+            patched = path.read_text(encoding="utf-8")
+            self.assertIn("def series(self):", patched)
+            self.assertIn(
+                "def projection(self) -> 'sage.misc.definite_class.Projection':",
+                patched,
             )
 
     def test_output_optional_literals_are_normalized_before_contracts(self):

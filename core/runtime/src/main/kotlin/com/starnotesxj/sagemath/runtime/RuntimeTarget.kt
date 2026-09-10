@@ -187,6 +187,7 @@ data class TargetProcessRequest(
     val environment: Map<String, String> = emptyMap(),
     val control: RuntimeControl = RuntimeControl(),
     val maxOutputBytes: Int = 64 * 1024,
+    val standardInput: ByteArray? = null,
 )
 
 fun interface RuntimeTargetExecutor {
@@ -212,6 +213,7 @@ class JdkRuntimeTargetExecutor(
                 environment = request.environment,
                 control = request.control,
                 maxOutputBytes = request.maxOutputBytes,
+                standardInput = request.standardInput,
             ),
         )
         is RuntimeTarget.RemoteSsh -> remote(request)

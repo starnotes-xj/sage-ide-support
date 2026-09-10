@@ -126,6 +126,43 @@ class ParentContractTest(unittest.TestCase):
                 "sage.sample.Result_gap | sage.sample.Result_generic",
             )
 
+    def test_parent_call_protocol_uses_constructor_relation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / "index.json"
+            index.write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "qualifiedName": "sage.structure.parent.Parent",
+                                "kind": "CLASS",
+                                "parents": [],
+                            },
+                            {
+                                "qualifiedName": "sage.sample.P",
+                                "kind": "CLASS",
+                                "parents": ["sage.structure.parent.Parent"],
+                            },
+                            {
+                                "qualifiedName": "sage.sample.P.__call__",
+                                "kind": "METHOD",
+                                "signatures": [{"returnType": {"state": "UNKNOWN"}}],
+                            },
+                            {
+                                "qualifiedName": "sage.sample.P._element_constructor_",
+                                "kind": "METHOD",
+                                "signatures": [{"returnType": {"state": "UNKNOWN"}}],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                infer_parent_contracts(index)["sage.sample.P.__call__"],
+                "'sage.type_contracts.ParentElement[Self]'",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

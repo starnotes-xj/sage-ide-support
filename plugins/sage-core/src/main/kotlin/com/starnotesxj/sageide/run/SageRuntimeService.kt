@@ -111,9 +111,13 @@ class SageRuntimeService : Disposable {
         )
     }
 
-    fun <T> submit(task: (RuntimeControl) -> T): SageRuntimeProbeHandle<T> {
+    fun <T> submit(
+        deadline: Duration = DEFAULT_PROBE_DEADLINE,
+        task: (RuntimeControl) -> T,
+    ): SageRuntimeProbeHandle<T> {
+        require(!deadline.isNegative && !deadline.isZero) { "Runtime task deadline must be positive" }
         val cancellation = MutableRuntimeCancellation()
-        val control = RuntimeControl(RuntimeDeadline.after(DEFAULT_PROBE_DEADLINE), cancellation)
+        val control = RuntimeControl(RuntimeDeadline.after(deadline), cancellation)
         return SageRuntimeProbeHandle(
             CompletableFuture.supplyAsync({ task(control) }, executor),
             cancellation,

@@ -147,6 +147,19 @@ FUNCTIONAL_SYMBOLIC_RESULT_UNION = (
     "sage.rings.complex_double.ComplexDoubleElement | "
     "sage.symbolic.expression.Expression | sage.rings.infinity.PlusInfinity'"
 )
+# Internal numerical evaluation hooks may be called with no explicit Sage
+# parent (in which case mpmath returns a native float/complex/int) or with a
+# caller-supplied real/complex parent.  This is the complete concrete result
+# family observed in Sage's ``_evalf_`` protocol; it intentionally excludes
+# the public Number/Element bases.
+NUMERICAL_EVALF_RETURN_UNION = (
+    "'sage.rings.integer.Integer | sage.rings.rational.Rational | "
+    "sage.rings.real_mpfr.RealNumber | sage.rings.real_double.RealDoubleElement | "
+    "sage.rings.real_double_element_gsl.RealDoubleElement_gsl | sage.rings.real_arb.RealBall | "
+    "sage.rings.real_mpfi.RealIntervalFieldElement | sage.rings.complex_mpfr.ComplexNumber | "
+    "sage.rings.complex_double.ComplexDoubleElement | sage.rings.complex_arb.ComplexBall | "
+    "int | float | complex'"
+)
 MATRIX_POLYNOMIAL_UNION = (
     "'sage.rings.polynomial.polynomial_integer_dense_flint.Polynomial_integer_dense_flint | "
     "sage.rings.polynomial.polynomial_rational_flint.Polynomial_rational_flint | "
@@ -186,6 +199,10 @@ VECTOR_ELEMENT_UNION = (
     "sage.modules.vector_symbolic_dense.Vector_symbolic_dense | "
     "sage.modules.vector_symbolic_sparse.Vector_symbolic_sparse | "
     "sage.modules.vector_callable_symbolic_dense.Vector_callable_symbolic_dense'"
+)
+WEYL_GROUP_RETURN_UNION = (
+    "'sage.combinat.root_system.weyl_group.WeylGroup_gens | "
+    "sage.combinat.root_system.weyl_group.WeylGroup_permutation'"
 )
 # Elliptic-curve factories and morphisms preserve the curve/point family
 # chosen by the base field.  The public ``EllipticCurve_generic`` and
@@ -279,6 +296,27 @@ MATRIX_SPACE_SUBMODULE_UNION = (
     "sage.modules.free_module.FreeModule_submodule_field | "
     "sage.modules.with_basis.subquotient.SubmoduleWithBasis'"
 )
+# GAP/libgap conversion hooks all return wrappers from the concrete
+# ``sage.libs.gap.element`` family.  The wrapper subclass is selected by GAP
+# at runtime (ring/list/record/etc.); keeping the complete indexed family is
+# more useful than exposing SageObject or a bare ``object``.
+GAP_ELEMENT_RETURN_UNION = (
+    "'sage.libs.gap.element.GapElement | "
+    "sage.libs.gap.element.GapElement_Boolean | "
+    "sage.libs.gap.element.GapElement_Cyclotomic | "
+    "sage.libs.gap.element.GapElement_FiniteField | "
+    "sage.libs.gap.element.GapElement_Float | "
+    "sage.libs.gap.element.GapElement_Function | "
+    "sage.libs.gap.element.GapElement_Integer | "
+    "sage.libs.gap.element.GapElement_IntegerMod | "
+    "sage.libs.gap.element.GapElement_List | "
+    "sage.libs.gap.element.GapElement_MethodProxy | "
+    "sage.libs.gap.element.GapElement_Permutation | "
+    "sage.libs.gap.element.GapElement_Rational | "
+    "sage.libs.gap.element.GapElement_Record | "
+    "sage.libs.gap.element.GapElement_String | "
+    "sage.libs.gap.element.GapElement_Ring'"
+)
 
 # Parent/element dispatch is a real Sage contract: a parent creates elements
 # through its ``element_class`` and the concrete class is selected at runtime
@@ -299,6 +337,67 @@ RELATED_ELEMENT_CONTRACTS = {
     "base ring": "'sage.type_contracts.BaseRingElement[Self]'",
     "base field": "'sage.type_contracts.BaseFieldElement[Self]'",
     "ambient": "'sage.type_contracts.AmbientElement[Self]'",
+    # Valuation/reduction APIs move values between the receiver's domain and
+    # its residue parents.  Keep these as relations so a concrete residue
+    # implementation is selected from the active parent at the call site.
+    "residue ring": "'sage.type_contracts.ResidueRingElement[Self]'",
+    "residue field": "'sage.type_contracts.ResidueFieldElement[Self]'",
+    "domain element": "'sage.type_contracts.DomainElement[Self]'",
+    # Crystal/module ``weight()`` accessors return an element of the weight
+    # lattice selected by ``weight_lattice_realization()`` rather than an
+    # element of the crystal itself.  Keep this receiver-relative relation so
+    # the active lattice implementation is resolved at the call site.
+    "weight lattice element": "'sage.type_contracts.WeightLatticeElement[Self]'",
+    # Coding/algebraic outputs may explicitly name an element of a related
+    # parent instead of saying only ``ParentElement``.  These relations are
+    # lowered through the receiver's indexed accessor (message_space,
+    # coefficient_ring, ...), so they remain concrete at the call site.
+    "message space": "'sage.type_contracts.MessageSpaceElement[Self]'",
+    "input space": "'sage.type_contracts.InputSpaceElement[Self]'",
+    "coefficient ring": "'sage.type_contracts.CoefficientRingElement[Self]'",
+    "free module": "'sage.type_contracts.FreeModuleElement[Self]'",
+    "function field": "'sage.type_contracts.FunctionFieldElement[Self]'",
+    "group": "'sage.type_contracts.GroupElement[Self]'",
+    "lattice": "'sage.type_contracts.LatticeElement[Self]'",
+    "module": "'sage.type_contracts.ModuleElement[Self]'",
+    "ideal": "'sage.type_contracts.IdealElement[Self]'",
+    "curve": "'sage.type_contracts.CurveElement[Self]'",
+}
+
+# Parent-returning relations are kept distinct from ``*Element[Self]``.
+# These contracts describe the parent object reached through the receiver;
+# the IDE resolves the concrete class from that relation's own indexed
+# contract instead of exposing a shared Sage parent base.
+RELATED_PARENT_CONTRACTS = {
+    "base ring": "'sage.type_contracts.BaseRing[Self]'",
+    "base field": "'sage.type_contracts.BaseField[Self]'",
+    "domain": "'sage.type_contracts.Domain[Self]'",
+    "codomain": "'sage.type_contracts.Codomain[Self]'",
+    "ambient": "'sage.type_contracts.Ambient[Self]'",
+    "base scheme": "'sage.type_contracts.BaseScheme[Self]'",
+    "base space": "'sage.type_contracts.BaseSpace[Self]'",
+    "value group": "'sage.type_contracts.ValueGroup[Self]'",
+    "value semigroup": "'sage.type_contracts.ValueSemigroup[Self]'",
+    "residue ring": "'sage.type_contracts.ResidueRing[Self]'",
+    "residue field": "'sage.type_contracts.ResidueField[Self]'",
+    # Additional named parent relations used by Sage's algebraic, coding and
+    # geometric APIs.  They are intentionally symbolic: the IDE lowers them
+    # through the receiver's exact accessor when one exists and otherwise
+    # leaves the dynamic result unresolved.
+    "group": "'sage.type_contracts.Group[Self]'",
+    "lattice": "'sage.type_contracts.Lattice[Self]'",
+    "module": "'sage.type_contracts.Module[Self]'",
+    "free module": "'sage.type_contracts.FreeModule[Self]'",
+    "message space": "'sage.type_contracts.MessageSpace[Self]'",
+    "input space": "'sage.type_contracts.InputSpace[Self]'",
+    "coefficient ring": "'sage.type_contracts.CoefficientRing[Self]'",
+    "function field": "'sage.type_contracts.FunctionField[Self]'",
+    "curve": "'sage.type_contracts.Curve[Self]'",
+    "ideal": "'sage.type_contracts.Ideal[Self]'",
+    # ``parent()`` is a receiver relation, not a public ``Parent`` base.
+    # Keep it symbolic so the IDE can resolve the concrete parent when the
+    # receiver's own indexed contract exposes that relation.
+    "parent": "'sage.type_contracts.Parent[Self]'",
 }
 
 # ADD: member name -> annotation expression for unannotated defs.
@@ -4937,7 +5036,12 @@ def _doc_output_values(value: str) -> tuple[str, ...]:
     return tuple(outputs)
 
 
-def _doc_examples_literal_annotation(value: str) -> str | None:
+def _doc_examples_literal_annotation(
+    value: str,
+    member: str | None = None,
+    class_index: dict[str, tuple[str, ...]] | None = None,
+    module_name: str | None = None,
+) -> str | None:
     """Infer only an unambiguous outer Python shape from doctest output.
 
     A subset of generated Sage stubs has no prose at all (the summary is just
@@ -4945,12 +5049,23 @@ def _doc_examples_literal_annotation(value: str) -> str | None:
     result.  Reading one literal line after a ``sage:`` prompt is source-backed
     evidence for the *outer* container/string/bool protocol.  Numeric values
     are deliberately excluded because Sage doctests print both Python and Sage
-    integers identically.  Mixed outputs and rich reprs remain unresolved.
+    integers identically.  Rich-output containers and printed class objects are
+    accepted only when their concrete class is unique in the source index.
     """
     categories: list[str] = []
     lines = value.splitlines()
     for index, line in enumerate(lines):
-        if re.match(r"^\s*(?:sage|python|gap)\s*:\s*", line, re.IGNORECASE) is None:
+        prompt = re.match(r"^\s*(?:sage|python|gap)\s*:\s*(?P<code>.*)$", line, re.IGNORECASE)
+        if prompt is None:
+            continue
+        # A docstring often demonstrates several related methods.  When a
+        # target member is known, keep only prompts that actually invoke it;
+        # this prevents an unrelated list/tuple example from becoming the
+        # return type of the documented method.
+        if member is not None and re.search(
+            rf"(?:^|[.\s]){re.escape(member)}\s*\(",
+            prompt.group("code"),
+        ) is None:
             continue
         cursor = index + 1
         while cursor < len(lines) and not lines[cursor].strip():
@@ -4976,6 +5091,38 @@ def _doc_examples_literal_annotation(value: str) -> str | None:
             continue
         if candidate.startswith("{") and candidate.endswith("}"):
             categories.append("dict" if ":" in candidate else "set")
+            continue
+        # Sage's doctest reprs are often the only evidence left in a sparse
+        # Cython stub.  These outer nouns identify concrete indexed families
+        # without relying on one function name or one runtime sample.
+        if re.match(r"^Vector\s+space\b", candidate, re.IGNORECASE):
+            categories.append(MATRIX_SPACE_SUBMODULE_UNION)
+            continue
+        if re.match(r"^Weyl\s+Group\b", candidate, re.IGNORECASE):
+            categories.append(WEYL_GROUP_RETURN_UNION)
+            continue
+        if re.match(r"^(?:Finite|Prime)\s+Field\s+in\b", candidate, re.IGNORECASE):
+            categories.append(FINITE_FIELD_UNION)
+            continue
+        # Rich-output doctests print a stable concrete container name (for
+        # example ``OutputPlainText container``). Resolve that terminal class
+        # through the parsed source index instead of publishing OutputBase.
+        container = re.match(
+            r"^(?P<name>Output[A-Za-z_][A-Za-z0-9_]*)\s+container\b",
+            candidate,
+        )
+        if container is not None and class_index:
+            key = re.sub(r"[^a-z0-9]", "", container.group("name").casefold())
+            candidates = class_index.get(key, ())
+            if len(candidates) != 1 and module_name:
+                candidates = _prefer_module_class_candidates(candidates, module_name)
+            if len(candidates) == 1:
+                categories.append(f"'{candidates[0]}'")
+                continue
+        # Printing a class object is Python's ``type`` result, regardless of
+        # the Sage class represented by the object.
+        if re.match(r"^<class\s+'sage\.[^']+'>\s*$", candidate):
+            categories.append("type")
     if not categories or len(set(categories)) != 1:
         return None
     return categories[0]
@@ -5900,10 +6047,27 @@ def _doc_output_class_annotation(
         )
         if contextual_role_prefix is not None and explicit_result_marker is None:
             return None
+        # ``None`` is commonly rendered as an inline-literal (``None``)
+        # rather than plain prose.  Treat that spelling as an optional branch
+        # only when the role itself names a concrete class (capitalized
+        # terminal); lower-case family roles such as ``:class:`digraph` ``
+        # remain fail-closed because they are often descriptive/ambiguous.
+        role_target = roles[0].strip().lstrip("~") if len(roles) == 1 else ""
+        role_target = (
+            role_target.split("<", 1)[1].split(">", 1)[0].strip()
+            if "<" in role_target and ">" in role_target
+            else role_target
+        )
+        role_terminal = role_target.rsplit(".", 1)[-1]
+        optional_code_none = bool(
+            re.search(r"\bor\s+`{1,2}(?:none|nothing)`{1,2}(?=\W|$)", output, re.IGNORECASE)
+            and re.match(r"^[A-Z_]", role_terminal)
+        )
         optional_role = bool(
             len(roles) == 1
             and (
                 re.search(r"\bor\s+(?:none|nothing)\b", output, re.IGNORECASE)
+                or optional_code_none
                 or re.search(r"\(\s*by\s+default\s*,\s*otherwise\s+(?:none|nothing)\s*\)", output, re.IGNORECASE)
             )
         )
@@ -6160,18 +6324,148 @@ def _doc_plain_class_annotation(
     )[0].strip()
     if not candidate or candidate in DOC_PLAIN_CLASS_STOPWORDS:
         return None
-    # A single lower-case noun is usually mathematical prose rather than a
-    # class identity (``an image``, ``a transducer``, ``a point``).  Requiring
-    # a multi-word concept keeps this resolver source-backed without creating
-    # a growing class-name allow-list; explicit Sphinx roles remain available
-    # for unambiguous single class names.
-    if len(candidate.split()) < 2:
-        return None
     key = re.sub(r"[^a-z0-9]", "", candidate)
     candidates = class_index.get(key, ())
     if len(candidates) != 1 and module_name:
         candidates = _prefer_module_class_candidates(candidates, module_name)
+    # A single lower-case noun is normally mathematical prose (``an image``,
+    # ``a point``), but an exact, unique source-indexed class is still a
+    # complete contract.  Accept it only when the noun is outside the
+    # fail-closed family stopwords and the target is not an abstract/public
+    # protocol class.  This is a data-driven class-index lookup rather than a
+    # method/class whitelist, and therefore covers newly generated classes
+    # such as ``Permutation``/``Automaton`` without hand-maintained names.
+    if len(candidate.split()) < 2:
+        if candidate in DOC_PLAIN_CLASS_STOPWORDS or len(candidates) != 1:
+            return None
+        terminal = candidates[0].rsplit(".", 1)[-1]
+        if re.search(r"(?:abstract|base|generic|element)$", terminal, re.IGNORECASE):
+            return None
     return f"'{candidates[0]}'" if len(candidates) == 1 else None
+
+
+def _doc_explicit_outer_container_annotation(value: str) -> str | None:
+    """Resolve an unconditional container sentence in a long docstring.
+
+    Older Sage docs frequently put the actual outer result contract in the
+    middle of the prose (for example ``This method returns a tuple of ...``)
+    rather than in the first summary or an ``OUTPUT:`` block.  Only accept a
+    sentence whose grammatical subject is the method/function and whose local
+    clause has no branch/alternative marker.  This keeps conditional APIs
+    such as ``return_labels``/``solution_dict`` fail-closed while recovering
+    the stable list/tuple shape used by wrappers and protocol helpers.
+    """
+    if not value:
+        return None
+    text = re.sub(r"\s+", " ", value)
+    match = re.search(
+        r"\b(?:this\s+(?:method|function)|the\s+(?:method|function)|it)\s+"
+        r"(?:always\s+)?returns?\s+(?:a|an|the)?\s*"
+        r"(?P<kind>list|tuple|pair|set|dict|dictionary)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if match is None:
+        # A few docstrings use the third-person ``The method produces ...``
+        # wording for the same unconditional protocol.
+        match = re.search(
+            r"\b(?:this\s+(?:method|function)|the\s+(?:method|function)|it)\s+"
+            r"(?:always\s+)?produces?\s+(?:a|an|the)?\s*"
+            r"(?P<kind>list|tuple|pair|set|dict|dictionary)\b",
+            text,
+            re.IGNORECASE,
+        )
+    if match is None:
+        return None
+    # Inspect a bounded local clause instead of the entire docstring: later
+    # examples may legitimately discuss another optional output.
+    clause_start = max(text.rfind(".", 0, match.start()), text.rfind(";", 0, match.start()))
+    clause_end_candidates = [position for position in (text.find(".", match.end()), text.find(";", match.end())) if position >= 0]
+    clause_end = min(clause_end_candidates, default=min(len(text), match.end() + 180))
+    clause = text[clause_start + 1 : clause_end]
+    if re.search(r"\b(?:if|when|unless|depending|otherwise|either|or)\b", clause, re.IGNORECASE):
+        return None
+    return {
+        "list": "list",
+        "tuple": "tuple",
+        "pair": "tuple",
+        "set": "set",
+        "dict": "dict",
+        "dictionary": "dict",
+    }[match.group("kind").casefold()]
+
+
+def _doc_relational_class_annotation(
+    output: str,
+    class_index: dict[str, tuple[str, ...]],
+    module_name: str | None = None,
+) -> str | None:
+    """Resolve a multi-word class described through a relation.
+
+    Sage documentation often describes a concrete value as ``a subspace of
+    modular symbols`` or ``an order in a quaternion algebra`` instead of
+    repeating the implementation class name.  Normalize the informative
+    nouns and match them against the parsed class index.  A result is emitted
+    only when one source class contains every non-generic noun (or all but
+    one connective such as ``algebra``/``space``); ambiguous families remain
+    unresolved.  This is deliberately index-driven and applies equally to
+    newly generated modules.
+    """
+    if not output or not class_index or ":class:`" in output:
+        return None
+    compact = re.sub(r"[`'\"]", "", output.casefold())
+    if re.search(r"\b(?:or|either|depending|otherwise|if|when|none|nothing)\b", compact):
+        return None
+    match = re.match(r"^(?:(?:a|an|the)\s+)?(?P<noun>.+?)(?:[.,;:]|$)", compact.strip())
+    if match is None:
+        return None
+    noun = match.group("noun")
+    # Keep the semantic head and its qualifiers, dropping only connective
+    # words that do not occur in implementation class names.
+    stop = {
+        "a", "an", "the", "of", "in", "on", "for", "from", "to", "as",
+        "this", "self", "given", "corresponding", "associated", "ambient",
+        "space", "algebra", "ring", "field", "parent", "element", "object",
+        "point", "result", "map", "morphism", "domain", "codomain",
+    }
+    words = [w for w in re.findall(r"[a-z0-9]+", noun) if w not in stop and len(w) > 1]
+    if len(words) < 2:
+        return None
+    candidates: list[tuple[int, str]] = []
+    for values in class_index.values():
+        for candidate in values:
+            terminal = candidate.rsplit(".", 1)[-1]
+            if re.search(r"(?:abstract|base|generic)$", terminal, re.IGNORECASE):
+                continue
+            key = re.sub(r"[^a-z0-9]", "", terminal.casefold())
+            score = sum(1 for word in words if word in key or word.rstrip("s") in key)
+            if score == len(words):
+                candidates.append((score, candidate))
+    deduped = sorted({candidate for _, candidate in candidates})
+    if len(deduped) != 1 and module_name:
+        preferred = _prefer_module_class_candidates(tuple(deduped), module_name)
+        deduped = list(preferred)
+    return f"'{deduped[0]}'" if len(deduped) == 1 else None
+
+
+def _doc_word_contract_annotation(output: str, owner_name: str | None) -> str | None:
+    """Resolve word results from the receiver's word parent/element role."""
+    if not output or not owner_name:
+        return None
+    text = re.sub(r"[`'\"]", "", output.casefold()).strip()
+    if not re.match(
+        r"^(?:(?:return|returns)\s+)?(?:a|an|the)?\s*(?:finite|infinite)?\s*word\b",
+        text,
+    ):
+        return None
+    owner = owner_name.casefold()
+    if re.search(r"(?:finite|infinite)words?$|wordgenerator", owner):
+        return PARENT_ELEMENT_CONTRACT
+    # A permutation's reduced word is represented by an ordinary Python list
+    # of simple reflections, not by a word parent.
+    if "permutation" in owner:
+        return "list"
+    return None
 
 
 def _doc_summary_annotation(
@@ -6179,6 +6473,7 @@ def _doc_summary_annotation(
     summary: str,
     class_index: dict[str, tuple[str, ...]] | None = None,
     owner_name: str | None = None,
+    module_name: str | None = None,
 ) -> str | None:
     """Resolve an atomic type stated by a ``Return ...`` summary sentence.
 
@@ -6268,6 +6563,29 @@ def _doc_summary_annotation(
                 r"^unary\s+minus\s+operator\.?$", summary, re.IGNORECASE
             ):
                 return "Self"
+            # A number of low-level Sage helpers use a short noun-only
+            # summary instead of an ``OUTPUT`` section.  These two forms are
+            # exact Python/Sage outer contracts: conversion to text always
+            # yields ``str`` and an explicitly returned integer is Sage's
+            # ``Integer`` scalar.  Keep the guards anchored to the result
+            # noun so input prose (for example ``integer i``) cannot match.
+            if re.match(
+                r"^(?:the\s+)?(?:string|text)\s+representation\b",
+                summary,
+                re.IGNORECASE,
+            ):
+                return "str"
+            if re.match(
+                r"^(?:return|returns)\s+(?:(?:the|a|an)\s+)?"
+                r"(?:corresponding|image\s+of\s+the)\s+integer\b",
+                summary,
+                re.IGNORECASE,
+            ) and not re.search(
+                r"\b(?:or|either|if|depending|unless|otherwise|none|nothing)\b",
+                summary,
+                re.IGNORECASE,
+            ):
+                return "'sage.rings.integer.Integer'"
             for pattern, annotation in DOC_SUMMARY_SCALAR_PATTERNS:
                 if re.search(pattern, summary, re.IGNORECASE):
                     return annotation
@@ -6352,6 +6670,70 @@ def _doc_summary_annotation(
                 return annotation
     normalized_rest = re.sub(r"`{1,2}(true|false|none|nothing)`{1,2}", r"\1", rest, flags=re.IGNORECASE)
     normalized_rest = normalized_rest.replace("`", "").replace('"', "").replace("'", "")
+    # The same short result nouns also occur in the canonical ``Return ...``
+    # form (the branch above handles noun-only summaries).  Keep this rule
+    # here so both documentation styles share one generic contract path.
+    if re.match(
+        r"^(?:the\s+)?(?:string|text)\s+representation\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "str"
+    if re.match(
+        r"^(?:(?:the|a|an)\s+)?(?:corresponding|image\s+of\s+the)\s+integer\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ) and not re.search(
+        r"\b(?:or|either|if|depending|unless|otherwise|none|nothing)\b",
+        normalized_rest,
+        re.IGNORECASE,
+    ):
+        return "'sage.rings.integer.Integer'"
+    # A common Sage wording puts the outer Python shape after a qualifier,
+    # for example ``Return the matrix list corresponding to ...`` or
+    # ``Return the tuple of roots ...``.  The qualifier describes the
+    # payload, while the noun itself is an exact container contract.  Only
+    # accept a single outer shape before a contextual ``of/for/...`` clause;
+    # conditional/heterogeneous alternatives stay unresolved.
+    qualified_container = re.match(
+            r"^(?:(?:a|an|the)\s+)?(?:[a-z][a-z0-9_-]*\s+){0,5}"
+            r"(?P<kind>list|tuple|pair|dictionary|dict)\b",
+            normalized_rest,
+            re.IGNORECASE,
+        )
+    if qualified_container is not None:
+        prefix = normalized_rest[: qualified_container.start("kind")]
+        tail = normalized_rest[qualified_container.end():]
+        # Do not mistake an input/data noun for the result shape
+        # (``the monomial corresponding to a Tietze tuple`` and
+        # ``the index set of self`` are representative examples).  Also
+        # reject an actual second result shape while allowing explanatory
+        # ``or`` clauses such as ``corresponding to ... or via GAP``.
+        invalid_prefix = re.search(
+            r"\b(?:corresponding|associated|according|index|input|argument|parameter|element|value|data|or|either)\b|"
+            r"\b(?:to|of|for|from|under|given|on)\s*$",
+            prefix,
+            re.IGNORECASE,
+        )
+        alternative = re.search(
+            r"\b(?:either|if|depending|unless|otherwise|none|nothing)\b|"
+            r"\bor\s+(?:a|an|the)?\s*(?:list|tuple|pair|dictionary|dict|plot|matrix|vector|object)\b",
+            tail,
+            re.IGNORECASE,
+        )
+        if invalid_prefix or alternative:
+            qualified_container = None
+    if qualified_container is not None:
+        return {
+                "list": "list",
+                "tuple": "tuple",
+                "pair": "tuple",
+                # A mathematical ``set`` is often not materialized as a
+                # Python set (and may be a Sage parent), so it remains
+                # governed by the stricter dedicated parser below.
+                "dictionary": "dict",
+                "dict": "dict",
+            }[qualified_container.group("kind").casefold()]
     # Sage's prose sometimes calls a backend-produced list a "set of
     # generators".  Keep this phrase unresolved unless a concrete runtime
     # contract is available; treating the mathematical noun as ``set`` would
@@ -6901,6 +7283,42 @@ def _doc_summary_class_role_annotation(
         summary,
         re.IGNORECASE,
     )
+    # A result role is also unambiguous when it appears after an embedded
+    # return verb (``Given x, returns a :class:`Foo```) or an explicit
+    # conversion verb (``convert the result to :class:`float```).  The older
+    # start-of-sentence gate missed these common Sage summaries even though
+    # the role itself was unique in the source index.  Restrict this bridge
+    # to result/conversion grammar and synthesize the minimal ``Return``
+    # phrase for the existing fail-closed role resolver; contextual roles
+    # such as ``from :class:`Bar``` still do not match.
+    embedded_result = re.search(
+        r"\b(?:return(?:s|ed)?|give(?:s|n)?|produc(?:e|es|ed)|yield(?:s|ed))\s+"
+        r"(?:a|an|the)\s+:class:`([^`]+)`"
+        r"|\b(?:to\s+)?convert(?:s|ed|ing)?\s+(?:the\s+)?(?:result|value|input|given\s+value)\s+"
+        r"to\s+(?:(?:a|an|the)\s+)?"
+        r":class:`([^`]+)`",
+        summary,
+        re.IGNORECASE,
+    )
+    if class_index and embedded_result is not None:
+        target = embedded_result.group(1) or embedded_result.group(2)
+        role_end = summary.find("`", embedded_result.end() - 1)
+        trailing = summary[role_end + 1 :] if role_end >= 0 else ""
+        # Keep explicit alternatives/conditional branches fail-closed even
+        # when the first branch itself names a unique class role.
+        if re.search(
+            r"\b(?:or|either|if|when|depending|otherwise|none|nothing)\b",
+            trailing,
+            re.IGNORECASE,
+        ):
+            target = None
+        if target is None:
+            return None
+        annotation = _doc_output_class_annotation(
+            f"Return a :class:`{target}`", class_index, module_name
+        )
+        if annotation is not None:
+            return annotation
     if not class_index or (
         ":class:" not in summary
         and not re.search(r"\b(?:object|instance|form)\b", summary, re.IGNORECASE)
@@ -6972,7 +7390,7 @@ def _doc_summary_class_role_annotation(
         )
         if constructed_annotation is not None:
             return constructed_annotation
-    annotation = _doc_output_class_annotation(summary, class_index)
+    annotation = _doc_output_class_annotation(summary, class_index, module_name)
     if annotation is not None:
         return annotation
 
@@ -7513,11 +7931,37 @@ def _doc_polynomial_base_ring_scalar_annotation(
     helpers out of this relation so a parent or list result is never narrowed
     to a scalar.
     """
-    if not owner_name or not re.search(r"polynomial", owner_name, re.IGNORECASE):
+    if not owner_name:
+        return None
+    normalized = re.sub(r"\s+", " ", (summary or "").replace(chr(96), "")).strip()
+    if re.match(r"^return\s+the\s+(?:numerator|denominator)\s+of\s+self\.?$", normalized, re.IGNORECASE) and (
+        re.search(r"(?:Element|element)$", owner_name)
+        or re.search(r"(?:fraction|localization|formsring)", owner_name, re.IGNORECASE)
+    ) and not re.search(r"continuedfraction", owner_name, re.IGNORECASE):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if re.search(r"\bcoefficient\s+in\s+(?:the\s+)?base\s+ring\b", normalized, re.IGNORECASE) and re.search(
+        r"(?:Element|element)$", owner_name
+    ) and not re.search(r"\b(?:list|tuple|set|dictionary|polynomial)\b", normalized, re.IGNORECASE):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    # Coefficient access is a parent-relative operation even for series and
+    # quotient-polynomial implementations whose class name does not contain
+    # ``polynomial``.  The documentation names the exact ``n``-th
+    # coefficient, so the result is an element of the receiver's base ring;
+    # preserve that relation instead of exposing a public Element base.
+    if re.match(
+        r"^return\s+the\s+[`\"]?n[`\"]?-th\s+coefficient\s+of\s+self\.?$",
+        normalized,
+        re.IGNORECASE,
+    ) and not re.search(
+        r"(?:polynomialring|ideal|morphism|ring_generic|parent|basis)",
+        owner_name,
+        re.IGNORECASE,
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if not re.search(r"polynomial", owner_name, re.IGNORECASE):
         return None
     if re.search(r"(?:polynomialring|ideal|morphism|ring_generic)", owner_name, re.IGNORECASE):
         return None
-    normalized = re.sub(r"\s+", " ", (summary or "").replace(chr(96), "")).strip()
     scalar_phrase = re.search(
         r"\b(?:constant|leading|lc|monomial)\s+coefficient\b|"
         r"\b(?:coefficient\s+of|resultant|discriminant|content)\b",
@@ -7577,6 +8021,1286 @@ def _doc_inverse_contract_annotation(
         re.IGNORECASE,
     ):
         return "Self"
+    return None
+
+
+def _doc_related_parent_annotation(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    summary: str,
+    owner_name: str | None,
+) -> str | None:
+    """Record a documented parent accessor as a receiver relation.
+
+    ``base_ring()``, ``domain()``, ``codomain()`` and the analogous Sage
+    accessors return a parent object, not an element of a common base class.
+    Their concrete class is selected by the receiver, so the index stores a
+    relation contract and the Kotlin lowering resolves it through the
+    receiver's exact accessor contract.  The wording guard is intentionally
+    anchored to the documented noun and rejects conditional/union prose.
+    """
+    if not owner_name:
+        return None
+    normalized = re.sub(r"\s+", " ", (summary or "").replace(chr(96), "")).strip()
+    if re.search(r"\b(?:or|either|depending|unless|otherwise|if|when|none|nothing)\b", normalized, re.IGNORECASE):
+        return None
+    patterns = (
+        (r"^(?:return|returns)\s+(?:the\s+)?base\s+ring\b|^(?:the\s+)?base\s+ring\s+(?:of|for)\b", "base ring"),
+        (r"^(?:return|returns)\s+(?:the\s+)?base\s+field\b|^(?:the\s+)?base\s+field\s+(?:of|for)\b", "base field"),
+        (r"^(?:return|returns)\s+(?:the\s+)?(?:input\s+)?domain\b|^(?:the\s+)?domain\s+(?:of|for)\b", "domain"),
+        (r"^(?:return|returns)\s+(?:the\s+)?(?:output\s+)?codomain\b|^(?:the\s+)?codomain\s+(?:of|for)\b", "codomain"),
+        (r"^(?:return|returns)\s+(?:the\s+)?ambient\s+(?:space|module|ring|group|object)\b|^(?:the\s+)?ambient\s+(?:space|module|ring|group|object)\s+(?:of|for)\b", "ambient"),
+        (r"^(?:return|returns)\s+(?:the\s+)?base\s+scheme\b|^(?:the\s+)?base\s+scheme\s+(?:of|for)\b", "base scheme"),
+        (r"^(?:return|returns)\s+(?:the\s+)?base\s+space\b|^(?:the\s+)?base\s+space\s+(?:of|for)\b", "base space"),
+        (r"^(?:return|returns)\s+(?:the\s+)?value\s+group\b|^(?:the\s+)?value\s+group\s+(?:of|for)\b", "value group"),
+        (r"^(?:return|returns)\s+(?:the\s+)?value\s+semigroup\b|^(?:the\s+)?value\s+semigroup\s+(?:of|for)\b", "value semigroup"),
+        (r"^(?:return|returns)\s+(?:the\s+)?residue\s+ring\b|^(?:the\s+)?residue\s+ring\s+(?:of|for)\b", "residue ring"),
+        (r"^(?:return|returns)\s+(?:the\s+)?residue\s+field\b|^(?:the\s+)?residue\s+field\s+(?:of|for)\b", "residue field"),
+        (r"^(?:return|returns)\s+(?:the\s+)?parent\s+(?:of|for)\b", "parent"),
+    )
+    for pattern, relation in patterns:
+        if re.match(pattern, normalized, re.IGNORECASE):
+            return RELATED_PARENT_CONTRACTS[relation]
+    # Cython-generated summaries sometimes contain only the qualified
+    # signature (``Action.domain(self)`` / ``Functor.codomain(self)``).
+    # The accessor noun itself is the contract in that form; retain the
+    # receiver relation while leaving empty/dynamic summaries unresolved.
+    shorthand = {
+        "base_ring": "base ring",
+        "base_field": "base field",
+        "domain": "domain",
+        "codomain": "codomain",
+        "ambient": "ambient",
+        "base_scheme": "base scheme",
+        "base_space": "base space",
+        "value_group": "value group",
+        "value_semigroup": "value semigroup",
+        "residue_ring": "residue ring",
+        "residue_field": "residue field",
+        "parent": "parent",
+    }.get(node.name)
+    if node.name == "base_ring" and re.search(r"(?:返回|给出).*(?:基环|系数环)", normalized):
+        return RELATED_PARENT_CONTRACTS["base ring"]
+    if shorthand and re.search(rf"\b{re.escape(node.name)}\s*\(\s*self\s*\)", normalized, re.IGNORECASE):
+        return RELATED_PARENT_CONTRACTS[shorthand]
+    return None
+
+
+def _doc_batch_semantic_annotation(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    summary: str,
+    owner_name: str | None,
+    module_name: str | None,
+) -> str | None:
+    """Resolve high-frequency, source-backed semantic contracts.
+
+    This pass deliberately keys off the documented operation and its
+    receiver role, not a table of Sage function names.  The contracts below
+    are stable across implementations and therefore provide a useful batch
+    reduction for generated Cython stubs that only retain a summary line.
+    Ambiguous parent/factory wording is rejected so dynamic APIs remain
+    fail-closed.
+    """
+    normalized = re.sub(r"\s+", " ", (summary or "").replace(chr(96), "")).strip()
+    if not normalized:
+        return None
+    lower = normalized.casefold()
+
+    # Tableau cell access is documented in an INPUT/OUTPUT pair, so the
+    # first summary line may be ``INPUT:`` rather than the result noun.  Read
+    # the complete OUTPUT paragraph here and keep the same integer contract
+    # used by the summary-based semantic pass.
+    if node.name == "__call__" and re.search(
+        r"(?:^|_)(?:composition)?tableau(?:tuple)?$",
+        (owner_name or ""),
+        re.IGNORECASE,
+    ) and re.search(r"\bvalue\s+in\s+the\s+corresponding\s+cell\b", lower):
+        return "'sage.rings.integer.Integer'"
+
+    # Number-field prime iterators yield the concrete fractional ideal shown
+    # in their doctests, not the prime norm itself.  The owner/source family
+    # and explicit OUTPUT wording together make this a stable class contract.
+    if node.name == "__next__" and re.search(
+        r"small_primes_of_degree_one|small_primes_of_degree_one_iter",
+        (owner_name or ""),
+        re.IGNORECASE,
+    ) and re.search(r"\bprime\s+of\s+absolute\s+degree\s+one\b", lower):
+        return "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'"
+
+    # A sparse NTL GF(2) polynomial docstring may put the only return
+    # evidence in its examples.  Integer-indexed access is a direct Cython
+    # coefficient lookup and therefore returns the concrete GF(2) wrapper.
+    if node.name == "__getitem__" and re.search(
+        r"ntl_gf2x$", (owner_name or ""), re.IGNORECASE
+    ) and re.search(r"\be\s*\[\s*\d+\s*\]", lower):
+        return "'sage.libs.ntl.ntl_GF2.ntl_GF2'"
+
+    owner = (owner_name or "").casefold()
+
+    # Sage documentation occasionally corrects the outer shape in prose as
+    # ``the set (or rather tuple)``.  The parenthetical is a clarification,
+    # not a runtime union, so retain the corrected tuple contract.
+    if re.match(
+        r"^(?:return|returns?)\s+(?:the\s+)?set\s*\(\s*or\s+rather\s+tuple\b",
+        lower,
+    ):
+        return "tuple"
+
+    # A large tail of generated Sage docstrings has no dedicated OUTPUT
+    # section, but its first sentence still starts with an explicit Python
+    # value noun (``Return a list ...``, ``Return an integer ...``).  Parse
+    # only that leading noun and reject conditional/alternative prose; this
+    # is a documentation contract, not a method-name table.
+    leading_value = re.match(
+        r"^(?:return|returns?|compute|computes|calculate|calculates|find|finds|"
+        r"produce|produces|give|gives)\s+(?:a|an|the|some)?\s*"
+        r"(?P<kind>boolean|bool|integer|int|long|float|double|rational|"
+        r"string|str|bytes|list|tuple|pair|set|dict|dictionary)\b(?P<tail>.*)$",
+        normalized,
+        re.IGNORECASE,
+    )
+    if leading_value is not None:
+        tail = leading_value.group("tail")
+        kind = leading_value.group("kind").casefold()
+        # Scalar adjectives such as ``rational function``/``integer matrix``
+        # describe the *next* noun, not the Python result itself.  Accept
+        # them only when the noun is a standalone scalar value; otherwise
+        # defer to the richer parent/class contract parsers.
+        scalar_qualifier = (
+            kind in {"boolean", "bool", "integer", "int", "long", "float", "double", "rational"}
+            and re.match(
+                r"\s+(?:function|subgroup|fourier|parameterization|equivalence|matrix|polynomial|series|"
+                r"expansion|representation|relations?|group|ideal|space|map|morphism|operator|lattice|element)\b",
+                tail,
+                re.IGNORECASE,
+            )
+        )
+        # ``or`` in a mathematical qualification is not by itself a
+        # run-time alternative (for example ``an integer n such that ...
+        # H^1(K,E[n]) or H^1(K,E)[n]``).  Reject only an explicit result
+        # alternative, where the token is followed by a documented value
+        # noun/``None`` (or by ``return None``).  This keeps the scalar
+        # contract precise while recovering a large class of wrapped Sage
+        # summaries whose explanatory sentence happens to contain ``or``.
+        result_alternative = re.search(
+            r"\bor\s+(?:(?:return|returns?)\s+)?(?:(?:a|an|the)\s+)?"
+            r"(?:none|nothing|boolean|bool|integer|int|long|float|double|rational|"
+            r"string|str|bytes|list|tuple|pair|set|dict|dictionary|polynomial|"
+            r"matrix|vector|map|morphism|element|object)\b",
+            tail,
+            re.IGNORECASE,
+        )
+        if not scalar_qualifier and not re.search(
+            r"\b(?:if|unless|depending|otherwise|either|when|may|might|can|backend|materiali[sz]e)\b",
+            tail,
+            re.IGNORECASE,
+        ) and result_alternative is None:
+            return {
+                "boolean": "bool", "bool": "bool", "integer": "'sage.rings.integer.Integer'",
+                "int": "int", "long": "int", "float": "float", "double": "float",
+                "rational": "'sage.rings.rational.Rational'", "string": "str", "str": "str",
+                "bytes": "bytes", "list": "list", "tuple": "tuple", "pair": "tuple",
+                "set": "set", "dict": "dict", "dictionary": "dict",
+            }[kind]
+
+    # A few high-volume Sage summaries use a mathematical result noun rather
+    # than the usual ``Return ...`` prefix.  These are still exact contracts:
+    # basis indices are Sage integers, monomial LCMs are elements of the
+    # receiver's polynomial parent, and the real-root helpers return interval
+    # field elements.  The rules are phrased by result semantics and owner
+    # family, not by individual API names.
+    if re.match(r"^return the basis index(?: of| for)\b", lower):
+        return "'sage.rings.integer.Integer'"
+    if re.match(r"^lcm for monomials\b", lower) and re.search(
+        r"(?:polynomial|monomial|multivariate|plural)", owner, re.IGNORECASE
+    ):
+        return PARENT_ELEMENT_CONTRACT
+    if re.match(r"^given a polynomial represented by a list of its coefficients\b", lower):
+        return "'sage.rings.real_mpfi.RealIntervalFieldElement'"
+    if re.match(r"^return the rational equivalence relations?\b", lower):
+        return "list"
+    if re.match(r"^return the positive square root of\b", lower) and re.search(
+        r"\bas an element of .*\b(?:field|ring)\b", lower
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base field"]
+    # Map-like differential/derivation evaluations return an element of the
+    # map's codomain.  The operation and owner role together are the contract;
+    # no concrete codomain implementation is guessed here.
+    if re.match(r"^(?:apply|evaluate|compute)\b", lower) and re.search(
+        r"\b(?:differential|derivation|morphism|homomorphism)\b", lower
+    ) and re.search(
+        r"(?:differential|derivation|morphism|homomorphism|map)", owner, re.IGNORECASE
+    ) and not re.search(r"\b(?:matrix|list|tuple|map\s+of)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["codomain"]
+    # Matrix entries of arithmetic-group elements are elements of the
+    # receiver's coefficient/base ring, independently of whether the class
+    # is an arithmetic subgroup or a Hecke-triangle implementation.
+    if re.match(r"^return the (?:upper|lower) (?:left|right) entry\b", lower) and re.search(
+        r"(?:element|matrix|group)", owner, re.IGNORECASE
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if re.match(r"^given polynomials? .*quotient and remainder\b", lower) or re.match(
+        r"^given .*there exist polynomials .*quotient and remainder\b", lower
+    ):
+        return "tuple"
+
+    # Polynomial element protocols have a parent-closed result contract that
+    # is independent of the concrete backend (FLINT, NTL, libSingular,
+    # plural/Ore/skew, or Boolean polynomials).  Generated Cython stubs often
+    # retain only these short summaries, so resolve the result from the
+    # documented operation and the receiver role rather than a method-name
+    # table.  Polynomial rings, ideals, Groebner fans, and sequences are
+    # explicitly excluded: their identically named operations construct a
+    # different parent or a collection.
+    polynomial_element_owner = bool(
+        re.search(
+            r"(?:polynomial|polynomial_element|orefunction|skewpolynomial|"
+            r"booleanmonomial|booleanpolynomial|infinitepolynomial|"
+            r"power.?series|laurentpolynomial)",
+            owner,
+            re.IGNORECASE,
+        )
+        and not re.search(
+            r"(?:ring|ideal|fan|sequence|database|factory|strategy|basis)$",
+            owner,
+            re.IGNORECASE,
+        )
+    )
+    if polynomial_element_owner:
+        if node.name in {"lc", "leading_coefficient", "constant_coefficient"} and (
+            re.search(r"\b(?:leading|constant)\s+coefficient\b", lower)
+            or re.search(r"(?:首项|常数)系数", normalized)
+        ):
+            return RELATED_ELEMENT_CONTRACTS["base ring"]
+        if node.name in {"coefficient", "monomial_coefficient"} and re.search(
+            r"(?:单项式|多项式).*系数|系数.*(?:单项式|多项式)", normalized
+        ):
+            return RELATED_ELEMENT_CONTRACTS["base ring"]
+        if node.name == "__getitem__" and re.search(
+            r"\b(?:same\s+as|return)\b.*\bmonomial[_ ]coefficient\b|"
+            r"\bcoefficient\b.*\bexponent\s+vectors?\b",
+            lower,
+        ):
+            return RELATED_ELEMENT_CONTRACTS["base ring"]
+        if node.name in {"lm", "lead_monomial", "leading_monomial"} and re.search(
+            r"\b(?:lead|leading)\s+monomial\b", lower
+        ):
+            return "Self"
+        if node.name in {"total_degree", "lead_deg", "degree"} and re.search(
+            r"\b(?:total|maximum|highest)\s+degree\b", lower
+        ):
+            return "'sage.rings.integer.Integer' | int"
+        if node.name == "residue" and re.search(r"\bresidue\b", lower):
+            return RELATED_ELEMENT_CONTRACTS["base ring"]
+        if node.name == "content_ideal" and re.search(
+            r"(?:content|内容).*ideal|内容理想|基环理想", lower + " " + normalized
+        ):
+            return RELATED_PARENT_CONTRACTS["ideal"]
+        if node.name in {
+            "left_gcd", "right_gcd", "left_lcm", "right_lcm",
+            "left_mod", "right_mod", "left_power_mod", "right_power_mod",
+            "rescale",
+        } and re.search(r"\b(?:gcd|lcm|remainder|mod|residue|rescale)\b", lower):
+            return "Self"
+        if node.name in {"left_quo_rem", "right_quo_rem"} and re.search(
+            r"\bquotient\s+and\s+remainder\b", lower
+        ):
+            return "tuple[Self, Self]"
+
+    # Parent-returning accessors are distinct from element-valued projections.
+    # Their wording names the related parent itself (``the base ring ...``,
+    # ``the residue field ...``), so the relation can be lowered through the
+    # receiver at the call site without exposing a public Sage base class.
+    # Keep the noun phrases deliberately structural: scalar metrics such as
+    # ``ambient dimension``/``lattice index`` and algebra-valued phrases such
+    # as ``group algebra`` are excluded by the required continuation.
+    parent_result_patterns = (
+        ("base ring", r"^return the (?:left |right |underlying )?base ring\b"),
+        ("base field", r"^return the (?:underlying )?base field\b"),
+        ("domain", r"^return the domain\b"),
+        ("codomain", r"^return the (?:extended )?codomain\b"),
+        ("residue ring", r"^return the residue ring\b"),
+        ("residue field", r"^return the residue field\b"),
+        ("ambient", r"^return the ambient (?=(?:[a-z]+\s+){0,4}(?:semigroup|number field|affine|jacobian|object|lie algebra)\b)"),
+        ("lattice", r"^return the lattice of\b"),
+        ("group", r"^return the group (?:for which|of rational points|of divisors|that)\b"),
+        ("module", r"^return the module (?:in|over|that)\b"),
+        ("free module", r"^return the free module\b"),
+    )
+    if owner_name:
+        for relation, pattern in parent_result_patterns:
+            if not re.match(pattern, lower):
+                continue
+            excluded = re.search(
+                r"\b(?:element\s+of|ideal|index|dimension|type|relation|algebra)\b",
+                lower,
+            )
+            # ``ambient ... Lie algebra`` is a parent-valued result; the
+            # ``algebra`` token is part of the concrete noun phrase rather
+            # than the excluded ``group algebra`` alternative.
+            if excluded and not (
+                relation == "ambient" and re.search(r"\blie\s+algebra\b", lower)
+            ):
+                continue
+            return RELATED_PARENT_CONTRACTS[relation]
+
+    # Degree bounds in Groebner/real-root helpers are scalar metrics even
+    # though their owner is a fan/helper rather than a polynomial element.
+    # The summary must name the degree metric and contain no conditional
+    # branch; an implementation cannot return a polynomial for this noun.
+    if re.match(
+        r"^return the (?:maximal|minimal|total|relative|absolute)\s+"
+        r"(?:total\s+)?degree\b", lower,
+    ) and not re.search(r"\b(?:if|when|depending|otherwise|or|none)\b", lower):
+        return "'sage.rings.integer.Integer' | int"
+
+    # A polynomial coefficient residue is a scalar from the element's base
+    # ring.  This covers Laurent-polynomial residues while keeping generic
+    # analytic residue functions (which may return a symbolic expression)
+    # outside the rule.
+    if node.name == "residue" and re.match(r"^return the residue of\b", lower) and re.search(
+        r"(?:polynomial|power.?series|laurent)", owner, re.IGNORECASE
+    ) and not re.search(r"(?:ring|ideal|field)$", owner, re.IGNORECASE):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Equally common summaries use an unambiguous outer-shape noun rather
+    # than an article (``an ordering ...``, ``the numerator ...``).  Keep the
+    # mapping bounded to operations whose result is a native container or a
+    # scalar; Sage element/parent nouns continue through the relation rules.
+    if re.match(r"^(?:return|returns?)\s+(?:an?\s+)?ordering\s+of\s+", lower):
+        return "list"
+    if (
+        node.name in {"entry", "coefficient", "constant_coefficient", "leading_coefficient", "lc"}
+        and re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:upper|lower)\s+(?:left|right)\s+entry\b", lower)
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if (
+        node.name in {"coefficient", "constant_coefficient", "leading_coefficient", "lc"}
+        and re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:n|i)-th\s+coefficient\b", lower)
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if (
+        node.name in {"coefficient", "constant_coefficient", "leading_coefficient", "lc"}
+        and re.match(r"^(?:return|returns?)\s+(?:one\s+of\s+the\s+)?coefficients\b", lower)
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?denominator\b", lower) and re.search(
+        r"(?:fractional\s+ideal|number|rational|polynomial|series|element)", lower
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:limit|taylor\s+expansion)\b", lower):
+        return FUNCTIONAL_SYMBOLIC_RESULT_UNION
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:q-binomial|q\s*[- ]?binomial)\s+coefficient\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:image\s+of|result\s+of)\s+.+\s+under\s+", lower):
+        if re.search(r"(?:parking\s+function|permutation|map|morphism)", lower):
+            if "parking function" in lower:
+                return "int"
+            if "permutation" in lower and re.search(r"\binteger\b", lower):
+                return "'sage.rings.integer.Integer'"
+            return RELATED_ELEMENT_CONTRACTS["codomain"]
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:n-th\s+power|power)\b", lower) and re.search(
+        r"(?:composition|evolution)", lower
+    ):
+        return "Self"
+    if re.match(r"^(?:return|returns?)\s+(?:a|an|the)\s+(?:generic\s+)?point\s+of\s+(?:self|this)\b", lower):
+        return PARENT_ELEMENT_CONTRACT
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:ideal)\s+generated\s+by\b", lower):
+        return RELATED_PARENT_CONTRACTS["ideal"]
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:square\s+root|simplified\s+version|combinatorial\s+logarithm)\b", lower):
+        if re.search(r"(?:element|polynomial|series|algebra|ring|expression)", owner):
+            return "Self"
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:valuation)\s+of\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["value group"] if "value group" in RELATED_ELEMENT_CONTRACTS else None
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:mutation\s+class\s+size)\b", lower):
+        return "int | None"
+    if re.match(r"^(?:return|returns?)\s+(?:the\s+)?(?:json\s+response)\b", lower):
+        return "dict"
+
+    # A few Cython-backed container/index protocols expose a fixed outer
+    # value even though the generated stub has no signature.  The noun and
+    # implementation family together are the evidence: low-level polynomial
+    # and octonion coordinates are elements of the receiver's base ring,
+    # character-art lines are strings, and the dedicated STL integer vector
+    # stores native integers.  Generic Sage ``__getitem__`` implementations
+    # (slices, maps, tableaux, graphics, parents) remain unresolved.
+    if node.name == "__getitem__":
+        if re.search(r"\b(?:\w+\s+)?(?:coefficient|coordinate)\b", lower) and re.search(
+            r"(?:fmpz|ntl_|polynomial|octonion)", owner, re.IGNORECASE
+        ) and not re.search(r"\b(?:slice|list|tuple|vector)\b", lower):
+            return RELATED_ELEMENT_CONTRACTS["base ring"]
+        if re.search(r"\bline\s+`?key`?\b", lower) and re.search(
+            r"characterart", owner, re.IGNORECASE
+        ):
+            return "str"
+        if re.search(r"\b(?:i|n)-th\s+element\b", lower) and re.search(
+            r"stl[_ ]int[_ ]vector", owner, re.IGNORECASE
+        ):
+            return "int"
+
+    # The MIP value accessor has a stable Python list outer shape; the
+    # individual values depend on the model and therefore stay unparameterized
+    # rather than being widened to an arbitrary Sage element.
+    if node.name == "get_values" and re.match(
+        r"^return values found by the previous call to `?solve`?\.?$", lower
+    ):
+        return "list"
+
+    if re.match(r"^return the line where the baseline is\b", lower):
+        return "int"
+
+    # Tableau cell access is a scalar protocol.  Sage validates tableau
+    # entries as integer values and the concrete implementation returns the
+    # stored Sage ``Integer`` (rather than a public tableau base).  Keep this
+    # rule tied to the documented cell operation and tableau family; generic
+    # collection ``__call__`` methods remain unresolved.
+    if node.name == "__call__" and re.search(
+        r"(?:^|_)(?:composition)?tableau(?:tuple)?$", owner, re.IGNORECASE
+    ) and re.search(r"\bvalue\s+in\s+the\s+corresponding\s+cell\b", lower):
+        return "'sage.rings.integer.Integer'"
+
+    # Binary quadratic forms are stored over ``ZZ``.  Their coefficient
+    # indexing, discriminant, and evaluation therefore all produce Sage
+    # integers; the source implementations are direct tuple/arithmetic
+    # operations with no parent-dependent branch.
+    if re.search(r"\bbinaryqf\b", owner, re.IGNORECASE):
+        if node.name == "__getitem__" and re.search(
+            r"\bn(?:-th|th)?\s+component\b", lower
+        ):
+            return "'sage.rings.integer.Integer'"
+        if node.name == "complex_point" and re.search(
+            r"\b(?:complex\s+upper\s+half[- ]plane|complex\s+root)\b", lower
+        ):
+            return "'sage.rings.complex_mpfr.ComplexNumber'"
+        if node.name in {"discriminant", "__call__"} and re.search(
+            r"\b(?:discriminant|evaluate\s+this\s+quadratic\s+form)\b", lower
+        ):
+            return "'sage.rings.integer.Integer'"
+
+    # Concrete continued-fraction implementations expose an integer partial
+    # quotient.  ``ContinuedFraction_base.__getitem__`` is intentionally not
+    # covered because its documentation explicitly allows returning another
+    # continued fraction for a slice.
+    if re.search(r"continuedfraction_(?:infinite|real)$", owner, re.IGNORECASE):
+        if node.name in {"quotient", "__getitem__"} and re.search(
+            r"\b(?:partial\s+)?quotient\b", lower
+        ):
+            return "'sage.rings.integer.Integer'"
+
+    # NTL's GF(2) polynomial stores coefficients in the concrete ``ntl_GF2``
+    # wrapper.  The indexed/constant/leading coefficient methods are direct
+    # Cython accessors and do not vary by parent or argument shape.
+    if re.search(r"ntl_gf2x$", owner, re.IGNORECASE):
+        if node.name == "__getitem__" and re.search(r"\b(?:examples|coefficient|entry)\b", lower):
+            return "'sage.libs.ntl.ntl_GF2.ntl_GF2'"
+        if node.name in {"coeff", "ConstTerm", "LeadCoeff"} and re.search(
+            r"\b(?:coefficient|constant\s+term|leading\s+coefficient)\b", lower
+        ):
+            return "'sage.libs.ntl.ntl_GF2.ntl_GF2'"
+
+    # A small set of generated summaries places the scalar noun after a
+    # qualifier (``the corresponding integer`` / ``which is an integer``).
+    # These are still exact scalar contracts, while arbitrary mathematical
+    # uses of the word ``integer`` continue through the guarded parsers.
+    if re.match(r"^return\s+the\s+corresponding\s+integer\b", lower):
+        return "'sage.rings.integer.Integer'"
+    if re.search(r"\b(?:which|that)\s+is\s+an?\s+integer\b", lower) and re.match(
+        r"^(?:the\s+)?(?:codegree|degree|index|size|length)\b", lower
+    ):
+        return "'sage.rings.integer.Integer'"
+
+    # Cython arithmetic slots frequently retain only an ``EXAMPLES::`` or
+    # ``TESTS::`` heading.  For concrete element implementations the Sage
+    # operator protocol is parent-closed, so the exact receiver relation is
+    # still provable even without prose.  Parent/functor/action wrappers are
+    # intentionally excluded because their operators construct maps or
+    # dispatch objects instead of elements.
+    if node.name in {
+        "__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__",
+        "__truediv__", "__pow__", "__floordiv__", "__mod__", "_div_", "_mul_",
+    } and re.search(r"(?:element|elementwrapper|polynomial|ntl_|finitefield|integer_mod|matrix_)", owner, re.IGNORECASE) and not re.search(
+        r"(?:map|morphism|functor|action|lazyimport|unknown|parent|field_class)$", owner, re.IGNORECASE
+    ) and re.fullmatch(r"(?:examples|tests|input|output)\s*:{1,3}", lower):
+        return "Self"
+
+    # Symbolic function ``_eval_`` hooks are deliberately polymorphic: a
+    # numeric argument may produce a concrete Sage/Python scalar, while a
+    # symbolic argument leaves an ``Expression`` (or returns ``None`` to let
+    # the parent build the unevaluated call).  The finite union is the stable
+    # protocol contract across Sage's function modules.
+    if (
+        node.name == "_eval_"
+        and module_name
+        and module_name.casefold().startswith("sage.functions.")
+    ):
+        return f"{FUNCTIONAL_SYMBOLIC_RESULT_UNION} | None"
+
+    # Element arithmetic is closed over the concrete receiver parent.  This
+    # semantic rule covers algebra/ring/group/module element implementations
+    # whose generated summaries only describe the operation (including a
+    # zero/exception guard) and omit an OUTPUT section.  Explicit collection,
+    # map, scalar, or alternate-parent wording remains unresolved.
+    if (
+        node.name in {"__mul__", "__rmul__", "__add__", "__radd__", "__sub__", "__rsub__", "__truediv__", "__floordiv__", "__mod__", "__pow__", "_mul_", "_div_"}
+        and owner_name
+        # Class names are normally CamelCase (``ClusterAlgebraElement``),
+        # so a word-boundary before the suffix would never match the
+        # concatenated terminal (the preceding ``a`` and ``e`` are both word
+        # characters).  Keep the suffix anchor but allow either a complete
+        # word or a CamelCase/underscore prefix.
+        and re.search(r"(?:element|elementwrapper|algebra|ring|group|module|polynomial)$", owner, re.IGNORECASE)
+        and re.search(r"\b(?:multipl\w*|divi\w*|product\w*|sum\w*|subtract\w*|power\w*|quotient\w*|raised)\b", lower)
+        and not re.search(r"\b(?:list|tuple|set|dict|map|morphism|scalar|coefficient|index|ideal|matrix)\b", lower)
+    ):
+        return "Self"
+
+    # Base-ring changes preserve the mathematical family for morphisms,
+    # ideals, modules, forms, curves, and polynomial elements.  The source
+    # implementations reconstruct the same owner family over the supplied
+    # ring; omit arrangements (whose method returns a parent arrangement)
+    # and ring parents (which may dispatch to a different backend).
+    if (
+        node.name == "change_ring"
+        and owner_name
+        and re.search(r"\b(?:change|base)\s+ring\b", lower)
+        and re.search(r"(?:morphism|ideal|module|form|curve|polynomial)", owner, re.IGNORECASE)
+        and "arrangement" not in owner
+        and not re.search(r"\b(?:new\s+ring|new\s+polynomial\s+ring|coerce\s+into)\b", lower)
+    ):
+        return "Self"
+
+    # Interoperability hooks have a stable wrapper family even though the
+    # backend chooses a subtype at runtime.  The source implementations all
+    # call the corresponding interface converter; resolve the concrete
+    # indexed wrapper union instead of leaving these frequent methods
+    # UNKNOWN (or publishing SageObject as a final type).
+    if node.name in {"_gap_", "_libgap_"} and re.search(
+        r"\b(?:gap|libgap)\b", lower
+    ):
+        return GAP_ELEMENT_RETURN_UNION
+    if node.name == "_macaulay2_" and re.search(
+        r"\b(?:macaulay\s*2|macaulay2)\b", lower
+    ):
+        return "'sage.interfaces.macaulay2.Macaulay2Element'"
+    if node.name == "_singular_" and re.search(r"\bsingular\b", lower):
+        return "'sage.interfaces.singular.SingularElement'"
+
+    # Parent accessors are often documented with a mathematical noun rather
+    # than the literal accessor phrase (``ring of scalars``, ``underlying
+    # group``, ``ambient lattice``).  These noun+verb forms are exact parent
+    # relations; the lowering layer follows the receiver's concrete accessor
+    # and element factory, so no common base class is exposed.
+    if not re.search(r"\b(?:or|either|depending|unless|otherwise|if|when|none)\b", lower):
+        parent_nouns = (
+            (r"\b(?:ring|field)\s+of\s+(?:scalars|definition)\b|\bscalars\s+over\s+which\b|\bbase\s+over\s+which\s+(?:elements|objects)\b", "base ring"),
+            (r"\bunderlying\s+(?:group|coxeter\s+group|weyl\s+group)\b|\bgroup\s+associated\s+(?:to|with)\b", "group"),
+            (r"\b(?:ambient|translation)\s+lattice\b|\blattice\s+that\s+defines\b", "lattice"),
+            (r"\bunderlying\s+free(?:\s+[^ ]+)?\s*-?\s*module\b", "free module"),
+            (r"\bunderlying\s+(?:vector\s+space|module)\b|\bsubmodule\s+of\s+the\s+ambient\b", "module"),
+            (r"\bambient\s+(?:space|module|ring|group|object|algebra|lie\s+algebra)\b", "ambient"),
+            (r"\b(?:underlying|ambient|projective)\s+curve\b", "curve"),
+            (r"\b(?:right|left|two-sided|singular|linear\s+equivalence)\s+ideal\b|\bideal\s+associated\s+to\b", "ideal"),
+        )
+        for pattern, relation in parent_nouns:
+            if re.search(pattern, lower):
+                # ``base_map``/``coerce_map`` return maps, not the parent
+                # itself.  Keep those map contracts for the dedicated
+                # morphism rules below.
+                if node.name in {"base_map", "_coerce_map_from_", "coerce_map_from", "hom", "isomorphism_to"}:
+                    continue
+                return RELATED_PARENT_CONTRACTS[relation]
+
+        # Sphinx method references are stripped to ``:meth:ambient`` in the
+        # generated first paragraph.  They still explicitly identify the
+        # receiver's ambient parent and therefore carry the same element
+        # relation as the plain ``ambient space/module`` wording.
+        if re.search(
+            r"\belement\s+(?:of|in|from)\s+(?:(?:the\s+)?ambient(?:\s+(?:space|module|ring|group|object))?|:meth:ambient)\b",
+            lower,
+        ):
+            return RELATED_ELEMENT_CONTRACTS["ambient"]
+
+    # Coefficient accessors on element/form/series objects return one value
+    # from the receiver's base ring.  A coefficient noun plus an element-like
+    # owner is enough proof; polynomial *parents* and collection constructors
+    # are excluded because their coefficient APIs have different contracts.
+    if node.name != "__getitem__" and re.search(r"\b(?:coefficient|entry|coordinate)\b", lower) and re.search(
+        r"\b(?:return|fetch|get|access|corresponding)\b", lower
+    ) and owner_name and re.search(r"(?:element|form|series|polynomial|vector|matrix)", owner, re.IGNORECASE):
+        if node.name in {"__getitem__", "coefficient", "constant_coefficient", "leading_coefficient", "lc"} and not re.search(
+            r"\b(?:list|tuple|slice|matrix|vector|polynomial|ring)\b", lower
+        ):
+            return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Coboundary/cocycle subspaces and raw cohomology are concrete free
+    # module implementations selected by the field backend.  The documented
+    # noun fixes the outer family and the algebra owner fixes the operation;
+    # retain explicit implementation unions for IDE member lookup.
+    if re.search(r"\b(?:coboundary|cocycle)\s+group\b", lower) and re.search(
+        r"(?:differential|cdg|gradedcommutative)", owner, re.IGNORECASE
+    ):
+        return MATRIX_SPACE_SUBMODULE_UNION
+    if re.search(r"\bcohomology\s+group\b", lower) and re.search(
+        r"(?:differential|cdg|gradedcommutative)", owner, re.IGNORECASE
+    ):
+        return "'sage.modules.quotient_module.FreeModule_ambient_field_quotient'"
+
+    # Tableau residues and NTL polynomial discriminants are scalar
+    # projections with implementation-independent Sage integer results.
+    if (
+        node.name == "residue"
+        and re.search(r"\bresidue\b", lower)
+        and re.search(r"(?:tableau|diagram|partition)", owner, re.IGNORECASE)
+    ):
+        return "'sage.rings.integer.Integer' | int"
+    if (
+        node.name == "discriminant"
+        and re.search(r"\bdiscriminant\b", lower)
+        and owner.startswith("ntl_")
+    ):
+        return "'sage.rings.integer.Integer'"
+
+    # Small, source-stable scalar/outer-shape protocols that recur across
+    # generated extension stubs.
+    if node.name == "index" and owner_name and "combinatorialobject" in owner:
+        return "int"
+    if node.name in {"first", "last"} and owner.startswith("subwords_"):
+        return "list"
+    if node.name == "default_prec" and re.search(r"\bprecision\b", lower):
+        return "int"
+    if node.name == "genus" and re.search(r"\bgenus\b", lower):
+        return "'sage.rings.integer.Integer' | int"
+    if node.name == "t" and re.search(r"\bsize\b", lower) and "coveringdesign" in owner:
+        return "'sage.rings.integer.Integer' | int"
+    if node.name == "twist" and re.search(r"\btwist\b", lower) and "quantum" in owner:
+        return "'sage.rings.integer.Integer' | int"
+    if node.name == "pi" and re.search(r"complex\s+number", lower) and "complexdoublefield" in owner:
+        return "'sage.rings.complex_double.ComplexDoubleElement'"
+    if node.name in {"derivative", "definite_integral"} and re.search(r"\b(?:derivative|integral)\b", lower) and re.search(
+        r"(?:spline|interpolation)", owner, re.IGNORECASE
+    ) and not re.search(r"\b(?:symbolic|expression|polynomial|series)\b", lower):
+        return "float"
+    if node.name == "center" and "polyhedron" in owner and re.search(r"average\s+of\s+the\s+vertices", lower):
+        return VECTOR_ELEMENT_UNION
+    if node.name == "numerical_approx" and owner_name and "freemoduleelement" in owner:
+        return VECTOR_ELEMENT_UNION
+    if node.name.startswith("unpickle_") and "vector" in owner:
+        return VECTOR_ELEMENT_UNION
+    if node.name == "_complex_mpfr_field_" and re.search(r"complexfield\s+element", lower):
+        return "'sage.rings.complex_mpfr.ComplexNumber'"
+    if node.name == "_interval_fast" and re.search(r"interval\s+field", lower):
+        return "'sage.rings.real_mpfi.RealIntervalFieldElement'"
+    if node.name == "_composition_impl" and "ellipticcurvehom" in owner:
+        return "Self"
+    if node.name in {"__floordiv__", "__mod__"} and (
+        owner.startswith("fmpz_poly") or owner.startswith("ntl_")
+    ) and re.search(r"\b(?:division|remainder|modulo|truncated)\b", lower):
+        return "Self"
+    if node.name in {"first", "last"} and owner.startswith("partitions") and re.search(r"partition", lower):
+        return PARENT_ELEMENT_CONTRACT
+    if node.name in {"left_split", "right_split", "left_box"} and re.search(r"\bimage\s+of\s+self\b", lower):
+        return PARENT_ELEMENT_CONTRACT
+
+    # Element-side polynomial transformations (normalisation, reduction,
+    # differentiation and integration) return a polynomial in the receiver's
+    # own parent.  The operation wording plus a concrete polynomial-element
+    # owner is sufficient; scalar projections such as content/resultant are
+    # excluded explicitly.
+    if owner_name and re.search(r"(?:polynomial|power.?series|laurent)", owner, re.IGNORECASE) and not re.search(r"(?:ring|ideal|functor|database|parent)$", owner, re.IGNORECASE) and node.name in {
+        "reduce", "normal_form", "tail", "stretch", "rescale_vars", "toric_coordinate_change",
+        "toric_substitute", "derivative", "integral", "gcd", "inverse_mod", "inverse_of_unit",
+    } and not re.search(r"\b(?:coefficient|content|resultant|discriminant|factorization|factorisation|list|tuple|map|morphism)\b", lower):
+        return "Self"
+
+    # p-adic residue methods all reduce into the receiver's residue ring even
+    # when the generated prose only says “reduce modulo p^absprec”.
+    if node.name == "residue" and re.search(r"(?:padic|p_adic|p-adic)", owner, re.IGNORECASE) and re.search(
+        r"\b(?:reduc|modulo|residue)\w*\b", lower
+    ):
+        return RELATED_ELEMENT_CONTRACTS["residue ring"]
+
+    # Explicit polynomial-producing summaries are stable across the concrete
+    # polynomial backend.  Keep the indexed implementation union rather than
+    # the public Polynomial base; optional/conditional branches remain
+    # unresolved by the guard.
+    if owner_name and re.match(r"^(?:return|compute|calculate|determine|find)\b", lower) and re.search(
+        r"\b(?:[a-z][a-z0-9_-]*\s+)?polynomial\b", lower
+    ) and not re.search(r"\b(?:if|when|unless|otherwise|depending|or|either|factorization|factorisation|list|tuple|map|morphism)\b", lower):
+        return POLYNOMIAL_RETURN_UNION
+
+    if (
+        node.name in {"__add__", "__mul__", "__rmul__"}
+        and "unit ideal" in lower
+        and owner_name
+        and "quaternionorder" in owner
+    ):
+        return "'sage.algebras.quatalg.quaternion_algebra.QuaternionFractionalIdeal_rational'"
+
+    word_contract = _doc_word_contract_annotation(normalized, owner_name)
+    if word_contract is not None:
+        return word_contract
+
+    # Elliptic-curve morphisms are callable maps between concrete point
+    # implementations.  Their generated Cython stubs often retain only a
+    # terse ``Evaluate ... at a point``/``return an element in the domain``
+    # summary, so the normal output parser cannot see the point contract.
+    # The operation semantics themselves are the proof: evaluation and
+    # inverse-image results are points on the source/codomain curve.  Keep the
+    # finite/number-field implementation union used by the active Sage
+    # point stubs; do not expose the public EllipticCurvePoint base.
+    if "ellipticcurvehom" in owner:
+        if node.name in {"_call_", "_eval", "_raw_eval"} and re.search(
+            r"\b(?:evaluat(?:e|es|ing|ion)|call|image)\b.*\bpoint\b|\bpoint\b.*\b(?:evaluat(?:e|es|ing|ion)|call|image)\b",
+            lower,
+        ):
+            return ELLIPTIC_POINT_RETURN_UNION
+        if node.name in {"inverse_image", "preimage"} and re.search(
+            r"\b(?:arbitrary|some|an?)\s+element\s+\w*\s+in\s+the\s+domain\b|\bpreimage\b",
+            lower,
+        ) and not re.search(r"\b(?:or|either|depending|unless|otherwise|if|when|all)\b", lower):
+            return ELLIPTIC_POINT_RETURN_UNION
+        if node.name == "_raw_eval" and re.search(r"\b(?:isogeny|velu|square.?root)\b", lower):
+            return ELLIPTIC_POINT_RETURN_UNION
+        if node.name == "__truediv__" and re.search(r"\b(?:phi|isogeny|morphism)\b", lower):
+            return "Self"
+
+    # Crystal and highest-weight module APIs use the same documented lattice
+    # relation across all concrete implementations.  ``weight()`` and
+    # ``highest_weight()`` are element projections from the parent returned
+    # by ``weight_lattice_realization()``; the receiver's crystal/module
+    # parent is not the correct final type.  The owner-role guard excludes
+    # unrelated numeric ``weight`` values and the explicit wording rejects
+    # tuple/list representations that are intentionally already typed by a
+    # concrete stub.
+    owner_context = owner + " " + (module_name or "").casefold()
+    if node.name in {"weight", "highest_weight"} and re.search(
+        r"\bweight\b", lower
+    ) and re.search(
+        r"(?:crystal|module|weight|lattice|tableaux|rigged|root.?system)", owner_context,
+    ) and not re.search(r"\b(?:tuple|list|array|coordinates?|integer|number)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["weight lattice element"]
+    if node.name == "weight_lattice_realization" and re.search(
+        r"\b(?:weight\s+lattice|lattice\s+containing\s+the\s+weights?)\b", lower
+    ):
+        return RELATED_PARENT_CONTRACTS["lattice"]
+
+    # Quantum/Hecke parameter accessors return the parameter in the algebra's
+    # own base ring.  This is a receiver-relative scalar contract: different
+    # constructions use ZZ, a polynomial ring, or a symbolic field, while
+    # the relation to ``base_ring()`` remains exact.  The owner and summary
+    # guards keep boolean option accessors (for example ``q=True`` flags)
+    # outside this rule.
+    if node.name in {"q", "q1", "q2", "hecke_parameter", "central_charge", "conformal_weight", "c"} and re.search(r"\b(?:parameter|variable)\s+`?q(?:_?1|_?2)?`?\b|\b(?:parameter|variable)\s+`?c`?\b|\bcentral\s+charge\b|\bconformal\s+weight\b", lower) and re.search(
+        r"(?:algebra|quantum|hecke|fock|onsager|group|space)", owner
+    ) and not re.search(r"\b(?:boolean|bool|option|flag|matrix\s+coordinate)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Crystal parameters ``r``/``s`` and finite graded-algebra degrees are
+    # integral invariants.  Their docs identify the parameter explicitly;
+    # no class-name table is needed beyond the crystal/graded owner role.
+    if node.name in {"r", "s"} and re.search(
+        rf"\b(?:value|parameter)\s+`?{node.name}`?\b", lower,
+    ) and re.search(r"(?:crystal|tableaux|rigged)", owner_context):
+        return "'sage.rings.integer.Integer' | int"
+    if node.name in {"level", "maximal_degree"} and re.search(
+        r"\b(?:restriction\s+)?level\b|\bmaximal\s+degree\b", lower,
+    ) and re.search(r"(?:q.?system|graded|algebra|crystal)", owner_context) and not re.search(
+        r"\b(?:space|module|ring|category|map|morphism)\b", lower,
+    ):
+        return "'sage.rings.integer.Integer' | int | None" if node.name == "level" and re.search(r"\bor\s+none\b", lower) else "'sage.rings.integer.Integer' | int"
+
+    # Channel error probabilities are real-valued scalars; the concrete
+    # backend depends on the caller's field/precision and is represented by
+    # the existing finite real-number union.
+    if node.name == "error_probability" and re.search(
+        r"\berror\s+probability\b", lower,
+    ) and re.search(r"(?:channel|probability)", owner_context):
+        return REAL_NUMBER_RETURN_UNION
+
+    # Bilinear/Killing forms evaluate two elements to one scalar in the
+    # module/algebra base ring.  Requiring the application wording avoids
+    # confusing accessors which return a form object itself.
+    if node.name in {"killing_form", "bilinear_form"} and re.search(
+        r"\b(?:form)\b.*\b(?:on|applied|evaluate|evaluat|u\b|v\b|x\b|y\b)", lower
+    ) and not re.search(r"\b(?:matrix|map|morphism|operator|form\s+object)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Lazy-series parent ``_monomial(c, n)`` constructors interpret a
+    # coefficient/index pair as one element of the selected series parent.
+    # The owner-family guard is semantic (all are ring parents), not a class
+    # allow-list, and excludes coefficient/value projection helpers.
+    if node.name == "_monomial" and re.search(
+        r"\binterpretation\s+of\s+the\s+coefficient\b", lower
+    ) and re.search(r"(?:series|algebra|operator)\s*ring$|(?:series|algebra)ring", owner):
+        return PARENT_ELEMENT_CONTRACT
+
+    # Valuation approximation bounds and relative coefficient-size estimates
+    # are integral/infinite scalar invariants.  The source implementations
+    # delegate to another valuation and may return ``+Infinity``; preserving
+    # the full Sage/Python scalar union is therefore more accurate than a
+    # plain ``int``.
+    if node.name in {"_relative_size", "lower_bound", "upper_bound"} and re.search(
+        r"\b(?:estimate\s+on\s+the\s+coefficient\s+size|lower\s+bound|upper\s+bound)\b", lower
+    ) and re.search(r"(?:valuation|valuat(?:ion|e))", owner):
+        return CARDINALITY_RETURN_UNION
+
+    # Coding encoders/decoders and similar wrappers expose their associated
+    # message/input parent.  The concrete parent is resolved from the
+    # receiver's ``message_space()``/``input_space()`` contract rather than a
+    # shared coding base class.
+    if node.name == "message_space" and re.search(r"\bmessage\s+space\b", lower):
+        return RELATED_PARENT_CONTRACTS["message space"]
+    if node.name == "input_space" and re.search(r"\binput\s+space\b", lower):
+        return RELATED_PARENT_CONTRACTS["input space"]
+
+    # Decoder/encoder message operations return an element of the associated
+    # message space.  The concrete message parent is selected by the code's
+    # ``message_space()`` contract, so use that relation rather than a broad
+    # vector/list type.
+    if node.name in {"decode_to_message", "unencode_nocheck", "decode", "unencode"} and re.search(
+        r"\bmessage\b", lower
+    ) and re.search(r"(?:decoder|encoder|code)", owner_context, re.IGNORECASE) and not re.search(
+        r"\b(?:list|tuple|array|vector)\b", lower
+    ):
+        return RELATED_ELEMENT_CONTRACTS["message space"]
+
+    # Root/weight lattice implementations expose the complete family through
+    # a stable ``FiniteFamily`` container.  The plural noun is intentionally
+    # required so singular ``simple_root``/``fundamental_weight`` accessors
+    # continue using the parent-element relation above.
+    if node.name in {"simple_roots", "fundamental_weights"} and re.search(
+        r"\b(?:simple\s+roots?|fundamental\s+weights?)\b", lower
+    ) and re.search(r"(?:root.?system|weight|weyl|cartan)", owner_context):
+        return "'sage.sets.family.FiniteFamily'"
+
+    # Crystal epsilon/phi statistics are integer-valued (the Sage runtime
+    # returns native ``int`` for the common letter/tableau implementations).
+    # Match both the ASCII and reStructuredText Greek spellings used by Sage
+    # docstrings; tuple/list-valued crystal payloads are excluded.
+    if node.name in {"epsilon", "phi"} and re.search(
+        rf"(?:\\(?:varepsilon|varphi)|\b{node.name}\b)", lower
+    ) and re.search(r"(?:crystal|tableau|rigged|quantum)", owner_context) and not re.search(
+        r"\b(?:tuple|list|vector|function)\b", lower
+    ):
+        return "'sage.rings.integer.Integer' | int"
+
+    # Classical Lie-algebra invariant forms evaluate to one scalar in the
+    # defining base ring.  This complements ``killing_form`` for the
+    # epsilon-functional helper whose summary omits the word ``form``.
+    if node.name == "epsilon" and re.search(
+        r"\baction\s+of\s+the\s+functional\b", lower
+    ) and re.search(r"(?:lie|classical|algebra)", owner_context):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # The SymPy bridge installs a family of ``_sage_`` adapters on SymPy
+    # classes.  Their source bodies are simple, deterministic constructors:
+    # ordinary symbolic functions return Sage ``Expression`` objects, while
+    # the matrix/polynomial/interval adapters return the corresponding
+    # concrete Sage families.  Keep the few argument-dependent factories
+    # (polynomial ring, function lookup and order) unresolved.
+    if module_name and module_name.casefold().startswith("sage.interfaces.sympy"):
+        if node.name == "sympy_set_to_list":
+            return "list"
+        if node.name.startswith("_sympysage_"):
+            if node.name == "_sympysage_matrix":
+                return MATRIX_ELEMENT_UNION
+            if node.name == "_sympysage_polynomial":
+                return POLYNOMIAL_RETURN_UNION
+            if node.name == "_sympysage_real_interval":
+                return "'sage.rings.real_mpfi.RealIntervalFieldElement'"
+            if node.name == "_sympysage_complex_interval":
+                return "'sage.rings.complex_arb.ComplexBall'"
+            if node.name in {"_sympysage_polynomial_ring", "_sympysage_function_by_name", "_sympysage_order"}:
+                return None
+            return "'sage.symbolic.expression.Expression'"
+
+    # Symbolic expression protocol helpers with source-defined result
+    # classes.  Unlike substitution/evaluation, these operations do not
+    # depend on caller values: algebraic conversion and Laurent-polynomial
+    # conversion always construct the documented target family, and lcm is
+    # an expression-preserving symbolic operation.
+    if owner_name == "Expression":
+        if node.name == "_algebraic_":
+            return "'sage.rings.qqbar.AlgebraicNumber'"
+        if node.name == "_arb_":
+            return "'sage.rings.real_arb.RealBall | sage.rings.complex_arb.ComplexBall'"
+        if node.name == "_fast_callable_" and re.search(r"\bexpression\b", lower):
+            return "'sage.symbolic.expression.Expression'"
+        if node.name == "laurent_polynomial" and re.search(r"\blaurent\s+polynomial\b", lower):
+            return LAURENT_POLYNOMIAL_RETURN_UNION
+        if node.name == "lcm" and re.search(r"\blcm\b", lower) and not re.search(
+            r"\b(?:list|tuple|set|dictionary|map|morphism)\b", lower
+        ):
+            return "Self"
+        if node.name == "inverse_image" and re.search(
+            r"\b(?:element|point)\b.*\bdomain\b|\bdomain\b.*\b(?:element|point)\b",
+            lower,
+        ):
+            return ELLIPTIC_POINT_RETURN_UNION
+
+    # Sage's symbolic numeric functions share the same ``_evalf_`` protocol:
+    # the optional parent controls the concrete real/complex backend, while
+    # an omitted parent falls back to Python numeric scalars.  The protocol
+    # therefore has one finite, source-defined union independent of the
+    # particular function implementation.  Do not apply it to ``Expression``
+    # integration hooks, whose return may be an unevaluated expression.
+    if node.name == "_evalf_" and module_name and module_name.casefold().startswith(
+        "sage.functions."
+    ):
+        return NUMERICAL_EVALF_RETURN_UNION
+
+    # Morphism application is a codomain-element operation.  The exact class
+    # is selected by the codomain parent, so preserve that relation rather
+    # than publishing a shared map/element base.  This covers ``_call_`` and
+    # ``__call__`` implementations whose docs explicitly describe applying a
+    # morphism/map to an input; generic functors and arbitrary callables stay
+    # unresolved.
+    if node.name in {"_call_", "__call__"} and re.search(
+        r"(?:morphism|map|homomorphism|pseudomorphism)", owner_context,
+    ) and re.search(
+        r"\b(?:return|compute|construct|evaluate|apply|map)\b.*\b(?:image|result|element|point|value)\b|"
+        r"\b(?:image|result|element|point|value)\b.*\b(?:under|from|in)\b",
+        lower,
+    ) and not re.search(r"\b(?:functor|composition|compose|factory|database)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["codomain"]
+
+    # Parent-valued accessors on concrete elements sometimes name the target
+    # lattice rather than repeating ``parent``.  The element suffix is a
+    # role check (not a class allow-list), and the explicit ambient-lattice
+    # wording proves the relation for methods such as ``WeylGroupElement.domain``.
+    if re.search(r"(?:Element|element)$", owner_name or "") and node.name in {"domain", "lattice", "ambient"} and re.search(
+        r"\b(?:ambient|underlying|translation)\s+lattice\b", lower,
+    ) and not re.search(r"\b(?:or|either|depending|otherwise|none|nothing)\b", lower):
+        return RELATED_PARENT_CONTRACTS["lattice"]
+
+    # Free-module accessors on number-field/quaternion/homology families all
+    # construct one of Sage's concrete ambient free-module parents.  The
+    # result is selected by the base ring/field and is represented by the
+    # existing implementation union.
+    if node.name == "free_module" and re.search(
+        r"\b(?:underlying|corresponding|formed|contained)\s+(?:free\s+)?(?:\\[a-z]+\s*[- ]?)?module\b|\bfree\s+(?:\\[a-z]+\s*[- ]?)?module\s+(?:that|which)\s+corresponds\b|\bfree\s+\\[a-z]+-module\b",
+        lower,
+    ) and not re.search(r"\b(?:linear functions|morphism|map|tuple|list)\b", lower):
+        return MATRIX_SPACE_MODULE_UNION
+
+    # A handful of older Sage summaries are deliberately terse but still
+    # state a result whose mathematical shape is fixed.  Keep these rules
+    # wording/role driven: they apply to every implementation carrying the
+    # same contract and do not enumerate class or method names.
+    if re.match(r"^return the value of the m(?:o|ö)bius function of the poset\b", lower) and not re.search(
+        r"\b(?:or|either|depending|otherwise|none|nothing)\b", lower,
+    ):
+        # The incidence-algebra Möbius function is integer-valued in Sage;
+        # concrete implementations may expose either Sage Integer or Python
+        # int depending on the Hasse-diagram backend.
+        return "'sage.rings.integer.Integer' | int"
+    if re.match(r"^the height of the tableaux in self\.?$", lower):
+        return "int"
+    if re.match(r"^return the covering radius of self\.?$", lower) and re.search(
+        r"(?:code|coding|golay|reed.?solomon)", owner_context,
+    ):
+        return "'sage.rings.integer.Integer' | int"
+    if re.match(r"^the inverse of the leading coefficient\.?$", lower) and re.search(
+        r"stream", owner_context,
+    ):
+        # Stream inversion takes the reciprocal of the coefficient in the
+        # stream's coefficient/base ring; preserve that receiver-relative
+        # scalar instead of publishing a shared Element base.
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+    if re.match(r"^return the product of x and y\.?$", lower) and re.search(
+        r"(?:group|monoid|semigroup|magma|algebra|ring)", owner_context,
+    ) and not re.search(r"\b(?:scalar|inner|dot|map|morphism|functor)\b", lower):
+        return PARENT_ELEMENT_CONTRACT
+    if re.match(r"^return a sample of the available coxeter types\.?$", lower):
+        return "list"
+    if re.match(r"^return (?:the )?result of inserting a letter\b", lower) and re.search(
+        r"binary.?tree", owner_context,
+    ) and not re.search(r"\b(?:or|either|depending|otherwise|none|nothing)\b", lower):
+        return "Self"
+    if re.match(r"^plot self\.?$", lower) and re.search(r"hyperbolic.?point", owner_context):
+        # ``show`` on a hyperbolic point is a plotting side effect and Sage's
+        # implementation returns the graphics object it builds.
+        return "'sage.plot.graphics.Graphics'"
+    if re.match(r"^return an? (?:n-th|primitive .*?) root of unity\b", lower) and re.search(
+        r"(?:field|ring|order|root.?of.?unity)", owner_context,
+    ):
+        if not re.search(r"\b(?:if|unless|otherwise|none|nothing)\b", lower):
+            return PARENT_ELEMENT_CONTRACT
+        if re.search(r"\bif\s+(?:one|it)\s+(?:exists|is\s+available)\b", lower):
+            return f"{PARENT_ELEMENT_CONTRACT} | None"
+    if re.match(r"^return an? element with valuation\b", lower) and re.search(
+        r"valuation", owner_context,
+    ):
+        return PARENT_ELEMENT_CONTRACT
+    if re.match(r"^return a uniformizing element(?: of| for)\b", lower) and re.search(
+        r"valuation", owner_context,
+    ):
+        return PARENT_ELEMENT_CONTRACT
+    if re.match(r"^compute the approximate log2 of the maximum of the absolute", lower) and re.search(
+        r"polynomial", owner_context,
+    ):
+        return "int"
+    if re.match(r"^return (?:the )?connectivity of self\.?$", lower) and re.search(
+        r"(?:module|graded|complex)", owner_context,
+    ):
+        return "'sage.rings.integer.Integer' | int"
+    if re.match(r"^return the underlying original poset\.?$", lower):
+        return "'sage.combinat.posets.posets.FinitePoset'"
+    if re.match(r"^return self as a complex double\.?$", lower) or re.match(
+        r"^convert this complex number to sympy\.?$", lower,
+    ):
+        # The former is a Python complex conversion; the latter is a SymPy
+        # bridge and intentionally remains dynamic (the guard below excludes
+        # it from this branch).
+        if "sympy" not in lower:
+            return "complex"
+    if re.match(r"^return the json response(?: or raise an error)?\.?$", lower):
+        return "dict"
+
+    # ``_comparison_impl`` is the common rich-comparison protocol hook.  A
+    # documented comparison operation has a fixed Python bool result even
+    # when the public ``__eq__``/``__lt__`` wrapper remains overloaded.
+    if node.name == "_comparison_impl" and re.search(
+        r"\b(?:compar(?:e|ison|ing)|richcmp|rich\s+comparison)\b", lower
+    ) and not re.search(r"\b(?:return|produce|yield)s?\s+(?:a|an|the)?\s*(?:tuple|list|object|element)\b", lower):
+        return "bool"
+
+    # A few public helpers have an intentionally terse summary while their
+    # result shape is still explicit.  Keep these contracts wording-driven so
+    # the rule applies to every implementation (and not just a method-name
+    # table).  ``json`` responses and binary-tree traversals are ordinary
+    # Python containers; ``sage_getargspec`` returns the concrete named tuple
+    # used by Sage's inspection API.
+    if re.match(r"^return the json response(?: or raise an error)?\.?$", lower):
+        return "dict"
+    if re.match(r"^return the keys sorted according to .*parameter\.?$", lower) or re.match(
+        r"^return the (?:keys|values) sorted according to .*parameter\.?$", lower
+    ):
+        return "list"
+    if re.match(r"^return the names and default values of a function'?s arguments\.?$", lower):
+        return "'sage.misc.decorators.FullArgSpec'"
+    if re.match(r"^return the value [`']?\\?[a-z][a-z0-9_]*[`']?\.?$", lower):
+        # These Cython accessors expose dimensions/parameters stored as native
+        # Python integers (verified for the quantum matrix and cactus-group
+        # implementations).  Do not widen arbitrary numeric prose: the
+        # result noun must be the complete summary.
+        return "int"
+
+    # Index/precision accessors are scalar projections even when a generated
+    # Cython summary does not carry a return annotation.  Keep the native
+    # Sage/Python integer union: unlike a literal ``int`` this remains valid
+    # for backends whose low-level implementation returns ``Integer``.
+    if re.match(
+        r"^return (?:the )?(?:array )?index\b[^.]*\.?$",
+        lower,
+    ) and not re.search(
+        r"\b(?:if|when|depending|otherwise|or|none|nothing|index\s+set|index\s+of\s+self)\b",
+        lower,
+    ):
+        return "'sage.rings.integer.Integer | int'"
+    if node.name in {"precision_cap", "_precision_cap"} and re.search(
+        r"\bprecision\s+cap\b", lower
+    ) and not re.search(r"\b(?:lattice|object|matrix|tuple|vector)\b", lower):
+        return "'sage.rings.integer.Integer | int'"
+
+    # A parameter explicitly returned as a rational is a scalar contract;
+    # ``Rational`` is the concrete Sage value used by the rational field,
+    # while native ``int`` is deliberately not introduced here.
+    if re.match(r"^return (?:a|an|the) rational(?:\s+number|\s+value)?\.?$", lower):
+        return "'sage.rings.rational.Rational'"
+
+    # Explicit scalar projections from an element into its coefficient/base
+    # ring are the same receiver-relative contract regardless of polynomial,
+    # Laurent, or series backend.  The element-role guard prevents parent
+    # constructors and divisor/coordinate helpers from being misclassified.
+    if node.name != "__getitem__" and re.search(r"(?:Element|element)$", owner_name or "") and re.match(
+        r"^return (?:the )?(?:coefficient|constant coefficient)\b.*\bbase ring\b", lower
+    ) and not re.search(r"\b(?:divisor|coordinate|index|label|map|morphism)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Polynomial/series backends sometimes describe ``__getitem__`` as
+    # returning the coefficient, while their class name is a parent-like
+    # implementation (``PowerSeries``/``TateAlgebraElement``) rather than a
+    # literal ``...Element`` suffix.  The exact coefficient wording proves a
+    # receiver-relative base-ring element and is safe for all such backends.
+    if node.name == "__getitem__" and re.match(
+        r"^return the coefficient\b", lower
+    ) and re.search(
+        r"(?:polynomial|power.?series|tate.?algebra|ore.?function|ntl_)",
+        owner,
+    ) and not re.search(r"\b(?:coordinate|index|label|point|map|morphism)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    if re.search(r"\bcoefficient in (?:the )?base ring\b", lower) and re.search(
+        r"(?:polynomial|power.?series|tate.?algebra|ore.?function)", owner
+    ) and not re.search(r"(?:ring|ideal|morphism)$", owner) and not re.search(
+        r"\b(?:list|tuple|set|dictionary|factorization)\b", lower
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Constant-term projections on explicit element/polynomial families are
+    # the same base-ring relation as ordinary coefficients.  Keep linear
+    # expressions and geometric constants out of this branch because their
+    # parent is not represented by a receiver relation.
+    if re.search(r"\bconstant term\b", lower) and re.search(
+        r"(?:Element|element)$|(?:polynomial|power.?series|tate.?algebra)", owner_name or ""
+    ) and not re.search(r"\b(?:polynomial ring|ring of|ideal|list|tuple)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Result nouns in older polynomial documentation often carry a qualifier
+    # before ``polynomial`` (``F-polynomial``, ``dynatomic polynomial``, ...),
+    # which is not covered by the article-led structural parser.  Require an
+    # explicit return/compute verb and reject conditional or coefficient-list
+    # branches; the concrete implementation union is then selected by the
+    # active polynomial parent at the call site.
+    if not re.search(r"(?:Element|element)$", owner_name or "") and re.match(
+        r"^(?:return|compute|find|calculate|determine)\b.*\b[a-z][a-z0-9_-]*\s+polynomial\b",
+        lower,
+    ) and not re.search(
+        r"\b(?:if|when|depending|otherwise|either|or|as\s+coefficients|ring\s+of|factorization|factorisation|shifting\s+all\s+coefficients)\b",
+        lower,
+    ):
+        if not re.search(r"\b(?:polynomial\s+ring|ring\s+polynomial)\b", lower):
+            return POLYNOMIAL_RETURN_UNION
+
+    # Precision accessors in Sage's real/complex fields and elements return
+    # either a Sage Integer (MPFR/Arb backends) or a native Python int
+    # (MPFI/double backends).  The p-adic lattice ``precision`` accessor is a
+    # precision-object factory and is intentionally excluded.
+    if node.name in {"precision", "prec"} and re.search(
+        r"\bprecision\b", lower
+    ) and not re.search(r"precision\s+object|lattice\s+precision", lower):
+        if re.search(r"\b(?:return|returns?)\b.*\bprecision\b", lower):
+            return "'sage.rings.integer.Integer' | int"
+
+    # A coalgebra counit is the scalar coefficient of the distinguished
+    # basis element, hence an element of the algebra's base ring.  Preserve
+    # the relation instead of leaking a shared scalar/base class.
+    if node.name == "counit" and re.match(
+        r"^(?:return|returns?)\s+the\s+counit\b", lower
+    ) and re.search(
+        r"(?:algebra|coalgebra|bialgebra|hopf|basis|element|tensor)", owner
+    ) and not re.search(r"\b(?:map|morphism|functor|function)\b", owner):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Constant/coefficient accessors on polynomial, series, Clifford and
+    # linear-function elements are scalar projections into the receiver's
+    # base ring.  The owner-role guard excludes divisor coefficients and
+    # parent-level constructors, whose result parent is unrelated.
+    scalar_owner = bool(
+        re.search(r"(?:polynomial|power.?series|clifford|linear(?:function|tensor)|tate.?algebra|formsring).*element|element.*(?:polynomial|power.?series|clifford|linear(?:function|tensor)|tate.?algebra|formsring)", owner)
+        or re.search(r"(?:polynomial|power.?series|clifford|linear(?:function|tensor)|tate.?algebra)$", owner)
+    )
+    if scalar_owner and node.name in {"constant_coefficient", "coefficient"}:
+        if re.search(r"\b(?:constant\s+)?coefficient\b", lower) and not re.search(
+            r"\b(?:divisor|point|coordinate|index|label|map|morphism)\b", lower
+        ):
+            return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Norm/trace of a value element are defined over its base ring.  Keep
+    # morphism/field-level norm factories out of this element projection.
+    if node.name in {"norm", "trace"} and re.search(
+        rf"\b(?:norm|trace)\b.*\b(?:{node.name}|element|self|base\s+ring|base\s+field)\b", lower
+    ) and re.search(r"(?:element|number|polynomial|p.?adic|function.?field)", owner):
+        if not re.search(r"\b(?:morphism|isogeny|map|lattice|genus)\b", owner + " " + lower):
+            return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Valuation APIs document the target parent explicitly.  These relations
+    # are lowered through the receiver's exact ``residue_ring``/
+    # ``residue_field``/``domain`` member and therefore remain concrete only
+    # when that parent contract is itself proven.
+    if node.name in {"reduce", "residue"}:
+        if re.search(r"\bresidue\s+field\b", lower):
+            return RELATED_ELEMENT_CONTRACTS["residue field"]
+        if re.search(r"\bresidue\s+ring\b", lower):
+            return RELATED_ELEMENT_CONTRACTS["residue ring"]
+    if node.name == "lift" and re.search(
+        r"\b(?:from|to)\s+(?:the\s+)?(?:residue\s+(?:field|ring)|domain)\b", lower
+    ):
+        if re.search(r"\bresidue\s+(?:field|ring)\b", lower) and re.search(
+            r"\b(?:to|into)\s+(?:the\s+)?domain\b", lower
+        ):
+            return RELATED_ELEMENT_CONTRACTS["domain element"]
+
+    # Cython summaries often shorten the same conversion contract to
+    # ``return ... as an element of the ambient/domain``.  The target parent
+    # is explicit, so preserve its receiver-relative concrete element type.
+    if node.name in {"lift", "reduce", "convert", "coerce"} and re.search(
+        r"\b(?:as|into|in|to)\s+(?:an?\s+)?(?:element\s+of\s+)?(?:the\s+)?(?:ambient|domain|residue\s+(?:field|ring)|underlying\s+(?:module|ring|field|space))\b",
+        lower,
+    ) and not re.search(r"\b(?:or|either|depending|otherwise|if|when|none|nothing)\b", lower):
+        if re.search(r"\bresidue\s+field\b", lower):
+            return RELATED_ELEMENT_CONTRACTS["residue field"]
+        if re.search(r"\bresidue\s+ring\b", lower):
+            return RELATED_ELEMENT_CONTRACTS["residue ring"]
+        if re.search(r"\bdomain\b", lower):
+            return RELATED_ELEMENT_CONTRACTS["domain element"]
+        return RELATED_ELEMENT_CONTRACTS["ambient"]
+
+    # Named parent objects (group/lattice/module/curve/ideal/...) are often
+    # documented without a Sphinx class role.  A relation contract preserves
+    # the exact receiver-dependent parent while avoiding a public structural
+    # base.  Do not attach a relation to a method that is itself the accessor
+    # (``x.group()`` returning ``Group[Self]`` would recurse in lowering).
+    if owner_name and not re.search(r"(?:Element|element)$", owner_name):
+        parent_phrases = (
+            (r"\b(?:group|subgroup)\s+associated\s+(?:with|to)\s+(?:``?self``?|this)\b|\b(?:group|subgroup)\s+for\s+which\s+(?:``?self``?|this)\b|\bunderlying\s+group\b", "group"),
+            (r"\b(?:ambient|translation|underlying)\s+lattice\b|\blattice\s+that\s+defines\b", "lattice"),
+            (r"\bunderlying\s+free\s+module\b|\bfree\s+module\s+(?:formed|corresponding|underlying)\b", "free module"),
+            (r"\bmodule\s+on\s+which\b|\bunderlying\s+module\b", "module"),
+            (r"\bmessage\s+space\s+of\s+(?:``?self``?|the\s+associated\s+code)\b", "message space"),
+            (r"\binput\s+space\s+of\s+(?:``?self``?|this)\b", "input space"),
+            (r"\bcoefficient\s+ring\s+of\s+(?:``?self``?|this)\b", "coefficient ring"),
+            (r"\b(?:abstract|associated|underlying)\s+function\s+field\b", "function field"),
+            (r"\bcurve\s+(?:of\s+which|to\s+which|associated\s+with)\s+(?:``?self``?|this)\b|\bprojective\s+curve\s+to\s+which\b", "curve"),
+            (r"\bideal\s+(?:associated\s+with|of)\s+(?:``?self``?|this)\b|\bideal\s+which\s+defines\b", "ideal"),
+        )
+        for pattern, relation in parent_phrases:
+            if re.search(pattern, lower) and node.name.casefold() != relation.replace(" ", "_"):
+                # ``prime ideal associated with ...`` is a data projection
+                # whose concrete ideal parent is selected by the stored
+                # number-field data, not by the receiver's ``ideal()``
+                # accessor.  Keep it unresolved rather than creating a
+                # misleading self-relative relation.
+                if relation == "ideal" and re.search(r"\bprime\s+ideal\b", lower):
+                    continue
+                if not re.search(r"\b(?:or|either|depending|unless|otherwise|if|when|none|nothing)\b", lower):
+                    return RELATED_PARENT_CONTRACTS[relation]
+
+    # Products of two elements in a parent algebra/monoid/group preserve the
+    # receiver's parent.  This is the same parent-element factory contract as
+    # ``R(x)`` and is intentionally not applied to maps or scalar products.
+    if node.name.startswith("product") or node.name in {"summation", "t_action"}:
+        if re.search(
+        r"\bproduct\b[^.]{0,100}\b(?:two|the|basis|generators?|indices?|x\s+and\s+y)\b|\bproduct\s+of\s+.*\b(?:elements?|indices?|generators?)\b", lower
+    ) and re.search(
+        r"(?:algebra|ring|group|monoid|semigroup|magma|module|basis|parent)", owner
+    ) and not re.search(r"\b(?:scalar|inner|dot|map|morphism|functor)\b", lower):
+            return PARENT_ELEMENT_CONTRACT
+
+    # Bilinear/scalar products of algebraic elements evaluate to one scalar
+    # in the receiver's coefficient parent.  The explicit scalar-product
+    # wording distinguishes these from element multiplication above.
+    if node.name in {"scalar", "scalar_product", "inner_product", "dot_product"} and re.search(
+        r"\bscalar\s+product\b|\binner\s+product\b|\bdot\s+product\b", lower
+    ) and re.search(r"(?:element|root|tableau|form|class|space)", owner, re.IGNORECASE) and not re.search(
+        r"\b(?:matrix|map|morphism|tuple|list|set)\b", lower
+    ):
+        return RELATED_ELEMENT_CONTRACTS["base ring"]
+
+    # Classcall hooks that explicitly construct the declaring concrete value
+    # (and do not mention parent/factory dispatch) return ``Self``.  This
+    # covers acronym nouns such as ASM/FPL while leaving plural parent
+    # factories and database lookups unresolved.
+    if node.name in {"__classcall__", "__classcall_private__"} and owner_name:
+        if re.search(r"\b(?:create|construct|normalize|normalise|return)\b", lower) and re.search(
+            r"\b(?:asm|fpl|parking\s+function|permutation|tableau|diagram|rpp|perfect\s+matching|knot)\b",
+            lower,
+        ) and not re.search(
+            r"\b(?:parent|factory|dispatch|delegate|subclass|database|correct\s+parent|appropriate\s+parent)\b",
+            lower,
+        ) and not re.search(r"(?:s|sets|famil(?:y|ies))$", owner):
+            return "Self"
+
     return None
 
 
@@ -7945,6 +9669,25 @@ def _doc_classcall_contract_annotation(
         re.IGNORECASE,
     ):
         return "Self"
+    # Enumerated/combinatorial classcall hooks often describe the exact
+    # concrete result only in the first paragraph: they normalize/straighten
+    # input and then construct the declaring class (or name that class via a
+    # Sphinx reference).  When no dispatch/subclass/parent branch is present,
+    # this is a stable ``Self`` contract rather than an unknown factory.
+    if re.search(
+        r"\b(?:constructs?|constructed|creating|create|straighten|normalize|normalise|preprocessing)\b",
+        normalized,
+        re.IGNORECASE,
+    ) and re.search(
+        r"\b(?:class|element|tableau|partition|composition|matching|diagram|polyomino|word|path|frieze)\b",
+        normalized,
+        re.IGNORECASE,
+    ) and not re.search(
+        r"\b(?:dispatch|appropriate\s+class|correct\s+(?:parent|object|constructor)|delegate\s+to\s+the\s+subclass|subclass|based\s+on\s+input|parent\s+based)\b",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return "Self"
     if not re.search(r"\b(?:unique representation|canonical parameters|canonicalize|standardize)\b", normalized, re.IGNORECASE):
         return None
     if re.search(
@@ -7983,6 +9726,41 @@ def _doc_parent_element_annotation(
         return None
     normalized = summary.replace(chr(96), "")
     owner_boundary_text = " ".join((owner_name, *(owner_bases or ())))
+    # Parent ``__call__`` implementations often describe the result as a
+    # domain object rather than spelling out the word ``element`` (words,
+    # tableaux and finite crystals are representative examples).  The
+    # explicit ``with parent self`` relation is sufficient proof of a
+    # receiver-relative element factory; no concrete base class is exposed.
+    if re.search(
+        r"\bconstruct\s+(?:a|an|the)\s+new\s+[a-z][a-z0-9_-]*\s+object\s+with\s+parent\s+self\b",
+        normalized,
+        re.IGNORECASE,
+    ) and re.search(
+        r"(?:word|tableau|crystal|algebra|ring|field|module|group|monoid|semigroup|space|parent)",
+        owner_boundary_text,
+        re.IGNORECASE,
+    ):
+        return PARENT_ELEMENT_CONTRACT
+    if re.match(r"^construct\s+(?:an?|the)\s+element\.?$", normalized, re.IGNORECASE) and re.search(
+        r"(?:algebra|ring|field|module|group|monoid|semigroup|space|parent|crystal|word)",
+        owner_boundary_text,
+        re.IGNORECASE,
+    ):
+        return PARENT_ELEMENT_CONTRACT
+    # A concise ``__call__`` summary may identify a parent factory only by
+    # naming the mathematical value (facet, tableau, crystal/word element).
+    # The owner role and construction verb provide the same proof as the
+    # longer ``element of self`` wording.
+    if node.name == "__call__" and re.search(
+        r"\b(?:create|construct|return|build)\b.*\b(?:facet|tableau|crystal|word)\b",
+        normalized,
+        re.IGNORECASE,
+    ) and re.search(
+        r"(?:complex|tableau|crystal|word|algebra|ring|field|module|group|space|parent)",
+        owner_boundary_text,
+        re.IGNORECASE,
+    ) and not re.search(r"\b(?:list|tuple|family|map|morphism|function)\b", normalized, re.IGNORECASE):
+        return PARENT_ELEMENT_CONTRACT
     # Morphism-like objects map an input into their codomain.  Sage uses a
     # deliberately heterogeneous hierarchy here (crystal morphisms,
     # derivations, homomorphisms, actions, and coercions), so the stable
@@ -8041,7 +9819,7 @@ def _doc_parent_element_annotation(
             (r"\belement\s+(?:of|in|from)\s+(?:the\s+)?base\s+ring\b", "base ring"),
             (r"\belement\s+(?:of|in|from)\s+(?:the\s+)?codomain\b|\bbase\s+codomain\b", "codomain"),
             (r"\belement\s+(?:of|in|from)\s+(?:the\s+)?domain\b", "domain"),
-            (r"\belement\s+(?:of|in|from)\s+(?:the\s+)?ambient\s+(?:space|module|ring|group|object)\b", "ambient"),
+            (r"\belement\s+(?:of|in|from)\s+(?:(?:the\s+)?ambient(?:\s+(?:space|module|ring|group|object))?|:meth:ambient)\b", "ambient"),
         )
         for pattern, relation in relation_patterns:
             if re.search(pattern, normalized, re.IGNORECASE):
@@ -8412,12 +10190,48 @@ def _doc_protocol_annotation(
     # Equality/order methods are covered by ``PROTOCOL_RETURNS`` during the
     # normal pass; this fallback handles the remaining stable predicate
     # protocols when doc-based inference runs in isolation.
-    if name in {"__contains__", "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__"}:
+    # Python data-model names are only protocols when declared on a class.
+    # A module-level helper named ``__eq__`` (which appears in generated Sage
+    # stubs) is not constrained by the data model and must remain fail-closed.
+    if owner_name is not None and name in {"__contains__", "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__"}:
         return "bool"
-    if name in {"__bool__"}:
+    if owner_name is not None and name in {"__bool__"}:
         return "bool"
-    if name in {"__len__", "__index__", "__hash__"}:
+    if owner_name is not None and name in {"__len__", "__index__", "__hash__"}:
         return "int"
+    if name in {"_cmp", "_cmp_", "__cmp__"}:
+        return "int"
+    if name in {"__reduce__", "__reduce_ex__"}:
+        return "tuple"
+    if name == "__new__" and owner_name is not None:
+        return "Self"
+    # Arithmetic dunders on concrete Sage element implementations preserve
+    # the receiver's parent whenever the documentation describes the
+    # operation itself.  Restrict this to element/NTL value classes and to
+    # operation wording; matrices, vectors, ideals, maps and geometric
+    # products have different result parents and remain unresolved here.
+    arithmetic_names = {
+        "__add__", "__sub__", "__mul__", "__truediv__", "__floordiv__",
+        "__mod__", "__pow__", "__neg__", "__pos__", "__lshift__",
+        "__rshift__",
+    }
+    if owner_name is not None and name in arithmetic_names and (
+        owner_name == "Element"
+        or re.search(r"(?:Element|element)$", owner_name)
+        or owner_name.casefold().startswith("ntl_")
+        or owner_name in {"Fmpz_poly", "ETuple"}
+    ):
+        normalized = re.sub(r"\s+", " ", (summary or "").replace(chr(96), "")).strip()
+        if not re.search(
+            r"\b(?:matrix|vector|ideal|order|morphism|map|region|space|set|scalar\s+multiple|coordinates?)\b",
+            normalized,
+            re.IGNORECASE,
+        ) and re.search(
+            r"\b(?:operator|add\w*|subtract\w*|multiplicat\w*|divis\w*|quotient|remainder|power|raised|shift|concatenat\w*|floor|modulo|negative|positive)\b",
+            normalized,
+            re.IGNORECASE,
+        ):
+            return "Self"
     # Non-dunder hash helpers are still constrained by Python's hash
     # protocol.  The explicit summary keeps this rule semantic and avoids
     # misclassifying unrelated methods merely named ``hash``.
@@ -8440,6 +10254,12 @@ def _doc_protocol_annotation(
     if name == "__bytes__":
         return "bytes"
     if name == "__iter__":
+        # An iterator's ``__iter__`` returns itself; containers return an
+        # iterator object.  The explicit wording is stronger than the outer
+        # protocol default and preserves the concrete receiver relationship.
+        normalized = re.sub(r"\s+", " ", (summary or "").replace(chr(96), "")).strip()
+        if re.search(r"\breturn\s+(?:self|this\s+iterator\s+object)\b", normalized, re.IGNORECASE):
+            return "Self"
         return "Iterator"
     # Context-manager entry hooks normally return the concrete context
     # object itself.  Keep this semantic rather than assigning ``Self`` to
@@ -8780,6 +10600,16 @@ def _doc_numeric_self_summary_annotation(summary: str, owner_name: str | None) -
         re.IGNORECASE,
     ):
         return None
+    # Arb real balls keep the enclosing ball parent for interval extrema and
+    # absolute-value bounds.  The Sage implementation constructs another
+    # ``RealBall`` (rather than a Python scalar), and the operation is closed
+    # for every precision/backend of this owner family.
+    if owner_name.casefold() == "realball" and re.search(
+        r"\b(?:upper|lower)\s+bound\b|\bmaximum\b|\bminimum\b|\bmax(?:imum)?\b|\bmin(?:imum)?\b",
+        summary,
+        re.IGNORECASE,
+    ) and not re.search(r"\b(?:integer|index|dimension|degree|cardinality)\b", summary, re.IGNORECASE):
+        return "Self"
     if not re.match(r"^(?:this function )?returns?\s+", summary, re.IGNORECASE):
         return None
     if not re.search(
@@ -8791,7 +10621,8 @@ def _doc_numeric_self_summary_annotation(summary: str, owner_name: str | None) -
     if not re.search(
         r"\b(?:sine|cosine|tangent|secant|cosecant|cotangent|"
         r"arccosine|arcsine|arctangent|arccotangent|arccosecant|arcsecant|"
-        r"exponential|logarithm|hyperbolic)\b",
+        r"exponential|logarithm|hyperbolic|square\s+root|square|"
+        r"dilogarithm|dilog|error\s+function|erf|gamma|zeta|raised\s+to)\b",
         summary,
         re.IGNORECASE,
     ):
@@ -8817,13 +10648,90 @@ def _doc_metric_contract_annotation(
     concrete annotations and overloads win because the caller invokes this
     helper only after those passes have left a return missing.
     """
-    # A cardinality is a finite Sage Integer or the singleton +Infinity.  A
-    # few combinatorial implementations return a native int, so retain it in
-    # the union.  Explicit infinity-only documentation can be made narrower.
+    # A large set of Sage APIs uses a descriptive summary instead of naming
+    # the accessor (for example ``degree_on_basis`` or ``number_of_fixed``).
+    # When the *result noun* is the first noun after an explicit return/count
+    # verb, the scalar family is fixed by Sage's public arithmetic protocol:
+    # finite values are Sage ``Integer`` while a few pure-Python helpers use
+    # ``int``.  Keep this grammar deliberately narrow: phrases such as
+    # ``an order in this algebra`` and ``a bound for a polynomial`` describe
+    # a parent/object, not a scalar, and therefore do not match.
+    summary_text = re.sub(r"\s+", " ", (summary or "").replace(chr(96), "")).strip()
+
+    # ``cardinality`` has a wider, explicitly documented family than the
+    # generic scalar-noun grammar below: finite values may be Sage Integer or
+    # native int, while infinite parents return the PlusInfinity singleton.
+    # Resolve this method contract before ``scalar_phrase`` so a sentence such
+    # as ``Return the cardinality of self`` cannot be narrowed prematurely to
+    # ``Integer | int`` by the generic metric parser.
     if node.name == "cardinality":
         if re.search(r"(?:\\infty|\binfinity\b|\bplus\s*infinity\b)", summary, re.IGNORECASE):
             return "'sage.rings.infinity.PlusInfinity'"
         return CARDINALITY_RETURN_UNION
+
+    scalar_phrase = re.match(
+        r"^(?:return(?:s|ed)?|compute|calculate|find|determine|get|produce|give|provide|obtain|yield)\s+"
+        r"(?:the\s+)?(?:(?:maximum|maximal|minimal|total|relative|absolute|new|global|analytic|effective|"
+        r"largest|smallest|lower|upper|highest|lowest)\s+)*(?P<noun>absolute\s+ramification\s+index|"
+        r"relative\s+precision|absolute\s+precision|"
+        r"(?:number|count)\s+of\b|dimension\b|codimension\b|"
+        r"degree\b|rank\b|index\b|length\b|size\b|cardinality\b|"
+        r"valuation\b|precision\b|weight\b|level\b|genus\b|depth\b|"
+        r"radius\b|height\b|norm\b|trace\b|determinant\b|signature\b|order\b|"
+        r"writhe\b|diameter\b|distance\b)",
+        summary_text,
+        re.IGNORECASE,
+    )
+    # Scalar prose may mention a sentinel literal (``or -1``/``or +Infinity``)
+    # or an exception-only qualifier (``if it is quick to compute``).  Those
+    # do not create another return family.  Reject only genuine result
+    # branches and composite payloads such as ``degree and a generating set``.
+    scalar_branch = re.search(
+        r"\b(?:or|either|depending|otherwise|unless|when|none|nothing)\b|"
+        r"\bif\b[^.]{0,80}\b(?:return|returns|gives?|produces?|yields?)\b|"
+        r"\b(?:matrix|polynomial|map|morphism|bound(?:ary)?\s+of|order\s+in)\b|"
+        r"\b(?:and|along\s+with|together\s+with|corresponding)\b",
+        summary_text,
+        re.IGNORECASE,
+    )
+    scalar_literal_alternative = re.search(
+        r"\b(?:or|either)\s+(?:[-+]?\d+(?:\.\d+)?|\+?infinity|none)\b",
+        summary_text,
+        re.IGNORECASE,
+    )
+    # Parent qualifiers do not widen a scalar result (``the index of this
+    # ring or field``), and mathematical synonyms are still one metric
+    # family (``degree (or weight)``).  Keep the exception lexical and
+    # bounded; phrases such as ``or a generating set`` remain unresolved.
+    scalar_synonym_alternative = re.search(
+        r"\b(?:or|either)\s+(?:weight|degree|index|field|ring|space|module)\b",
+        summary_text,
+        re.IGNORECASE,
+    )
+    scalar_exception_qualifier = re.search(
+        r"\bif\s+(?:it|this|self)\s+(?:is\s+)?(?:quick|easy|possible)\b|"
+        r"\bif\s+(?:it|this|self)\s+is\s+not\s+available\b",
+        summary_text,
+        re.IGNORECASE,
+    )
+    if scalar_phrase and (
+        scalar_branch is None
+        or scalar_literal_alternative
+        or scalar_synonym_alternative
+        or scalar_exception_qualifier
+    ):
+        noun = scalar_phrase.group("noun").casefold()
+        if noun.startswith("valuation"):
+            return "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity'"
+        if noun in {"height", "norm", "trace", "determinant", "signature", "writhe", "distance", "radius"}:
+            return "'sage.rings.integer.Integer | sage.rings.rational.Rational | sage.rings.real_mpfr.RealNumber | float'"
+        return "'sage.rings.integer.Integer | int'"
+
+    # ``Evaluate this valuation at ...`` is the common non-verb form used by
+    # valuation implementations.  Its result is the same integer/
+    # infinity-valued valuation, not the evaluated element itself.
+    if re.match(r"^evaluate\s+this\s+valuation\b", summary_text, re.IGNORECASE):
+        return "'sage.rings.integer.Integer | int | sage.rings.infinity.PlusInfinity'"
 
     # Size/length/degree/order/height are scalar invariants across Sage's
     # combinatorial, algebraic and geometric parents.  Implementations use
@@ -10789,6 +12697,11 @@ def _doc_structural_return_annotation(
         (r"^(?:a|an|the)\s+(?:[a-z][a-z0-9'_-]*\s+){1,4}polynomial\b", POLYNOMIAL_RETURN_UNION),
         (r"^(?:a|an|the)\s+(?:codeword|vector)\b", VECTOR_ELEMENT_UNION),
         (r"^(?:a|an|the)\s+vector\s+of\b", VECTOR_ELEMENT_UNION),
+        # ``sequence`` is Sage's stable ordered-container protocol.  The
+        # concrete implementation is either a Python list or
+        # ``Sequence_generic``; retain both outer families without guessing
+        # the element type.
+        (r"^(?:a|an|the)\s+sequence\s+of\b", "list | 'sage.structure.sequence.Sequence_generic'"),
         (r"^(?:a|an|the)\s+empty\s+string\b", "str"),
         (r"^(?:codeword|vector)\b", VECTOR_ELEMENT_UNION),
         # Element conversion helpers commonly phrase the result as
@@ -10933,6 +12846,44 @@ def _doc_structural_output_shape_annotation(output: str) -> str | None:
     )
     if re.search(r"\b(?:if|unless|depending)\b", normalized, re.IGNORECASE) or outer_alternative:
         return None
+
+    # Sage's algebraic APIs frequently describe an ambient free module with
+    # a base-ring qualifier between ``free`` and ``module`` (for example
+    # ``a free ``\\ZZ``-module``).  This is still the concrete free-module
+    # family selected by the receiver's base ring; the qualifier is not a
+    # second result branch.  Keep this before the generic parent/element
+    # parsing so the documented outer parent is visible to lowering.
+    free_module = re.match(
+        r"^(?:a|an|the)\s+free\s+(?:`[^`]+`|\\?[A-Za-z][A-Za-z0-9_{}^]*|[A-Za-z][A-Za-z0-9_]*)\s*-?\s*module\b",
+        normalized,
+        re.IGNORECASE,
+    )
+    if free_module is not None:
+        return f"{MATRIX_SPACE_MODULE_UNION} | None" if optional_none else MATRIX_SPACE_MODULE_UNION
+
+    # A handful of OUTPUT paragraphs name a concrete scalar/container shape
+    # in a noun phrase rather than with an article-led ``a list`` form.  The
+    # result noun is still unambiguous when it is immediately followed by its
+    # mathematical qualifier; reject explicit alternatives/conditions above.
+    if re.match(r"^(?:a|an|the)\s+maximal\s+(?:co)?independent\s+subset\b", normalized, re.IGNORECASE):
+        return "set | None" if optional_none else "set"
+    if re.match(r"^(?:a|an|the)\s+(?:number|scalar)\b", normalized, re.IGNORECASE):
+        return f"{FUNCTIONAL_SYMBOLIC_RESULT_UNION} | None" if optional_none else FUNCTIONAL_SYMBOLIC_RESULT_UNION
+    if re.match(r"^(?:a|an|the)\s+angle\b", normalized, re.IGNORECASE):
+        return f"{REAL_NUMBER_RETURN_UNION} | None" if optional_none else REAL_NUMBER_RETURN_UNION
+    if re.match(r"^(?:a|an|the)\s+(?:nonnegative|positive|negative)\s+integer\b", normalized, re.IGNORECASE):
+        return f"'sage.rings.integer.Integer' | int | None" if optional_none else "'sage.rings.integer.Integer' | int"
+    if re.match(r"^(?:a|an|the)\s+new\s+state\b", normalized, re.IGNORECASE):
+        return "Self | None" if optional_none else "Self"
+
+    # Concrete classes explicitly named in Sage's prose are stronger than a
+    # generic element noun, but they are resolved by the normal class-index
+    # pass.  These two ubiquitous families are written with a descriptive
+    # qualifier and therefore need a small semantic bridge.
+    if re.match(r"^(?:a|an|the)\s+fractional\s+quaternion\s+ideal\b", normalized, re.IGNORECASE):
+        return "'sage.algebras.quatalg.quaternion_algebra.QuaternionFractionalIdeal_rational'"
+    if re.match(r"^(?:a|an|the)\s+free\s+algebra\b", normalized, re.IGNORECASE):
+        return PARENT_ELEMENT_CONTRACT
     patterns: tuple[tuple[str, str], ...] = (
         (r"^(?:a|an|the)\s+(?!(?:matrix|polynomial)\s+(?:group|list|morphism))(?:(?:[a-z][a-z0-9_-]*|`[^`]+`)\s+){0,8}matrix\b", MATRIX_ELEMENT_UNION),
         (r"^(?:a|an|the)\s+(?!(?:polynomial)\s+(?:matrix|ring))(?:(?:[a-z][a-z0-9_-]*|`[^`]+`)\s+){0,8}polynomial\b", POLYNOMIAL_RETURN_UNION),
@@ -10949,6 +12900,299 @@ def _doc_structural_output_shape_annotation(output: str) -> str | None:
     for pattern, annotation in patterns:
         if re.match(pattern, normalized, re.IGNORECASE):
             return f"{annotation} | None" if optional_none else annotation
+    return None
+
+
+def _doc_output_semantic_annotation(
+    output: str,
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    owner_name: str | None,
+    module_name: str | None,
+) -> str | None:
+    """Resolve stable Sage-specific OUTPUT nouns not covered by shape parsing.
+
+    The extractor intentionally keeps OUTPUT paragraphs verbatim.  Sage
+    commonly writes parent relationships as ``an element of the message
+    space`` or uses a base-ring qualifier inside ``free \\ZZ-module``.  These
+    are exact contracts when they name the receiver-related parent; explicit
+    conditional alternatives are rejected so dynamic backends stay
+    fail-closed.
+    """
+    normalized = re.sub(r"\s+", " ", (output or "").replace(chr(96), "")).strip()
+    if not normalized:
+        return None
+    lower = normalized.casefold()
+
+    # Tableau cell access is documented in an INPUT/OUTPUT pair, so the
+    # first summary line may be ``INPUT:`` rather than the result noun.  Read
+    # the complete OUTPUT paragraph and preserve the integer cell contract.
+    if node.name == "__call__" and re.search(
+        r"(?:^|_)(?:composition)?tableau(?:tuple)?$",
+        (owner_name or ""),
+        re.IGNORECASE,
+    ) and re.search(r"\bvalue\s+in\s+the\s+corresponding\s+cell\b", lower):
+        return "'sage.rings.integer.Integer'"
+
+    # Number-field prime iterators yield the concrete fractional ideal shown
+    # in their doctests, not the prime norm itself.  The owner/source family
+    # and the documented degree-one prime operation are a stable class
+    # contract.
+    if node.name == "__next__" and re.search(
+        r"small_primes_of_degree_one|small_primes_of_degree_one_iter",
+        (owner_name or ""),
+        re.IGNORECASE,
+    ) and re.search(r"\bprime\s+of\s+absolute\s+degree\s+one\b", lower):
+        return "'sage.rings.number_field.number_field_ideal.NumberFieldFractionalIdeal'"
+
+    # A sparse NTL GF(2) polynomial docstring may put the only return
+    # evidence in its examples.  Integer-indexed access is a direct Cython
+    # coefficient lookup and returns the concrete GF(2) wrapper.
+    if node.name == "__getitem__" and re.search(
+        r"ntl_gf2x$", (owner_name or ""), re.IGNORECASE
+    ) and re.search(r"\be\s*\[\s*\d+\s*\]", lower):
+        return "'sage.libs.ntl.ntl_GF2.ntl_GF2'"
+
+    # Metric APIs sometimes spell a finite/infinite result directly in the
+    # OUTPUT section (``An integer ... Otherwise, +infinity``).  Both arms
+    # are part of the documented scalar protocol; preserve the explicit
+    # Sage Integer/+Infinity union instead of rejecting the conditional text
+    # as an unresolved heterogeneous return.
+    if (
+        re.match(r"^(?:an?|the)\s+(?:sage\s+)?integer\b", lower)
+        and re.search(r"(?:\\infty|\binfinity\b|\bplus\s*infinity\b)", lower)
+        and not re.search(r"\b(?:matrix|polynomial|vector|point|tuple|list|map|morphism)\b", lower)
+    ):
+        return CARDINALITY_RETURN_UNION
+
+    # A prime number is represented by Sage's Integer wrapper in arithmetic
+    # and number-theory APIs.  Keep this rule conditional-free so prose such
+    # as ``a prime ... or False`` remains UNKNOWN for overload resolution.
+    if re.match(r"^(?:a|an|the)\s+prime\s+number\b", lower) and not re.search(
+        r"\b(?:or|either|depending|otherwise|if|unless|when|none|false)\b", lower
+    ):
+        return "'sage.rings.integer.Integer'"
+
+    # Explicitly qualified Python scalars take precedence over a generic
+    # metric inferred from the summary sentence (for example ``number of
+    # generators`` followed by ``OUTPUT: a Python integer``).
+    if re.match(r"^(?:a|an|the)\s+python\s+integer\b", lower):
+        return "int"
+
+    # Regular-sequence indexing is implemented by the finite character-word
+    # backend (verified by the Sage runtime); generic word-valued APIs are
+    # intentionally left unresolved because their alphabet selects a
+    # different concrete word class.
+    if owner_name and owner_name.casefold() == "regularsequencering" and re.fullmatch(
+        r"(?:a|an|the)\s+word[.!?]?", lower
+    ):
+        return "'sage.combinat.words.word.FiniteWord_char'"
+
+    # A small, grammar-driven family of explicit outer unions.  These are
+    # finite alternatives whose Sage implementation families are already
+    # represented by the curated concrete unions; unlike generic ``or``
+    # prose, each arm names an outer runtime shape unambiguously.
+    if re.match(
+        r"^(?:a|an|the)\s+(?:univariate\s+)?polynomial\b.*\bor\s+(?:a|an|the)\s+tuple\s+of\s+(?:such\s+)?polynomials?\b",
+        lower,
+    ):
+        return f"{POLYNOMIAL_RETURN_UNION} | tuple"
+    if re.match(
+        r"^(?:a|an|the)\s+power\s+series\b.*\bor\s+(?:a|an|the)\s+vector\b",
+        lower,
+    ):
+        return f"{POWER_SERIES_RETURN_UNION} | {VECTOR_ELEMENT_UNION}"
+    if re.match(
+        r"^(?:a|an|the)\s+(?:square\s+)?matrix\b.*\bor\s+(?:a|an|the)\s+(?:list\s+of\s+)?vectors?\b",
+        lower,
+    ):
+        return f"{MATRIX_ELEMENT_UNION} | list"
+    if re.match(
+        r"^(?:a|an|the)\s+empty\s+string\b.*\bor\s+(?:a|an|the)\s+string\b",
+        lower,
+    ):
+        return "str"
+    builtin_union = re.match(
+        r"^(?:a|an|the)\s+(?P<left>list|tuple|pair|set|dict|dictionary|integer|int|float|double|boolean|bool|bytes)\b"
+        r".*\bor\s+(?:a|an|the)\s+(?P<right>list|tuple|pair|set|dict|dictionary|integer|int|float|double|boolean|bool|bytes)\b",
+        lower,
+    )
+    if builtin_union:
+        shape_types = {
+            "list": "list", "tuple": "tuple", "pair": "tuple",
+            "set": "set", "dict": "dict", "dictionary": "dict",
+            "integer": "'sage.rings.integer.Integer'", "int": "int",
+            "float": "float", "double": "float", "boolean": "bool",
+            "bool": "bool", "bytes": "bytes",
+        }
+        left = shape_types[builtin_union.group("left")]
+        right = shape_types[builtin_union.group("right")]
+        return left if left == right else f"{left} | {right}"
+
+    # Sage's tree/linear-algebra documentation sometimes spells the exact
+    # storage contract as ``2x2 integer matrix`` instead of using a Sphinx
+    # class role.  An explicitly integer-valued matrix is represented by the
+    # dense ZZ backend in Sage; dimensions and surrounding variable labels do
+    # not change that concrete implementation.  Keep this grammar-driven
+    # rule restricted to an unconditional integer-matrix noun phrase.
+    if re.search(
+        r"(?:^|\b)(?:\d+\s*[x×]\s*\d+\s+)?integer\s+matrix\b",
+        lower,
+    ) and not re.search(r"\b(?:or|either|depending|otherwise|if|unless|when|none)\b", lower):
+        return "'sage.matrix.matrix_integer_dense.Matrix_integer_dense'"
+
+    # These two forms are explicit finite unions.  Handle them before the
+    # generic conditional guard because ``if var is unspecified`` selects
+    # which arm is used but does not introduce another unknown outer type.
+    if re.match(r"^(?:a|an|the)\s+power\s+series\b", lower) and re.search(
+        r"\bor\s+list\s+of\s+ints?\b", lower
+    ):
+        return f"{POWER_SERIES_RETURN_UNION} | list[int]"
+
+    # An unconditional power-series noun is an exact outer family contract.
+    # Keep any documented branch/alternative unresolved; only the plain
+    # ``power series`` form is lowered here.
+    if re.match(r"^(?:a|an|the)\s+power\s+series\b", lower) and not re.search(
+        r"\b(?:if|unless|depending|otherwise|either)\b|\bor\s+(?:a|an|the)?\s*(?:list|tuple|vector|matrix|polynomial|object|none|nothing)\b",
+        lower,
+    ):
+        return POWER_SERIES_RETURN_UNION
+    if re.match(r"^(?:a|an|the)\s+polynomial\b", lower) and re.search(
+        r"\b(?:if|when)\s+(?:generic|the\s+generic|a\s+generic)\b", lower
+    ) and not re.search(r"\bor\s+(?:a|an|the)\s+(?:tuple|list|set|dict|matrix|vector|point|object)\b", lower):
+        return POLYNOMIAL_RETURN_UNION
+
+    # Receiver-relative algebraic elements.  Basis conversions in the
+    # symmetric-function and Steenrod families preserve the parent selected
+    # by ``self``; the public base class is intentionally not exposed.
+    if re.search(r"\b(?:element|expression)\b", lower) and re.search(
+        r"\b(?:in|of)\s+(?:the\s+)?(?:other|power\s+sum|schur|homogeneous|base|steenrod|parent)\s+basis\b|\belement\s+of\s+the\s+steenrod\s+algebra\b",
+        lower,
+    ) and re.search(r"(?:symmetric|steenrod|algebra|basis)", (owner_name or "").casefold()):
+        return PARENT_ELEMENT_CONTRACT
+    if re.search(r"\bthe\s+product\s+of\s+(?:left|right)\s+in\s+the\s+basis\b", lower) and owner_name:
+        return PARENT_ELEMENT_CONTRACT
+    if owner_name and node.name != "__getitem__" and re.search(r"\belement\s+of\s+the\s+(?:base\s+ring|coefficient\s+ring)\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["base ring"] if "base ring" in lower else RELATED_ELEMENT_CONTRACTS["coefficient ring"]
+
+    # A scheme-morphism matrix action is closed over the concrete morphism
+    # implementation that owns the method.  This is a source-level data-flow
+    # contract (the implementation rebuilds the same morphism family), not a
+    # fallback to the public morphism base.
+    if re.search(r"\bscheme\s+morphism\s+given\s+by\s+(?:self\s*[*+]\s*mat|mat\s*[*+]\s*self)\b", lower) and re.search(
+        r"morphism$", (owner_name or "").casefold(),
+    ):
+        return "Self"
+
+    # Dynamical-system evaluations explicitly return a point in the
+    # codomain.  The codomain parent contract is resolved by the lowering
+    # layer, yielding the concrete point implementation for the active base
+    # field.
+    if re.search(r"\bpoint\s+in\s+(?:the\s+)?(?:map'?s\s+)?codomain\b", lower) and re.search(
+        r"(?:dynamical|morphism|map|hom)", (owner_name or "").casefold(),
+    ):
+        return RELATED_ELEMENT_CONTRACTS["codomain"]
+
+    # A point explicitly stated to lie on the receiver's surface is a parent
+    # element; only surface parents are accepted, avoiding generic geometric
+    # ``point`` prose whose ambient space is not known.
+    if re.match(r"^(?:a|an|the)\s+point\s+on\s+(?:the\s+)?(?:k3\s+)?surface\b", lower) and re.search(
+        r"surface", (owner_name or "").casefold(),
+    ):
+        return PARENT_ELEMENT_CONTRACT
+
+    # Concrete free-module outputs with a base-ring qualifier (``free
+    # \\ZZ-module``) are handled here as well as by the structural helper so
+    # that an OUTPUT paragraph with a leading dash is normalized uniformly.
+    if re.match(
+        r"^(?:a|an|the)\s+free\s+(?:`[^`]+`|\\?[A-Za-z][A-Za-z0-9_{}^]*|[A-Za-z][A-Za-z0-9_]*)\s*-?\s*module\b",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return MATRIX_SPACE_MODULE_UNION
+
+    if re.search(r"\b(?:if|unless|depending|otherwise)\b", lower):
+        # A terminal ``or None`` is handled by the structural parser; mixed
+        # conditions here describe a genuinely parameter-dependent result.
+        if not re.search(r"\bor\s+none\s*[.!?]?$", lower):
+            return None
+
+    # Receiver-relative parent-element results.  The phrase must explicitly
+    # mention ``self``/the associated object (or a named receiver parent) so
+    # an arbitrary parameter such as ``T`` is not mistaken for a self
+    # relation.
+    relation_phrases = (
+        (r"\belement\s+of\s+the\s+message\s+space\s+of\s+(?:self|this)\b", "message space"),
+        (r"\belement\s+of\s+the\s+message\s+space\b", "message space"),
+        (r"\belement\s+of\s+the\s+input\s+space\s+of\s+(?:self|this)\b", "input space"),
+        (r"\belement\s+of\s+the\s+coefficient\s+(?:ring|module)\s+of\s+(?:self|this)\b", "coefficient ring"),
+        (r"\belement\s+of\s+the\s+coefficient\s+ring\b", "coefficient ring"),
+        (r"\belement\s+in\s+the\s+parent(?:'s|s)?\b", "parent"),
+        (r"\belement\s+of\s+the\s+base\s+ring\b", "base ring"),
+        (r"\belement\s+of\s+the\s+base\s+field\b", "base field"),
+    )
+    for pattern, relation in relation_phrases:
+        if re.search(pattern, lower):
+            # A bare module-level ``OUTPUT: an element of the base ring``
+            # does not identify which parent supplies that ring.  Without a
+            # receiver relation this is not a concrete contract; keep it
+            # unresolved rather than inventing ``BaseRingElement[Self]``.
+            if owner_name is None and relation in {"base ring", "base field", "coefficient ring"}:
+                continue
+            # Element ``__getitem__`` commonly exposes a coefficient whose
+            # parent depends on the index and basis implementation.  The
+            # phrase alone is not enough to distinguish that scalar lookup
+            # from a parent constructor, so leave it unresolved here; the
+            # dedicated coefficient contract handles explicitly named
+            # coefficient methods.
+            if node.name == "__getitem__" and owner_name and owner_name.casefold().endswith("element"):
+                continue
+            if relation == "parent":
+                return PARENT_ELEMENT_CONTRACT
+            return RELATED_ELEMENT_CONTRACTS[relation]
+
+    # Morphism outputs frequently say only ``the image point in the
+    # codomain``.  The codomain relation is exact for a map evaluation and
+    # avoids exposing the public point/map base classes.
+    if re.search(r"\b(?:image|result)\s+point\s+in\s+the\s+codomain\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["codomain"]
+    if re.search(r"\b(?:image|result)\s+of\s+.+\s+in\s+the\s+codomain\b", lower):
+        return RELATED_ELEMENT_CONTRACTS["codomain"]
+
+    # Concrete, runtime-stable Sage classes named in prose.  These are
+    # intentionally narrow phrases with source/runtime evidence; they are
+    # not a class-name allow-list for arbitrary words.
+    if re.match(r"^(?:a|an|the)\s+fractional\s+quaternion\s+ideal\b", lower):
+        return "'sage.algebras.quatalg.quaternion_algebra.QuaternionFractionalIdeal_rational'"
+    if re.match(r"^(?:a|an|the)\s+feature\s+or\s+none\b", lower):
+        return "'sage.features.Feature' | None"
+
+    # Ring/algebraic scalar projections.  ``a number`` is used by the legacy
+    # statistics and LP helpers; their source implementations return Sage
+    # rationals/floats/expressions (and LP may return infinity), represented
+    # by the existing finite symbolic numeric union.
+    if re.match(r"^(?:a|an|the)\s+(?:number|scalar)\b", lower):
+        return FUNCTIONAL_SYMBOLIC_RESULT_UNION
+    if re.match(r"^(?:a|an|the)\s+angle\b", lower):
+        return REAL_NUMBER_RETURN_UNION
+    if re.match(r"^(?:a|an|the)\s+(?:maximal\s+(?:co)?independent)\s+subset\b", lower):
+        return "set"
+    if re.match(r"^(?:a|an|the)\s+nonnegative\s+integer\b", lower):
+        return "'sage.rings.integer.Integer' | int"
+
+    # A power series helper has one documented parameter-dependent branch:
+    # with ``var`` it returns a concrete power series, otherwise a list of
+    # coefficients.  Preserve that finite union rather than choosing one
+    # branch; the overload pass may narrow it when a literal is available.
+    if re.match(r"^(?:a|an|the)\s+power\s+series\b", lower) and re.search(
+        r"\bor\s+list\s+of\s+ints?\b", lower
+    ):
+        return f"{POWER_SERIES_RETURN_UNION} | list[int]"
+
+    # Stable scalar count returned by task-counter helpers.
+    if re.search(r"\b(?:decrement|increment)\s+the\s+task\s+counter\b", lower) and re.search(
+        r"\breturns?\s+its\s+new\s+value\b", lower
+    ):
+        return "int"
     return None
 
 
@@ -10974,6 +13218,13 @@ def _doc_elliptic_point_contract_annotation(
         r"\bcoordinate\b.*\bbase\s+field\b", normalized, re.IGNORECASE
     ):
         return FINITE_FIELD_ELEMENT_UNION
+    if node.name == "__getitem__" and re.search(
+        r"\bcoordinate\b.*\b(?:point|base\s+field)\b", normalized, re.IGNORECASE
+    ):
+        # Coordinates are elements of the curve's base field.  Keep the
+        # curve->base-field relationship symbolic so finite-field, number-
+        # field and rational implementations specialize independently.
+        return "'sage.type_contracts.BaseFieldElement[Self]'"
     if node.name in {"tate_pairing", "weil_pairing", "_line_", "_miller_"}:
         if re.search(r"\b(?:pairing|value|root)\b", normalized, re.IGNORECASE) and not re.search(
             r"\b(?:jacobian|number\s+field|complex)\b", normalized, re.IGNORECASE
@@ -12115,7 +14366,7 @@ def _doc_leading_scalar_output_annotation(output: str) -> str | None:
         return None
     match = re.match(
         r"^(?:(?:a|an|the)\s+)?"
-        r"(?P<kind>boolean|bool|integer|int|long|float|double|string|str|bytes|"
+        r"(?P<kind>boolean|bool|integer|int|long|float|double|rational|string|str|bytes|"
         r"list|tuple|pair|set|dict|dictionary|none|nothing)\b(?P<tail>.*)$",
         normalized,
         re.IGNORECASE,
@@ -12129,6 +14380,9 @@ def _doc_leading_scalar_output_annotation(output: str) -> str | None:
     # by the existing fail-closed parser.
     if kind in {"none", "nothing"}:
         return "None" if not tail.strip(" .!?;,:()") else None
+    if kind == "rational":
+        if not re.search(r"\b(?:or|either|depending|otherwise|if|when|none|nothing)\b", tail, re.IGNORECASE):
+            return "'sage.rings.rational.Rational'"
     first_clause = re.split(r"[.;]", tail, maxsplit=1)[0]
     if re.search(r"\b(?:depending|otherwise|unless|when)\b", first_clause, re.IGNORECASE):
         return None
@@ -12165,6 +14419,67 @@ def _doc_leading_scalar_output_annotation(output: str) -> str | None:
     }[kind]
 
 
+def _doc_conditional_outer_annotation(output: str) -> str | None:
+    """Resolve an explicitly documented ``value or None`` outer shape.
+
+    Sage documentation frequently spells a partial algorithm's contract as
+    “returns a list when found, otherwise ``None``”.  The existing parser
+    intentionally rejects generic conditional prose; this narrower rule only
+    accepts an explicit outer Python/Sage value noun paired with ``None`` in
+    the same sentence.  It is data-driven by the documentation text and does
+    not depend on function or class names.
+    """
+    normalized = re.sub(r"\s+", " ", (output or "").replace("`", "")).strip()
+    if not normalized:
+        return None
+    kinds = {
+        "boolean": "bool", "bool": "bool", "true": "bool", "false": "bool",
+        "integer": "'sage.rings.integer.Integer'", "python integer": "int",
+        "int": "int", "long": "int", "float": "float", "double": "float",
+        "string": "str", "str": "str", "bytes": "bytes", "list": "list",
+        "tuple": "tuple", "pair": "tuple", "set": "set", "dict": "dict",
+        "dictionary": "dict",
+    }
+    # Keep the split bounded: an explanatory “or” later in the paragraph is
+    # not a result alternative unless it is immediately followed by None.
+    # ``or`` is intentionally excluded: Sage uses it for heterogeneous
+    # alternatives (``integer or Infinity``) that require the richer parser
+    # below.  The narrow rule targets the unambiguous control-flow words.
+    for separator in (r"\botherwise\b", r"\belse\b"):
+        pieces = re.split(separator, normalized, maxsplit=1, flags=re.IGNORECASE)
+        if len(pieces) != 2:
+            continue
+        left, right = pieces
+        right_is_none = re.match(r"^\s*(?:it\s+returns?\s+)?(?:None|nothing)\b", right, re.IGNORECASE)
+        left_is_none = re.match(r"^\s*(?:None|nothing)\b", left, re.IGNORECASE)
+        if not right_is_none and not left_is_none:
+            continue
+        text = left if right_is_none else right
+        # Restrict the type noun to a return/gives/produces clause so that
+        # INPUT prose mentioning a list cannot become a result contract.
+        match = re.search(
+            r"\b(?:return(?:s|ed)?|output(?:s|ted)?|give(?:s|n)?|produc(?:e|es|ed)|yield(?:s|ed))\b"
+            r"[^.;:]*?\b(?:a|an|the)?\s*(?P<kind>python\s+integer|boolean|bool|integer|int|long|float|double|string|str|bytes|list|tuple|pair|set|dict|dictionary|true|false)\b",
+            text,
+            re.IGNORECASE,
+        )
+        if match is None:
+            # A sentence beginning with the noun (``list ... otherwise``)
+            # has no verb to anchor; accept only that leading form.
+            match = re.match(
+                r"^\s*(?:a|an|the)?\s*(?P<kind>python\s+integer|boolean|bool|integer|int|long|float|double|string|str|bytes|list|tuple|pair|set|dict|dictionary|true|false)\b",
+                text,
+                re.IGNORECASE,
+            )
+        if match is None:
+            continue
+        kind = match.group("kind").casefold()
+        annotation = kinds.get(kind)
+        if annotation is not None:
+            return annotation + " | None"
+    return None
+
+
 def _doc_output_annotation(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     class_index: dict[str, tuple[str, ...]] | None = None,
@@ -12183,6 +14498,28 @@ def _doc_output_annotation(
     if iterator_element_annotation is not None:
         return iterator_element_annotation
     if not value or _is_sparse_cython_doc(value):
+        # Sparse Cython stubs still carry a useful one-line qualified
+        # signature (for example ``Action.codomain(self)``).  Recover the
+        # relation/semantic contract from that line before falling back to
+        # UNKNOWN; this keeps the rule data-driven and avoids treating every
+        # undocumented Cython method as a dynamic callable.
+        sparse_summary = ""
+        if value:
+            for sparse_line in value.splitlines():
+                if sparse_line.strip():
+                    sparse_summary = re.sub(r"\s+", " ", sparse_line.strip())
+                    break
+        if sparse_summary:
+            sparse_related_parent = _doc_related_parent_annotation(
+                node, sparse_summary, owner_name
+            )
+            if sparse_related_parent is not None:
+                return sparse_related_parent
+            sparse_batch = _doc_batch_semantic_annotation(
+                node, sparse_summary, owner_name, module_name
+            )
+            if sparse_batch is not None:
+                return sparse_batch
         dynamic_interface_self_annotation = _doc_dynamic_interface_self_annotation(
             node,
             class_index,
@@ -12221,6 +14558,14 @@ def _doc_output_annotation(
         # no docstring (the common case for this private protocol).
         if node.name.startswith("_inplace_"):
             return "None"
+        if node.name == "_sympy_":
+            # Expression conversion is a narrower SymPy ``Expr`` contract;
+            # preserve that family even when the generated stub has no
+            # docstring.  Other sparse conversion hooks retain the broad
+            # SymPy Basic wrapper until their source/doc evidence narrows it.
+            if owner_name and owner_name.casefold() == "expression":
+                return "'sympy.core.expr.Expr'"
+            return "'sympy.core.basic.Basic'"
         # Matrix-window Cython helpers are mutators: set/add operations update
         # the view in place and return no value, while window constructors
         # return another window of the same class.
@@ -12233,6 +14578,24 @@ def _doc_output_annotation(
             if node.name.endswith("window"):
                 return "Self"
         if owner_name and re.search(r"(?:^|_)matrix(?:$|_)", owner_name, re.IGNORECASE) and node.name == "__pow__":
+            return "Self"
+        # Generated Cython element stubs sometimes retain only an EXAMPLES
+        # heading (or no docstring) for the core arithmetic slots.  The Sage
+        # element protocol is closed over the receiver's parent for these
+        # operations; use the concrete receiver relation rather than the
+        # public Element base.  Collection/index/map wrappers are excluded.
+        if owner_name and node.name in {
+            "__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__",
+            "__truediv__", "__pow__", "__floordiv__", "__mod__", "_div_", "_mul_",
+        } and re.search(
+            r"(?:element|elementwrapper|polynomial|ntl_|finitefield|integer_mod|matrix_)",
+            owner_name,
+            re.IGNORECASE,
+        ) and not re.search(
+            r"(?:map|morphism|functor|action|lazyimport|unknown|parent|field_class)$",
+            owner_name,
+            re.IGNORECASE,
+        ):
             return "Self"
         if owner_name and owner_name.casefold().startswith("matrix_symbolic_"):
             if node.name in {"simplify_rational", "simplify_trig", "expand", "factor", "simplify"}:
@@ -12281,6 +14644,47 @@ def _doc_output_annotation(
         summary_lines.append(stripped)
     raw_summary = re.sub(r"\s+", " ", " ".join(summary_lines))
     summary = raw_summary.lower()
+
+    # When the summary is generic but the same docstring explicitly states
+    # that a cardinality is infinite, honor that narrower documented branch
+    # before the generic metric fallback.  This is a lexical contract, not a
+    # receiver-name table, and avoids widening an infinity-only API to the
+    # usual Integer/int cardinality union.
+    if node.name == "cardinality" and re.search(
+        r"\b(?:which|that)\s+is\s+(?:`?\\infty`?|infinity|plus\s+infinity)\b",
+        value,
+        re.IGNORECASE,
+    ):
+        return "'sage.rings.infinity.PlusInfinity'"
+
+    # An explicit OUTPUT qualifier is stronger than a generic summary noun.
+    # In particular, ``Return the number of ...`` describes the operation,
+    # while ``OUTPUT: a Python integer`` fixes the actual representation.
+    # Apply this only when the docstring contains one unambiguous OUTPUT
+    # paragraph; multiple output paragraphs may describe a structured result.
+    explicit_outputs = _doc_output_values(value)
+    if len(explicit_outputs) == 1:
+        explicit_output = re.sub(r"\s+", " ", explicit_outputs[0].strip())
+        if re.match(
+            r"^(?:a|an|the)\s+python\s+(?:integer|int|long)\b",
+            explicit_output,
+            re.IGNORECASE,
+        ) and not re.search(
+            r"\b(?:depending|otherwise|if|unless|when|none|nothing|either)\b|"
+            r"\bor\s+(?:a|an|the)?\s*(?:integer|int|long|float|double|boolean|bool|list|tuple|set|dict)\b",
+            explicit_output,
+            re.IGNORECASE,
+        ):
+            return "int"
+    outer_container_annotation = _doc_explicit_outer_container_annotation(value)
+    if outer_container_annotation is not None:
+        return outer_container_annotation
+    # Python data-model protocols provide exact outer results independent of
+    # the Sage implementation. Apply these before summary heuristics so the
+    # same rule covers prose-bearing and sparse Cython docs.
+    protocol_annotation = _doc_protocol_annotation(node, raw_summary, owner_name)
+    if protocol_annotation is not None:
+        return protocol_annotation
     # Symbolic function backends implement the internal derivative protocol
     # by constructing a Sage symbolic ``Expression``.  The generated Cython
     # stubs frequently omit this annotation (or only retain examples), but
@@ -12304,7 +14708,12 @@ def _doc_output_annotation(
     # override prose-bearing contracts or numeric values whose Sage/Python
     # distinction cannot be recovered from rendered output.
     if summary.strip().rstrip(":") in {"examples", "example", "tests", "test"} and not _doc_output_values(value):
-        examples_annotation = _doc_examples_literal_annotation(value)
+        examples_annotation = _doc_examples_literal_annotation(
+            value,
+            member=node.name,
+            class_index=class_index,
+            module_name=module_name,
+        )
         if examples_annotation is not None:
             return examples_annotation
     if node.name.startswith("_test_"):
@@ -12432,6 +14841,21 @@ def _doc_output_annotation(
     )
     if polynomial_scalar_annotation is not None:
         return polynomial_scalar_annotation
+    related_parent_annotation = _doc_related_parent_annotation(
+        node,
+        raw_summary,
+        owner_name,
+    )
+    if related_parent_annotation is not None:
+        return related_parent_annotation
+    batch_semantic_annotation = _doc_batch_semantic_annotation(
+        node,
+        raw_summary,
+        owner_name,
+        module_name,
+    )
+    if batch_semantic_annotation is not None:
+        return batch_semantic_annotation
     parent_element_annotation = _doc_parent_element_annotation(
         node, raw_summary, owner_name, owner_bases
     )
@@ -12470,6 +14894,28 @@ def _doc_output_annotation(
     summary_class_annotation = _doc_summary_class_role_annotation(raw_summary, class_index, module_name)
     if summary_class_annotation is not None:
         return summary_class_annotation
+    # Some generated summaries use a definite-article class noun without a
+    # Sphinx role (``The cycle index series ...``).  Resolve it only when the
+    # source index proves a unique leaf class and the sentence is free of
+    # coercion/input or branch wording.  This is a grammatical/index rule,
+    # not a per-symbol table, and it deliberately leaves dispatch bases
+    # unresolved.
+    if (
+        class_index
+        and re.match(r"^the\s+", raw_summary, re.IGNORECASE)
+        and not re.search(
+            r"\b(?:if|when|unless|otherwise|depending|either|or|coerc|input|parameter|class)\b",
+            raw_summary,
+            re.IGNORECASE,
+        )
+    ):
+        plain_summary_class = _doc_plain_class_annotation(
+            raw_summary,
+            class_index,
+            module_name,
+        )
+        if plain_summary_class is not None and _is_indexed_leaf_annotation(plain_summary_class):
+            return plain_summary_class
     # Every concrete Cartan-type implementation documents the default folded
     # result with the same phrase.  Resolve it through the indexed concrete
     # class rather than exposing the abstract CartanType base or Self (the
@@ -12481,7 +14927,9 @@ def _doc_output_annotation(
     numeric_summary_annotation = _doc_numeric_self_summary_annotation(raw_summary, owner_name)
     if numeric_summary_annotation is not None:
         return numeric_summary_annotation
-    summary_annotation = _doc_summary_annotation(node, summary, class_index, owner_name)
+    summary_annotation = _doc_summary_annotation(
+        node, summary, class_index, owner_name, module_name
+    )
     if summary_annotation is not None:
         return summary_annotation
     cartan_summary_annotation = _doc_cartan_type_summary_annotation(raw_summary, class_index)
@@ -12593,6 +15041,17 @@ def _doc_output_annotation(
             return explicit_summary
     for raw_output in _doc_output_values(value):
         raw_output = re.sub(r"\s+", " ", raw_output.strip())
+        semantic_output_annotation = _doc_output_semantic_annotation(
+            raw_output,
+            node,
+            owner_name,
+            module_name,
+        )
+        if semantic_output_annotation is not None:
+            return semantic_output_annotation
+        conditional_outer_annotation = _doc_conditional_outer_annotation(raw_output)
+        if conditional_outer_annotation is not None:
+            return conditional_outer_annotation
         marked_class_union = _doc_marked_class_union_annotation(
             raw_output,
             class_index or {},
@@ -12630,6 +15089,9 @@ def _doc_output_annotation(
         )
         if parent_output_annotation is not None:
             return parent_output_annotation
+        word_output_annotation = _doc_word_contract_annotation(raw_output, owner_name)
+        if word_output_annotation is not None:
+            return word_output_annotation
         # In-place transformation APIs document the copied result as the
         # receiver class by default and ``None`` for the in-place branch.
         # The owner/class equality proves that the non-None branch preserves
@@ -12646,6 +15108,20 @@ def _doc_output_annotation(
                 owner_simple = owner_name.rsplit(".", 1)[-1].casefold()
                 if target == owner_simple:
                     return "Self | None"
+        # A structured OUTPUT paragraph may carry its exact result as a
+        # single Sphinx ``:class:`` role (for example ``a :class:`Feature`
+        # or ``None``).  The role resolver already validates contextual
+        # prefixes, conditional alternatives, aliases, and source-index
+        # uniqueness; invoke it after receiver-preserving optional contracts
+        # so ``a :class:`Owner` (by default, otherwise None)`` remains
+        # ``Self | None`` rather than losing its concrete receiver relation.
+        output_class_annotation = _doc_output_class_annotation(
+            raw_output,
+            class_index or {},
+            module_name,
+        )
+        if output_class_annotation is not None:
+            return output_class_annotation
         # Asymptotic term arithmetic preserves the concrete term class chosen
         # by its term monoid.  The documented atomic ``a term`` result is
         # therefore a receiver-preserving contract; explicit ``or None``
@@ -13435,6 +15911,13 @@ def _doc_output_annotation(
         # remains the unique ``SetPartition`` class, while ``a set of ...``
         # continues to lower to Python ``set`` below.
         if class_index:
+            relational_class = _doc_relational_class_annotation(
+                output,
+                class_index,
+                module_name,
+            )
+            if relational_class is not None:
+                return relational_class
             plain_class = _doc_plain_class_annotation(output, class_index, module_name)
             if plain_class is not None:
                 return plain_class
@@ -13703,6 +16186,18 @@ def _doc_output_annotation(
     metric_annotation = _doc_metric_contract_annotation(node, raw_summary, owner_name)
     if metric_annotation is not None:
         return metric_annotation
+    # If prose is too domain-specific to classify, a set of doctest calls to
+    # this *same* member can still prove a stable Python outer shape.  Filter
+    # prompts by member name before requiring all observed literal outputs to
+    # agree; examples of neighbouring APIs no longer contaminate the result.
+    member_examples = _doc_examples_literal_annotation(
+        value,
+        node.name,
+        class_index=class_index,
+        module_name=module_name,
+    )
+    if member_examples is not None:
+        return member_examples
     # Any remaining ``__iter__`` implementation still satisfies the Python
     # iterator protocol even when its prose is only an examples block or a
     # domain-specific description.  Do not guess the yielded element type.
@@ -13711,9 +16206,34 @@ def _doc_output_annotation(
     return None
 
 
+_CLASS_INDEX_CHILDREN: dict[str, set[str]] = {}
+
+
+def _is_indexed_leaf_annotation(annotation: str) -> bool:
+    """Return whether a quoted Sage class has no indexed subclasses."""
+    if not (annotation.startswith("'") and annotation.endswith("'")):
+        return False
+    return annotation[1:-1] not in _CLASS_INDEX_CHILDREN
+
+
 def _build_class_index(root: Path) -> dict[str, tuple[str, ...]]:
-    """Build unique lower-case class-name -> canonical source class mappings."""
+    """Build unique lower-case class-name -> canonical source class mappings.
+
+    Sage's generated package stubs occasionally omit ``__init__.pyi`` while
+    retaining relative re-exports such as ``from . import Feature``.  Those
+    imports are still a source-indexed class identity: a Sphinx OUTPUT role
+    naming ``Feature`` must be resolvable even though its defining package
+    file was not emitted.  Add only relative imports with a class-shaped
+    (capitalized) symbol; typing helpers and arbitrary values are excluded,
+    and normal ambiguity handling remains unchanged.
+    """
     candidates: dict[str, set[str]] = {}
+    class_bases: dict[str, tuple[str, ...]] = {}
+    non_class_imports = {
+        "Any", "Callable", "ClassVar", "Final", "Generic", "Iterator",
+        "Literal", "NamedTuple", "Optional", "Protocol", "Self", "TypeVar",
+        "TypeAlias", "TypeGuard", "overload",
+    }
     for path in sorted(root.rglob("*.pyi")):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path), type_comments=True)
@@ -13724,12 +16244,57 @@ def _build_class_index(root: Path) -> dict[str, tuple[str, ...]]:
         filename = parts.pop()
         module_parts = parts if filename == "__init__.pyi" else parts + [Path(filename).stem]
         module = ".".join(module_parts)
+        # Preserve relative package re-exports as canonical source classes.
+        # ``from . import Feature`` resolves against the containing package;
+        # ``from ..base import Foo`` walks one additional package level.
+        package_parts = module_parts[:-1]
+        for statement in tree.body:
+            if not isinstance(statement, ast.ImportFrom) or statement.level < 1:
+                continue
+            relative_parts = package_parts[:]
+            for _ in range(statement.level - 1):
+                if relative_parts:
+                    relative_parts.pop()
+            if statement.module:
+                relative_parts.extend(statement.module.split("."))
+            target_module = ".".join(relative_parts)
+            if not target_module:
+                continue
+            for alias in statement.names:
+                imported = alias.name
+                if (
+                    imported == "*"
+                    or imported in non_class_imports
+                    or not imported[:1].isupper()
+                    or not re.match(r"^[A-Z][A-Za-z0-9_]*$", imported)
+                ):
+                    continue
+                key = re.sub(r"[^a-z0-9]", "", imported.casefold())
+                candidates.setdefault(key, set()).add(f"{target_module}.{imported}")
         for node in tree.body:
             if not isinstance(node, ast.ClassDef):
                 continue
+            qualified = f"{module}.{node.name}"
             key = re.sub(r"[^a-z0-9]", "", node.name.casefold())
-            candidates.setdefault(key, set()).add(f"{module}.{node.name}")
-    return {key: tuple(sorted(values)) for key, values in candidates.items()}
+            candidates.setdefault(key, set()).add(qualified)
+            base_names: list[str] = []
+            for base in node.bases:
+                if isinstance(base, ast.Name):
+                    base_names.append(base.id)
+                elif isinstance(base, ast.Attribute):
+                    base_names.append(base.attr)
+            class_bases[qualified] = tuple(base_names)
+    index = {key: tuple(sorted(values)) for key, values in candidates.items()}
+    children: dict[str, set[str]] = {}
+    for child, bases in class_bases.items():
+        for base in bases:
+            base_key = re.sub(r"[^a-z0-9]", "", base.casefold())
+            parents = index.get(base_key, ())
+            if len(parents) == 1:
+                children.setdefault(parents[0], set()).add(child)
+    _CLASS_INDEX_CHILDREN.clear()
+    _CLASS_INDEX_CHILDREN.update(children)
+    return index
 
 
 def _replace_folded_cartan_self_returns(

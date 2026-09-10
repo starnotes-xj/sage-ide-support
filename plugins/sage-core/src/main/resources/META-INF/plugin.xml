@@ -240,6 +240,7 @@
     <applicationService serviceImplementation="com.starnotesxj.sageide.runtime.SageRuntimeSdkService"/>
     <sdkType implementation="com.starnotesxj.sageide.runtime.SageRuntimeSdkType"/>
     <applicationService serviceImplementation="com.starnotesxj.sageide.completion.SageApiIndexService"/>
+    <projectService serviceImplementation="com.starnotesxj.sageide.type.SageLiveTypeSnapshotService"/>
 
     <applicationConfigurable parentId="tools"
                              id="com.starnotesxj.sageide.run.SageRunSettingsConfigurable"

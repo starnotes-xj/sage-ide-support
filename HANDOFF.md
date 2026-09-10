@@ -1,6 +1,6 @@
 # SageMath CTF IDE 交接
 
-> 工作区：`G:\Projects\sage-math-ctf-ide`　更新：2026-09-08
+> 工作区：`G:\Projects\sage-math-ctf-ide`　更新：2026-09-09
 >
 > 当前阶段：先完成 SageMath 类型索引/补全/文档智能，再做插件打包和 fresh PyCharm 验收。
 
@@ -51,3 +51,61 @@
 - 完成后重建插件 ZIP，执行 CTF ECC/矩阵/多项式/有限域场景的 fresh PyCharm completion、Quick Documentation、语法糖和运行日志 smoke。
 - Gradle 产品构建、installer smoke、`verify-upstream-staging.ps1 -FinalCheck` 尚未完成；官方 checkout 当前 SHA 为 `3b652e714c12009bb69f0a2d2416dad02259fe5d`，与规定基线不符，因此不能宣称产品验收完成。
 - WSL Sage 可用；接口包装器的 `sage0` 缺失模块属于外部环境，不作为插件回归证据。
+
+## 2026-09-09 增量（v147，当前权威审计）
+
+- v146/v147 索引均为 `entries=86024`、`callableEntries=52747`、`signatures=52449`；`UNKNOWN=3703`，`CONCRETE=9251`。v147 重新生成 exit 3 仅因既有 `conflicts=2`，索引和 audit 均已写出，audit exit 0。
+- 新增通用源码规则：当比较运算左值的具体接收者在索引中对每一段 `__eq__/__ne__/__lt__/__le__/__gt__/__ge__` 均有唯一 `bool` 合同时，链式比较解析为 `bool`；未知接收者、冲突实现和非布尔合同继续 UNKNOWN。聚焦测试通过；本批在完整 Sage 交集未新增可安全写入合同。
+- 当前剩余 UNKNOWN 主要是动态后端、条件/参数分支、父对象或工厂依赖、多实现泛型、任意 callable 与副作用接口。按“具体返回值、禁止公共基类/Any/白名单猜测”的约束，不能诚实地把这些改成零；强行改写会破坏 PyCharm 补全的准确性。
+- 工具回归：此前全量 `376` 项通过；本轮新增比较合同测试通过；`compileall`、`git diff --check` 通过。正式 Gradle/产品/installer/真实 PyCharm smoke 仍未完成。
+
+## 2026-09-09 增量（v148，当前权威审计）
+
+- Cython 源码推断新增通用 Python 协议调用（`isinstance`、`len`、`repr` 等）合同；实际 WSL Sage 10.9 交集安全写入 `4` 个固定布尔协议函数（包括 `is_Map`、`is_Morphism`、`is_Matrix`、`is_Vector`）。
+- v148 audit：`entries=86024`、`callableEntries=52747`、`signatures=52449`、`KNOWN=48729`、`CONCRETE=9252`、`UNKNOWN=3702`，audit exit 0；生成器仍因既有 `conflicts=2` 返回 exit 3，但索引/报告正常写出。
+- 全量工具回归 `377` 项通过（含本轮比较/Cython 测试），`git diff --check` 通过。当前 3702 个未知没有可由现有索引、源码和参数合同唯一证明的具体 Sage 返回类；把它们强行归为基类/Any/猜测会违反任务约束，不能诚实地宣称 UNKNOWN=0。
+
+## 2026-09-09 增量（v149-v151，当前权威审计）
+
+- v149：允许固定返回表达式前的普通 Python `from ... import`，并保持真正 `cimport` fail-closed；WSL Sage 10.9 Cython 合同 `4869`，实际新增 `4` 个，审计 `UNKNOWN=3698`。
+- v150：仅对头部明确声明 C 标量参数的比较表达式推断 `bool`（普通 Sage 对象比较不放宽）；回归通过，实际新增 `1` 个，审计 `UNKNOWN=3697`。
+- v151：从实际共享 `.pxd/.pyx` 声明收集全局唯一的 Cython helper 合同，冲突短名拒绝；合同 `4930`，实际新增 `1` 个，审计 `UNKNOWN=3696`。三轮生成器均仅报告既有 `conflicts=2`，audit exit 0。
+- 新增 Cython 回归 `24` 项；本轮最终全量工具回归 `381` 项通过（56.819 秒），`compileall` 与 `git diff --check` 通过。仍未进行 Gradle/产品/installer/真实 PyCharm smoke；对动态后端、条件分支、多实现泛型、任意 callable 和副作用接口不能伪造具体类型。
+
+## 2026-09-09 增量（v152，当前权威验证）
+
+- v151 审计结果保持：`entries=86024`、`callableEntries=52747`、`signatures=52449`、`UNKNOWN=3696`；`audit_contracts.py` exit 0。当前未知集合与 v147-v150 Cython 合同无交集，纯 Python 源合同交集仅为参数标记/动态关系，应用 `0`，因此没有新的安全具体合同可写入。
+- 本轮验证：`python -m unittest discover -s tools/sage-api-index -p 'test_*.py'` 为 `Ran 381 tests ... OK`；`python -m compileall -q tools/sage-api-index` exit 0；`git diff --check` exit 0。
+- 仍不能把 `3696` 个动态后端、条件/参数分支、多实现泛型、任意 callable 或副作用接口改成 `0`：没有唯一具体 Sage 类证据时，强行改写为公共基类、`Any`、`object` 或白名单类型会直接破坏 PyCharm 补全准确性，也违反本交接的硬边界。
+
+## 2026-09-09 增量（v153-v155，当前权威审计）
+
+- v153：修正构造器字段依赖的作用域判定，新增 `85` 个可参数化 getter；v154 由 `SageTypeLowering` 只对生成的 `_SageStored…` 类 TypeVar 从接收者实际泛型实参绑定，插件回归证明 `Box[Payload].value()` 精确为 `Payload`，不退化为公共基类。
+- v154：Sage 10.9 WSL 源合同 `82167` 条，安全写入 `37` 个，审计 `UNKNOWN=3574`（`3611 -> 3574`）、`TYPE_VARIABLE=4029`；生成器 exit 3 仍仅为既有 `conflicts=2`，audit exit 0。
+- v155：构造器参数有默认值但未被重绑定、字段没有其他写入时，仍按实际传入值建立字段 TypeVar；条件改写默认值的构造器继续拒绝。Sage 全源重推断 `82181` 条，实际写入 `5` 个：`LieAlgebraHomomorphism_im_gens.base_map`、`CoveringDesign.k/v`、`pAdicLseries.quadratic_twist`、`Constant._mathml_`。审计 `UNKNOWN=3569`、`TYPE_VARIABLE=4034`，全量 `2843` stub 可解析，重复应用 `applied=0`。
+- v155 验证：`test_source_contracts` 50 项通过；`compileall`、`git diff --check` 通过；`SageTypeProviderTest` Gradle 类级测试成功。完整工具集重跑遇到 Windows 端读取 WSL 子进程的 UTF-8 解码线程异常，未取得可报告的新全量退出码；此前 v151 的 381 项通过仍是最近完整全绿证据。
+- 剩余 `3569` 项中，当前源码/索引交集只剩 `41` 个（34 个参数变换/默认分支、7 个继承或既有泛型边界）；其余主要是动态后端、父对象依赖、条件返回、多实现泛型、任意 callable 与副作用接口。不能用一次运行样本或公共基类将其伪造为具体类型；下一轮必须为这些接口建立调用参数/接收者相关的可复现合同或 IDE 运行时查询边界。
+
+## 2026-09-09 增量（v156，运行时类型快照）
+
+- 新增 `SageLiveTypeProbe`：固定 `sage -c` 包装器只从标准输入接收 Base64 源码/变量名，执行 Sage preparser 后输出真实 `type` 和完整 MRO；不拼接用户源码进命令或 Shell。`RuntimeProcess`/`TargetProcessRequest` 支持受限标准输入，WSL 命令仍是 `wsl.exe -d <distribution> -- <configured-sage> -c <fixed-wrapper>`，不会进入 Run 控制台或显示 Conda 探测脚本。
+- `SageLiveTypeSnapshotService` 是项目级、显式 opt-in 的后台服务：仅执行光标前（赋值目标包含当前赋值）的未保存文档前缀，256 KiB/128 KiB 上限、650 ms 去抖、30 秒后台截止、同文件旧请求取消、哈希快照缓存；完成后只重启对应文件的 daemon 分析。运行样本绝不写入全局 Sage API 索引。当前插件侧支持已配置的 Native/WSL Sage；Docker/SSH 不执行探测。实际 WSL Sage 冷启动的 11–19 秒证据意味着后续若需亚秒级响应，应升级为常驻 worker，而非错误地缩短快照超时。
+- 映射严格：优先真实运行类；若仅为 runtime-only `*_with_category`，只允许映射 MRO 的**直接**具体桩类父类（如 `EllipticCurve_finite_field_with_category -> EllipticCurve_finite_field`）。若直接父类也不在桩库，保持 UNKNOWN，绝不沿 MRO 降为 `EllipticCurve`、`Parent`、`Element` 等公共基类。
+- WSL Sage 10.9 实测（标准输入路径）：`E = EllipticCurve(GF(11), [1,1]); P = E(0,1); G = E.gen(0)` 得到 `E=EllipticCurve_finite_field_with_category`，`P/G=EllipticCurvePoint_finite_field`；多项式/矩阵快照中 `f/g=Polynomial_zmod_flint`、`A=Matrix_modn_dense_float`、`b/s=Vector_modn_dense`。`E(1,1)` 对该曲线坐标非法，`E.gen()` 需索引，二者会保留 Sage 原始异常，不制造类型。
+- 验证：`core:runtime:test` 全量 67 项（含 stdin/WSL 参数/marker-MRO）通过；`SageTypeProviderTest` 全类 Gradle 40 项通过（含 runtime-only 映射和拒绝公共 MRO 基类的回归）；`plugins:sage-core:compileKotlin`、`git diff --check` 通过。fresh ZIP 已构建为 `plugins/sage-core/build/distributions/sage-core-0.1.0-dev.zip`（SHA-256 `154065C338CA524E636D1DF662C95FE4102449B832F28893275F3B2052DA1DEF`），尚未在 fresh PyCharm 安装/UI smoke；开关默认关闭，需在 `Settings | Tools | SageMath` 勾选 “Enable live type snapshots”。
+
+## 2026-09-10 增量（v157，常驻运行时类型 worker）
+
+- `SageLiveTypeSnapshotService` 已从每次启动一个 Sage 进程升级为项目级 `SageLiveTypeWorker`：Sage 导入只发生一次，后续快照通过逐行协议复用同一进程；每个请求仍创建独立用户命名空间，不把前一次文档状态泄漏到下一次。源码、文件名和变量名继续只通过 Base64/固定 `-c` 包装器传递，不拼接到 shell 命令。
+- worker 只接受 Native/WSL；运行时路径、分发版变化或项目销毁会关闭旧进程并清理读写线程。取消/30 秒截止会终止 worker；标准输出单行超过 128 KiB 时 fail-closed，stderr/响应均有界，不会让 IDE 阻塞或无限积压。
+- 真实 WSL Sage 10.9 连续请求验证：同一 `sage -c` 进程先后处理两个请求，`E` 为 `sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field_with_category`，`P` 为 `sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field`；第二个请求无需重新导入 Sage。WSL 的 systemd 本地化警告只出现在 stderr，不污染协议。
+- 验证：`core:runtime:test` 全量 69 项通过（含 worker framing/MRO 与空查询回归）；`SageTypeProviderTest` Gradle 类级 40 项通过；core/plugin Kotlin 编译通过；`git diff --check` 通过。使用 staging 的 Sage 10.9 v155 合同索引重新 `buildPlugin`（`-Psage.bundle.fullIndex=G:/sage-build/staging-build6/sage-api-curated-type-contracts-v155.json`）；fresh ZIP 为 `plugins/sage-core/build/distributions/sage-core-0.1.0-dev.zip`，SHA-256 `4BA96E6B6AAD183DC6F34E79B7A73024020BEA00DD5A29A2CFE78C4D02423F17`，嵌套 `sage-core-0.1.0-dev.jar` 中的 `sage-api-index.json` 为 140,798,386 字节，且含 `SageLiveTypeWorker`/`SageLiveTypeProbe` 类；仍未做真实 PyCharm UI smoke。
+- 额外尝试用 v155 full-index 参数运行 `SageTypeProviderTest` 时 40 项中有 2 项旧 fixture 断言失败：测试导入的是 10.6 的 `sage.matrix.matrix.matrix` 并固定期望 `sage.matrix.matrix.Matrix`，而 v155 10.9 合同把公共工厂迁为 `sage.matrix.constructor.matrix`，且按参数选择 `matrix2`/具体 dense implementation；现有最小 fixture 没有该完整迁移图。这不是 worker/编译错误，未把该次运行记作全绿证据。未带 full-index 的现有 fixture 回归仍为 40/40 通过；后续应补 10.9 constructor/具体矩阵 `.pyi` fixture 后再做 full-index provider 回归。
+
+## 2026-09-10 增量（v158，动态调用返回合同）
+
+- `SageLiveTypeSnapshotService.typeForCall` 已接入 `SageTypeProvider.getCallType` 的静态兜底路径：当 Sage 索引没有唯一可降低的返回合同时，针对顶层调用执行“光标前缀 + `__sage_ide_live_result = <当前调用>`”的合成快照，解析真实类/MRO 后缓存并重启当前文件 daemon。静态合同明确可用时不启动 worker；函数体和 `if/for/try` 等复合语句内调用保持保守跳过，避免改变原始控制流或执行未绑定局部参数。
+- 该动态索引仍是文件内容/运行时/调用表达式键控的内存快照，不回写全局 Sage 合同索引，也不把单次参数结果扩散为所有参数的静态类型；因此可以覆盖 `P.log(G)`、未知动态工厂和 `g = gcd(...)` 的当前调用，而条件分支或副作用不确定时仍保持 UNKNOWN。
+- WSL Sage 10.9 直接复核 `E=EllipticCurve(GF(11),[1,1]); P=E(0,1); G=E.gen(0); P.log(G)` 返回 `<class 'sage.rings.integer.Integer'>`（值 `12`），证明该调用路径可由动态快照提供 `Integer`，而不是静态公共基类。
+- 同一 worker 协议端到端发送合成赋值 `__sage_ide_live_result = P.log(G)`，响应记录为 `sage.rings.integer.Integer`；这验证了 provider 新增的调用表达式快照输入格式和结果解析，而不只是单独运行 Sage 命令。
+- 修正 worker 空请求、输出上限和构造器参数校验；新增调用路径注释与回归。`core:runtime:test` 69 项通过，未带 full-index 的 `SageTypeProviderTest` 40 项通过，插件 Kotlin 编译通过，`git diff --check` 通过。使用 v155 full-index 重新构建 ZIP：`plugins/sage-core/build/distributions/sage-core-0.1.0-dev.zip`，SHA-256 `1C62CFF7D643D94513BC2A76C0531761BA46CEC9C75E486D1AE97B128661EB9E`。真实 PyCharm UI smoke 尚未完成。

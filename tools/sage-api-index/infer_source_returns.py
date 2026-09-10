@@ -167,8 +167,11 @@ _CLASS_OBJECT_PREFIX = "@class:"
 _FACTORY_RESULT_PREFIX = "@factory:"
 _CLASS_MAP_PREFIX = "@classmap:"
 _PARENT_OBJECT_PREFIX = "@parent:"
+_PARAMETER_IDENTITY_PREFIX = "@parameter:"
+_CONSTRUCTOR_PARAMETER_PREFIX = "@constructor_parameter:"
 _PARENT_ELEMENT_OWNERS_CACHE: dict[int, set[str]] = {}
 _RELATION_METHOD_NAMES_CACHE: dict[int, set[str]] = {}
+_RELATION_METHOD_NAMES_BY_PARENT_CACHE: dict[int, dict[str, set[str]]] = {}
 _STRUCTURAL_SUFFIXES = ("_base", "_generic", "_element", "_parent", "_factory")
 
 
@@ -389,9 +392,79 @@ class _FunctionAnalyzer:
             _RELATION_METHOD_NAMES_CACHE[key] = names
         return names
 
+    def _relation_method_names_by_parent(self) -> dict[str, set[str]]:
+        """Return proven element methods grouped by their parent relation.
+
+        A relation contract such as ``Codomain[Self]`` is an internal value
+        describing the parent returned by ``self.codomain()``.  The matching
+        ``CodomainElement[Self]`` contracts are the only evidence that a
+        subsequent call (for example ``self.codomain().zero()``) constructs an
+        element of that related parent.  Build this map from the indexed
+        contracts instead of maintaining a method-name or relation-name
+        allow-list; new Sage protocols are picked up automatically.
+        """
+        key = id(self.known_contracts)
+        grouped = _RELATION_METHOD_NAMES_BY_PARENT_CACHE.get(key)
+        if grouped is not None:
+            return grouped
+        grouped = {}
+        for qualified, contract in self.known_contracts.items():
+            if not isinstance(contract, str) or "." not in qualified:
+                continue
+            for arm in contract.split(" | "):
+                relation = arm.strip("'")
+                match = re.fullmatch(
+                    r"sage\.type_contracts\.([A-Za-z_][A-Za-z0-9_]*)Element\[Self\]",
+                    relation,
+                )
+                if match is None:
+                    continue
+                parent_relation = f"sage.type_contracts.{match.group(1)}[Self]"
+                grouped.setdefault(parent_relation, set()).add(
+                    qualified.rsplit(".", 1)[-1]
+                )
+        _RELATION_METHOD_NAMES_BY_PARENT_CACHE[key] = grouped
+        return grouped
+
+    def _related_element_contract(self, parent_marker: str, method: str) -> str | None:
+        """Resolve a method on a symbolic related parent.
+
+        ``parent_marker`` is accepted in either the quoted form used by the
+        index or the internal unquoted form.  Only a method already indexed
+        with the corresponding ``*Element[Self]`` relation is propagated.
+        """
+        parent_relation = parent_marker.strip("'")
+        if not re.fullmatch(
+            r"sage\.type_contracts\.[A-Za-z_][A-Za-z0-9_]*\[Self\]",
+            parent_relation,
+        ):
+            return None
+        methods = self._relation_method_names_by_parent().get(parent_relation)
+        if methods is None or method not in methods:
+            return None
+        relation_name = parent_relation[len("sage.type_contracts.") : -len("[Self]")]
+        return _quote(f"sage.type_contracts.{relation_name}Element[Self]")
+
     def _resolve_name(self, name: str) -> str | None:
         if name in self.imports:
-            return self.imports[name]
+            imported = self.imports[name]
+            # Relative imports from package ``__init__`` modules frequently
+            # bind a public symbol to a Cython implementation in a sibling
+            # module (for example ``IntegerListsLex``).  The generated index
+            # records that re-export as an exact class alias.  Canonicalize
+            # the imported path before member/constructor resolution so pure
+            # Python wrappers can use the same concrete class contract as the
+            # runtime binding.  This is an index-proven alias lookup, not a
+            # name allow-list or a base-class fallback.
+            canonical = self.class_aliases.get(imported)
+            if canonical is None and imported.startswith("sage."):
+                # Package re-exports may omit the implementation module from
+                # the import target (``sage.combinat.integer_lists`` rather
+                # than ``...invlex.IntegerListsLex``).  A unique terminal
+                # alias in the index is sufficient to recover that exact
+                # class; ambiguity naturally remains unresolved.
+                canonical = self.class_aliases.get(imported.rsplit(".", 1)[-1])
+            return canonical or imported
         local = f"{self.module}.{name}"
         if local in self.classes:
             return local
@@ -803,6 +876,12 @@ class _FunctionAnalyzer:
                 receiver_arms = receiver_type.split(" | ")
                 resolved_contracts: list[str] = []
                 for arm in receiver_arms:
+                    related = self._related_element_contract(
+                        arm, node.func.attr
+                    )
+                    if related is not None:
+                        resolved_contracts.append(related)
+                        continue
                     if arm == "Self" and self.owner is not None:
                         resolved_receiver = self.owner
                     elif arm.startswith("'sage.") and arm.endswith("'"):
@@ -1003,7 +1082,10 @@ class _FunctionAnalyzer:
                     return _quote(nested)
         head = self.imports.get(bits[0])
         if head is not None:
-            resolved = ".".join([head, *bits[1:]])
+            imported_head = self.class_aliases.get(head)
+            if imported_head is None and head.startswith("sage."):
+                imported_head = self.class_aliases.get(head.rsplit(".", 1)[-1])
+            resolved = ".".join([imported_head or head, *bits[1:]])
         else:
             resolved = self._resolve_name(bits[0])
             if resolved is not None and len(bits) > 1:
@@ -1149,6 +1231,15 @@ class _FunctionAnalyzer:
                     self.locals.setdefault(argument.arg, "dict")
                 elif is_classmethod and argument.arg == "cls":
                     self.locals.setdefault(argument.arg, "type")
+                else:
+                    # An unannotated value is still an exact type variable
+                    # when it is returned (directly or through a receiver
+                    # attribute). Keep this internal identity marker for
+                    # source data-flow; the applicator materializes a scoped
+                    # TypeVar only on the affected parameter/return pair.
+                    self.locals.setdefault(
+                        argument.arg, f"{_PARAMETER_IDENTITY_PREFIX}{argument.arg}"
+                    )
                 continue
             inferred = self.annotation_type(argument.annotation)
             if inferred is not None:
@@ -1169,7 +1260,11 @@ class _FunctionAnalyzer:
         public_arguments = [argument for argument in arguments if argument.arg not in {"self", "cls"}]
         for argument, inferred in zip(public_arguments, contracts):
             if inferred is not None:
-                self.locals.setdefault(argument.arg, inferred)
+                # Indexed parameter contracts are stronger than the internal
+                # unannotated-parameter identity marker installed by
+                # ``bind_parameters``; replace the marker so a proven
+                # external type (for example ``int``) remains authoritative.
+                self.locals[argument.arg] = inferred
 
     def expr_type(self, node: ast.AST | None) -> str | None:
         # ``return`` without an expression has an explicit AST value of
@@ -1308,6 +1403,39 @@ class _FunctionAnalyzer:
             comparands = [self.expr_type(item) for item in node.comparators]
             if left in builtin_scalars and all(item in builtin_scalars for item in comparands):
                 return "bool"
+            # Sage elements may overload rich comparisons, but the result is
+            # still a precise Python bool when the indexed receiver contract
+            # says so.  Resolve the dunder contract for every leg of a chained
+            # comparison; an unknown receiver, a union with a conflicting
+            # implementation, or a non-bool dunder remains unresolved.
+            comparison_methods = {
+                ast.Eq: "__eq__",
+                ast.NotEq: "__ne__",
+                ast.Lt: "__lt__",
+                ast.LtE: "__le__",
+                ast.Gt: "__gt__",
+                ast.GtE: "__ge__",
+            }
+            operands = [node.left, *node.comparators]
+            for position, operator in enumerate(node.ops):
+                method = comparison_methods.get(type(operator))
+                if method is None:
+                    return None
+                receiver_type = self.expr_type(operands[position])
+                if receiver_type is None:
+                    return None
+                for arm in receiver_type.split(" | "):
+                    if arm == "Self" and self.owner is not None:
+                        receiver = self.owner
+                    elif arm.startswith("'sage.") and arm.endswith("'"):
+                        receiver = arm[1:-1]
+                    elif arm.startswith("sage."):
+                        receiver = arm
+                    else:
+                        return None
+                    if self._member_contract(receiver, method) != "bool":
+                        return None
+            return "bool"
             return None
         if isinstance(node, ast.Subscript):
             # Resolve only literal containers with a literal integer/key
@@ -1391,9 +1519,35 @@ class _FunctionAnalyzer:
                     if "float" in {left, right}:
                         return "float"
                     return "int"
+                # Python integer bitwise/shift/modulo operators always
+                # produce a native integer for scalar integer operands. This
+                # also resolves predicates built from bit masks (for example
+                # ``is2pow``) without widening Sage element arithmetic.
+                if left in {"bool", "int"} and right in {"bool", "int"} and isinstance(
+                    node.op,
+                    (
+                        ast.Mod,
+                        ast.FloorDiv,
+                        ast.LShift,
+                        ast.RShift,
+                        ast.BitAnd,
+                        ast.BitOr,
+                        ast.BitXor,
+                    ),
+                ):
+                    return "int"
                 if left == right == "str" and isinstance(node.op, ast.Add):
                     return "str"
+                # Python's percent-formatting operator always produces a
+                # string when the left operand is a ``str`` format template.
+                # Sage's pure-Python facades use this idiom extensively (for
+                # example MathML and interface diagnostics); the right side
+                # may be any value, so only the left operand is required.
+                if left == "str" and isinstance(node.op, ast.Mod):
+                    return "str"
                 if left == right == "bytes" and isinstance(node.op, ast.Add):
+                    return "bytes"
+                if left == "bytes" and isinstance(node.op, ast.Mod):
                     return "bytes"
             # Closed operations are accepted only when both operands already
             # have the exact same non-builtin shape.  This avoids turning
@@ -1607,6 +1761,219 @@ def _implicit_none_is_safe(statements: list[ast.stmt]) -> bool:
     return all(walk(statement) for statement in statements)
 
 
+def _syntactic_return_type(node: ast.AST) -> str | None:
+    """Return an exact builtin shape visible from a return expression.
+
+    This is deliberately independent of Sage names and receiver contracts.
+    A literal/container expression has one Python result shape even when the
+    surrounding method contains several conditional return statements and
+    the richer data-flow analyzer cannot resolve a nested call.  Dynamic
+    calls, names, attributes and arithmetic remain unresolved here.
+    """
+    if isinstance(node, (ast.List, ast.ListComp)):
+        return "list"
+    if isinstance(node, (ast.Tuple, ast.GeneratorExp)):
+        # A generator expression is consumed lazily by Python; expose its
+        # iterator protocol rather than pretending it is a concrete list.
+        return "tuple" if isinstance(node, ast.Tuple) else "Iterator"
+    if isinstance(node, (ast.Dict, ast.DictComp)):
+        return "dict"
+    if isinstance(node, (ast.Set, ast.SetComp)):
+        return "set"
+    if isinstance(node, ast.Constant):
+        if node.value is None:
+            return "None"
+        if isinstance(node.value, bool):
+            return "bool"
+        if isinstance(node.value, int):
+            return "int"
+        if isinstance(node.value, float):
+            return "float"
+        if isinstance(node.value, complex):
+            return "complex"
+        if isinstance(node.value, str):
+            return "str"
+        if isinstance(node.value, bytes):
+            return "bytes"
+    if isinstance(node, ast.JoinedStr):
+        return "str"
+    return None
+
+
+def _explicit_return_contract(
+    body: list[ast.stmt],
+    returns: list[ast.Return],
+    analyzer: _FunctionAnalyzer,
+    vararg_name: str | None = None,
+    method_name: str | None = None,
+) -> str | None:
+    """Build a contract when every explicit return has one exact shape.
+
+    The older gate required a syntactically simple body before accepting a
+    return value.  That left many ordinary Sage wrappers unresolved merely
+    because they used ``try``/``with``/loop scaffolding.  Python's semantics
+    are still precise here: an unhandled exception contributes no return
+    value, while any reachable fall-through contributes ``None``.  Therefore
+    a body with uniformly proven explicit returns can be represented as that
+    value (plus ``None`` when control-flow can fall through).  Unknown return
+    expressions, vararg-item forwarding, and explicit conditional abstract
+    hooks remain fail-closed.
+    """
+    if not returns:
+        return None
+    if any(_returns_untyped_vararg_item(r.value, vararg_name) for r in returns):
+        return None
+    # Return *shape* is independent of how many times a loop or match branch
+    # executes.  Once every reachable explicit ``return`` has the same proven
+    # expression, the only remaining control-flow question is whether the
+    # function can fall through; ``_may_fall_through`` adds the corresponding
+    # ``None`` arm.  Older versions rejected any loop/match scaffolding here,
+    # which left ordinary Sage search/dispatch wrappers UNKNOWN even when all
+    # successful paths returned one exact type.  Unknown expressions still
+    # fail closed below, so relaxing this structural gate does not invent a
+    # Sage class from a dynamic branch.
+    inferred = [
+        _public_type(analyzer.expr_type(r.value))
+        or _syntactic_return_type(r.value)
+        for r in returns
+    ]
+    if not inferred or any(value is None for value in inferred):
+        return None
+    # A generic constructor-parameter identity must not cross an override
+    # boundary: a subclass may narrow or replace the inherited value domain.
+    # Keep the conservative UNKNOWN result used by the dedicated identity
+    # pass for such methods.
+    if analyzer.owner is not None and method_name is not None and any(
+        isinstance(value, str) and value.startswith(_PARAMETER_IDENTITY_PREFIX)
+        for value in inferred
+    ) and any(
+        analyzer._has_method_in_mro(parent, method_name)
+        for parent in analyzer.class_bases.get(analyzer.owner, ())
+    ):
+        return None
+    unique = list(dict.fromkeys(inferred))
+    if _may_fall_through(body):
+        unique.append("None")
+    unique = list(dict.fromkeys(unique))
+    return unique[0] if len(unique) == 1 else _union(*unique)
+
+
+def _parameter_identity_contract(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    body: list[ast.stmt],
+    returns: list[ast.Return],
+    analyzer: _FunctionAnalyzer,
+) -> str | None:
+    """Represent an untyped direct-parameter return for stub specialization.
+
+    ``return value`` is an exact identity contract even when the generated
+    stub omitted ``value``'s annotation.  Emit an internal marker so the
+    applicator can add a scoped ``TypeVar`` to both the parameter and return;
+    this preserves the concrete call-site type without falling back to a
+    public base class.  Existing typed parameters are handled by the regular
+    expression analyzer and never reach this marker.
+    """
+    if not returns:
+        return None
+    parameter_names = {
+        argument.arg
+        for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+        if argument.arg != "self" and argument.annotation is None
+    }
+    if node.args.vararg is not None and node.args.vararg.annotation is None:
+        parameter_names.discard(node.args.vararg.arg)
+    if node.args.kwarg is not None and node.args.kwarg.annotation is None:
+        parameter_names.discard(node.args.kwarg.arg)
+    if not parameter_names:
+        return None
+    # An override changes the dispatch contract seen by callers.  Even when
+    # the override body is a direct identity, an inherited implementation may
+    # have a different parameter/result domain (for example a Sage element
+    # helper overridden by a scalar adapter).  Leave that boundary for the
+    # indexed overload/type checker instead of publishing a generic alias.
+    if analyzer.owner is not None:
+        for parent in analyzer.class_bases.get(analyzer.owner, ()):
+            if analyzer._has_method_in_mro(parent, node.name):
+                return None
+    names = {
+        result.value.id
+        for result in returns
+        if isinstance(result.value, ast.Name) and result.value.id in parameter_names
+    }
+    if len(names) != 1 or len(names) != len(returns):
+        return None
+    for statement in body:
+        for child in ast.walk(statement):
+            if isinstance(child, (ast.For, ast.AsyncFor, ast.While)):
+                if child.orelse or len(child.body) != 1 or not isinstance(child.body[0], ast.Return):
+                    return None
+            elif isinstance(child, ast.Match):
+                return None
+    name = next(iter(names))
+    bound = analyzer.expr_type(ast.Name(id=name))
+    if bound is not None and not bound.startswith(_PARAMETER_IDENTITY_PREFIX):
+        return None
+    return f"{_PARAMETER_IDENTITY_PREFIX}{name}{'|None' if _may_fall_through(body) else ''}"
+
+
+def _inherits_parent_protocol(
+    owner: str | None,
+    class_bases: dict[str, tuple[str, ...]],
+) -> bool:
+    """Return whether a source class is a Sage ``Parent`` descendant."""
+    if owner is None:
+        return False
+    pending = [owner]
+    seen: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if current == "sage.structure.parent.Parent":
+            return True
+        pending.extend(class_bases.get(current, ()))
+    return False
+
+
+def _parent_call_contract(
+    owner: str | None,
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    class_bases: dict[str, tuple[str, ...]],
+    analyzer: _FunctionAnalyzer,
+) -> str | None:
+    """Infer a parent constructor result from ``__call__`` delegation.
+
+    Sage ``Parent.__call__`` implementations conventionally forward every
+    successful path to the receiver's ``_element_constructor_``.  When that
+    helper is not itself annotated (common for extension-backed parents), the
+    protocol still proves the receiver-relative ``ParentElement[Self]``
+    relationship.  We require a concrete Parent descendant and reject mixed
+    branches so homsets/other callable objects remain unresolved.
+    """
+    if node.name != "__call__" or not _inherits_parent_protocol(owner, class_bases):
+        return None
+    returns, has_yield = _returns(node.body)
+    if has_yield or not returns:
+        return None
+    delegated = True
+    for result in returns:
+        value = result.value
+        if not isinstance(value, ast.Call) or not isinstance(value.func, ast.Attribute):
+            delegated = False
+            break
+        if value.func.attr != "_element_constructor_" or not isinstance(value.func.value, ast.Name) or value.func.value.id != "self":
+            delegated = False
+            break
+    if not delegated:
+        return None
+    if owner is not None:
+        helper = analyzer._member_contract(owner, "_element_constructor_")
+        if helper is not None and helper != "type":
+            return helper
+    return "'sage.type_contracts.ParentElement[Self]'"
+
+
 def _always_raises(statements: list[ast.stmt]) -> bool:
     """Recognize a small, deterministic no-return control-flow shape.
 
@@ -1635,6 +2002,35 @@ def _always_raises(statements: list[ast.stmt]) -> bool:
             # successful return path by themselves.
             continue
     return saw_terminal and not reachable
+
+
+def _implicit_none_contract(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    body: list[ast.stmt],
+) -> str | None:
+    """Prove the ordinary implicit ``None`` result of a source function.
+
+    Python functions with no ``return``/``yield`` complete with ``None``.
+    Keep the proof conservative around decorators that replace the callable,
+    explicit raises, and loops whose termination is data-dependent.  This
+    captures the large class of Sage mutators and cache invalidators that
+    have an implementation body but omitted a return annotation.
+    """
+    if not body or any(
+        isinstance(decorator, ast.Name)
+        and re.search(r"abstract|not_implemented|deprecated", decorator.id, re.IGNORECASE)
+        or isinstance(decorator, ast.Attribute)
+        and re.search(r"abstract|not_implemented|deprecated", decorator.attr, re.IGNORECASE)
+        for decorator in node.decorator_list
+    ):
+        return None
+    for statement in body:
+        for child in ast.walk(statement):
+            if isinstance(child, (ast.Return, ast.Yield, ast.YieldFrom, ast.Raise)):
+                return None
+            if isinstance(child, (ast.For, ast.AsyncFor, ast.While)):
+                return None
+    return "None"
 
 
 def _local_types(statements: list[ast.stmt], analyzer: _FunctionAnalyzer) -> bool:
@@ -1804,6 +2200,113 @@ def _class_names(files: list[tuple[Path, str, ast.Module]]) -> set[str]:
     return result
 
 
+def _assignment_names(target: ast.AST) -> set[str]:
+    """Return local names rebound by one assignment target."""
+    if isinstance(target, ast.Name):
+        return {target.id}
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return set().union(*(_assignment_names(child) for child in target.elts))
+    if isinstance(target, ast.Starred):
+        return _assignment_names(target.value)
+    return set()
+
+
+def _constructor_stored_attributes(node: ast.ClassDef) -> dict[str, str]:
+    """Prove direct, immutable ``__init__`` parameter fields.
+
+    ``self.field = parameter`` becomes a class-level type parameter only when
+    the parameter is never rebound by the constructor and the field is not
+    assigned by any other direct method.  A default value does not invalidate
+    that relationship: callers still receive exactly the value they supplied,
+    or the function's own default when they omitted it.  In contrast,
+    transforms such as ``if field is None: field = factory()`` rebind the
+    parameter and remain excluded.  The resulting marker is kept internal
+    until a getter returns the field, where the stub applicator can lift it to
+    ``Generic[T]``.
+    """
+    initializer = next(
+        (
+            child
+            for child in node.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and child.name == "__init__"
+            and not any(
+                (isinstance(decorator, ast.Name) and decorator.id == "overload")
+                or (isinstance(decorator, ast.Attribute) and decorator.attr == "overload")
+                for decorator in child.decorator_list
+            )
+        ),
+        None,
+    )
+    if initializer is None:
+        return {}
+    positional = [*initializer.args.posonlyargs, *initializer.args.args]
+    parameters = {
+        argument.arg
+        for argument in (*positional, *initializer.args.kwonlyargs)
+        if argument.arg not in {"self", "cls"}
+    }
+    if not parameters:
+        return {}
+
+    rebound: set[str] = set()
+    assignments: dict[str, list[tuple[ast.AST, ast.AST]]] = {}
+
+    def walk(statement: ast.AST, method: ast.AST) -> None:
+        if statement is not method and isinstance(
+            statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+        ):
+            return
+        targets: tuple[ast.AST, ...] = ()
+        value: ast.AST | None = None
+        if isinstance(statement, ast.Assign):
+            targets, value = tuple(statement.targets), statement.value
+        elif isinstance(statement, ast.AnnAssign):
+            targets, value = (statement.target,), statement.value
+        elif isinstance(statement, ast.AugAssign):
+            targets, value = (statement.target,), statement.value
+        elif isinstance(statement, (ast.For, ast.AsyncFor)):
+            targets = (statement.target,)
+        elif isinstance(statement, ast.NamedExpr):
+            targets, value = (statement.target,), statement.value
+        for target in targets:
+            # Constructor parameter names are local to ``__init__``.  A
+            # different method may legitimately use the same short name for
+            # a loop or temporary; treating that as a constructor rebinding
+            # incorrectly discards an otherwise exact stored-field proof.
+            if method is initializer:
+                rebound.update(_assignment_names(target) & parameters)
+            if (
+                value is not None
+                and isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "self"
+            ):
+                assignments.setdefault(target.attr, []).append((method, value))
+        for child in ast.iter_child_nodes(statement):
+            walk(child, method)
+
+    for method in node.body:
+        if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for statement in method.body:
+                walk(statement, method)
+
+    result: dict[str, str] = {}
+    for attribute, writes in assignments.items():
+        values = {
+            value.id
+            for method, value in writes
+            if method is initializer
+            and isinstance(value, ast.Name)
+            and value.id in parameters
+        }
+        if len(values) == 1 and len(writes) == 1:
+            parameter = next(iter(values))
+            if parameter not in rebound:
+                result[attribute] = f"{_CONSTRUCTOR_PARAMETER_PREFIX}{parameter}"
+    return result
+
+
 def _class_attributes(
     files: list[tuple[Path, str, ast.Module]],
     classes: set[str],
@@ -1831,6 +2334,7 @@ def _class_attributes(
         def visit(node: ast.AST, owner: str | None = None) -> None:
             if isinstance(node, ast.ClassDef):
                 qualified = f"{module}.{node.name}" if owner is None else f"{owner}.{node.name}"
+                stored_constructor_attributes = _constructor_stored_attributes(node)
                 stable: dict[str, str] = {}
                 # A short fixed point resolves simple chains such as
                 # ``self.items = []`` followed by ``self.values = self.items``.
@@ -1953,6 +2457,19 @@ def _class_attributes(
                     if updated == stable:
                         break
                     stable = updated
+                # Preserve a constructor dependency only after the source
+                # proof ruled out rebinding and later field writes.  A default
+                # parameter is still the exact field value unless that
+                # parameter was transformed first.
+                # A known indexed parameter type is already stronger than a
+                # fresh TypeVar and therefore remains untouched.
+                for attribute, marker in stored_constructor_attributes.items():
+                    parameter = marker[len(_CONSTRUCTOR_PARAMETER_PREFIX):]
+                    if stable.get(attribute) in {
+                        None,
+                        f"{_PARAMETER_IDENTITY_PREFIX}{parameter}",
+                    }:
+                        stable[attribute] = marker
                 if stable:
                     result[qualified] = stable
                 for child in node.body:
@@ -2036,7 +2553,10 @@ def _class_bases(
                         resolved = f"{module}.{bits[0]}"
                     if len(bits) > 1:
                         resolved = ".".join([resolved, *bits[1:]])
-                    if resolved in classes:
+                    # Keep external Sage parents as lookup-only edges too;
+                    # their concrete implementations may live in Cython and
+                    # therefore are absent from this pure-Python source set.
+                    if resolved in classes or resolved.startswith("sage."):
                         bases.append(resolved)
                 result[qualified] = tuple(dict.fromkeys(bases))
                 for child in node.body:
@@ -2148,7 +2668,8 @@ def _index_contracts(index: Path | None) -> dict[str, str]:
             return _quote(arm)
         relation_prefix = "sage.type_contracts."
         if arm.startswith(relation_prefix) and re.fullmatch(
-            r"sage\.type_contracts\.[A-Za-z_][A-Za-z0-9_]*Element\[Self\]", arm
+            r"sage\.type_contracts\.[A-Za-z_][A-Za-z0-9_]*(?:Element)?\[Self\]",
+            arm,
         ):
             return _quote(arm)
         # Preserve only builtin container shapes whose arguments are each
@@ -2862,35 +3383,31 @@ def infer(
                     analyzer.bind_parameters(node)
                     _loop_types(body, analyzer)
                     analyzer.bind_external_parameters(qualified, node)
+                    parent_contract = _parent_call_contract(
+                        owner, node, class_bases, analyzer
+                    )
+                    if parent_contract is not None:
+                        publish(qualified, parent_contract, property_node=property_node)
+                        return
+                    identity_contract = _parameter_identity_contract(
+                        node, body, returns, analyzer
+                    )
+                    if identity_contract is not None:
+                        publish(qualified, identity_contract, property_node=property_node)
+                        return
                     source_annotation = analyzer.annotation_type(node.returns) if node.returns is not None else None
                     if source_annotation is not None:
                         publish(qualified, source_annotation, property_node=property_node)
-                    elif returns and (
-                        not _may_fall_through(body) or _implicit_none_is_safe(body)
-                    ):
-                        if not any(
-                            _returns_untyped_vararg_item(
-                                result.value,
-                                node.args.vararg.arg if node.args.vararg is not None else None,
-                            )
-                            for result in returns
-                        ):
-                            inferred = [_public_type(analyzer.expr_type(r.value)) for r in returns]
-                            if _may_fall_through(body) and _implicit_none_is_safe(body):
-                                inferred.append("None")
-                            # A non-fallthrough body reaches one of these explicit
-                            # returns.  Preserve every independently proven
-                            # expression shape as an exact union instead of
-                            # discarding a parameter/branch-sensitive factory.
-                            # ``expr_type`` is deliberately fail-closed, so an
-                            # unresolved arm still prevents publication.
-                            if inferred and all(value is not None for value in inferred):
-                                unique = list(dict.fromkeys(inferred))
-                                publish(
-                                    qualified,
-                                    unique[0] if len(unique) == 1 else _union(*unique),
-                                    property_node=property_node,
-                                )
+                    elif returns:
+                        inferred_contract = _explicit_return_contract(
+                            body,
+                            returns,
+                            analyzer,
+                            node.args.vararg.arg if node.args.vararg is not None else None,
+                            node.name,
+                        )
+                        if inferred_contract is not None:
+                            publish(qualified, inferred_contract, property_node=property_node)
                 elif not returns:
                     # Python's implicit fall-through value is exactly None.
                     # This is safe for functions with no explicit return at
@@ -2964,16 +3481,6 @@ def infer(
             returns, has_yield = _returns(node.body)
             if has_yield or not returns:
                 continue
-            if _may_fall_through(list(node.body)) and not _implicit_none_is_safe(list(node.body)):
-                continue
-            if any(
-                _returns_untyped_vararg_item(
-                    result.value,
-                    node.args.vararg.arg if node.args.vararg is not None else None,
-                )
-                for result in returns
-            ):
-                continue
             module = owner.rsplit(".", 1)[0] if owner else qualified.rsplit(".", 1)[0]
             analyzer = _FunctionAnalyzer(
                 module,
@@ -2997,19 +3504,43 @@ def infer(
             analyzer.bind_parameters(node)
             _loop_types(list(node.body), analyzer)
             analyzer.bind_external_parameters(qualified, node)
-            inferred = [_public_type(analyzer.expr_type(result.value)) for result in returns]
-            if _may_fall_through(list(node.body)) and _implicit_none_is_safe(list(node.body)):
-                inferred.append("None")
-            if inferred and all(value is not None for value in inferred):
-                unique = list(dict.fromkeys(inferred))
+            inferred_contract = _explicit_return_contract(
+                list(node.body),
+                returns,
+                analyzer,
+                node.args.vararg.arg if node.args.vararg is not None else None,
+                node.name,
+            )
+            if inferred_contract is not None:
                 publish(
                     qualified,
-                    unique[0] if len(unique) == 1 else _union(*unique),
+                    inferred_contract,
                     property_node=_is_property_node(node),
                 )
                 added += 1
         if not added:
             break
+    # Python's iterator protocol couples ``__iter__`` and ``__next__``: when
+    # a concrete class advertises an ``Iterator[T]`` implementation, its
+    # ``__next__`` result is exactly ``T``.  Resolve this relation after the
+    # normal fixed point so declaration order and inherited ``__iter__``
+    # contracts do not matter; an unparameterized/dynamic iterator remains
+    # UNKNOWN.
+    for qualified, owner, node, _ in function_nodes:
+        if node.name != "__next__" or owner is None or qualified in contracts:
+            continue
+        iterator_contract = _FunctionAnalyzer(
+            "",
+            {},
+            classes,
+            owner,
+            class_bases=class_bases,
+            known_contracts=visible_contracts,
+            class_methods=class_methods,
+        )._member_contract(owner, "__iter__")
+        element = _generic_element(iterator_contract)
+        if element is not None:
+            publish(qualified, element)
     return contracts
 
 

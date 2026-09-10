@@ -133,6 +133,8 @@ def _annotation(expression: str) -> tuple[str, str | None]:
     if "sage." in expression:
         # Existing curated stubs use a single forward-reference string for
         # unions that contain Sage classes, including mixed builtin unions.
+        if expression.startswith("'") and expression.endswith("'"):
+            return expression, None
         return f"'{expression}'", None
     if expression == "Iterator":
         return expression, "Iterator"
@@ -197,6 +199,30 @@ def infer_parent_contracts(index: Path) -> dict[str, str]:
             if isinstance(signature, dict)
         ):
             continue
+        # The parent call protocol is receiver-relative: a concrete Parent
+        # descendant with an element-constructor hook returns an element of
+        # that same parent.  This relation is stronger than the unresolved
+        # ``Parent.__call__`` stub and does not require a class/method list.
+        # Keep it scoped to classes that actually expose the constructor hook
+        # somewhere in their MRO; callable non-parent objects are untouched.
+        if name == "__call__":
+            parent_seen = False
+            constructor_seen = False
+            pending = [owner]
+            seen: set[str] = set()
+            while pending:
+                current = pending.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                if current == "sage.structure.parent.Parent":
+                    parent_seen = True
+                if (current, "_element_constructor_") in methods:
+                    constructor_seen = True
+                pending.extend(classes.get(current, {}).get("parents", []))
+            if parent_seen and constructor_seen:
+                contracts[f"{owner}.{name}"] = "'sage.type_contracts.ParentElement[Self]'"
+                continue
         for layer in _ancestors(classes, owner):
             candidate_values: list[str] = []
             for parent in layer:

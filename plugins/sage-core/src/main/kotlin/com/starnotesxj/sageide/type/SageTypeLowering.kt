@@ -44,6 +44,8 @@ import com.starnotesxj.sageide.sugar.SageStubIndex
  * fabricated PSI class; completion/documentation can still use the index.
  */
 object SageTypeLowering {
+    private const val STORED_PARAMETER_TYPEVAR_PREFIX = "_SageStored"
+
     fun lower(
         type: SageTypeRef,
         anchor: PsiElement,
@@ -377,6 +379,15 @@ object SageTypeLowering {
         val typeParameters = signature.typeParameters.associateBy { it.name }
         if (typeParameters.values.any { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }) return null
         val bindings = linkedMapOf<String, PyType>()
+        if (!bindGeneratedReceiverTypeVariables(
+                signature = signature,
+                callSite = callSite,
+                context = context,
+                anchor = callSite,
+                query = query,
+                bindings = bindings,
+            )
+        ) return null
         if (typeParameters.values.any { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.SELF }) {
             val selfType = resolveSelfReceiver(callSite, context, query, callableQualifiedName, callable) ?: return null
             bindings["Self"] = selfType
@@ -425,6 +436,60 @@ object SageTypeLowering {
         if (parameters.any { !it.optional && !it.variadic && it.name !in consumed }) return null
         if (!signatureAcceptsCall(signature, arguments, context, query)) return null
         return bindings
+    }
+
+    /**
+     * Source contracts can prove that a getter returns the exact constructor
+     * argument stored by its class.  The stub generator represents that fact
+     * as ``class C(Generic[_SageStored...])``.  Unlike an ordinary generic
+     * function, such a getter has no value argument from which to bind its
+     * type variable, so bind it from the concrete receiver's type arguments.
+     *
+     * This deliberately recognizes only the private type-variable names
+     * emitted by our generator.  Other generic bases may be dynamic or use a
+     * different scope/order, and therefore remain unresolved here instead of
+     * being positionally guessed.
+     */
+    private fun bindGeneratedReceiverTypeVariables(
+        signature: SageApiSignature,
+        callSite: com.jetbrains.python.psi.PyCallSiteExpression,
+        context: TypeEvalContext,
+        anchor: PsiElement,
+        query: SageApiIndexQuery,
+        bindings: MutableMap<String, PyType>,
+    ): Boolean {
+        val declared = signature.typeParameters.associateBy { it.name }
+        if (declared.keys.none { it.startsWith(STORED_PARAMETER_TYPEVAR_PREFIX) }) return true
+        val call = callSite as? PyCallExpression ?: return true
+        val callee = call.callee as? PyQualifiedExpression ?: return true
+        val receiver = callee.qualifier ?: return true
+        val receiverType = context.getType(receiver) as? PyClassType ?: return true
+        if (receiverType.isDefinition) return true
+        val actualArguments = receiverType.typeArguments
+        if (actualArguments.isEmpty()) return true
+        val genericExpression = receiverType.pyClass.superClassExpressions.singleOrNull { expression ->
+            expression.text.removePrefix("typing.").startsWith("Generic[")
+        } ?: return true
+        val genericText = genericExpression.text.removePrefix("typing.")
+        val formalArguments = genericText
+            .removePrefix("Generic[")
+            .removeSuffix("]")
+            .split(',')
+            .map(String::trim)
+        if (formalArguments.isEmpty() || formalArguments.size != actualArguments.size) return true
+        if (formalArguments.any { !it.startsWith(STORED_PARAMETER_TYPEVAR_PREFIX) }) return true
+        for ((formal, actual) in formalArguments.zip(actualArguments)) {
+            val declaration = declared[formal] ?: continue
+            if (actual == PyAnyType.Any || actual == PyAnyType.Unknown) return false
+            if (!typeParameterAccepts(declaration, actual, context, anchor, query)) return false
+            val previous = bindings[formal]
+            if (previous == null) {
+                bindings[formal] = actual
+            } else if (!PyTypeChecker.match(previous, actual, context) || !PyTypeChecker.match(actual, previous, context)) {
+                return false
+            }
+        }
+        return true
     }
 
     private fun signatureAcceptsCall(
@@ -572,11 +637,70 @@ object SageTypeLowering {
             "sage.type_contracts.BaseRingElement", "BaseRingElement" -> "base_ring"
             "sage.type_contracts.BaseFieldElement", "BaseFieldElement" -> "base_field"
             "sage.type_contracts.AmbientElement", "AmbientElement" -> "ambient"
+            "sage.type_contracts.ResidueRingElement", "ResidueRingElement" -> "residue_ring"
+            "sage.type_contracts.ResidueFieldElement", "ResidueFieldElement" -> "residue_field"
+            "sage.type_contracts.WeightLatticeElement", "WeightLatticeElement" -> "weight_lattice_realization"
+            "sage.type_contracts.DomainElement", "DomainElement" -> "domain"
+            "sage.type_contracts.MessageSpaceElement", "MessageSpaceElement" -> "message_space"
+            "sage.type_contracts.InputSpaceElement", "InputSpaceElement" -> "input_space"
+            "sage.type_contracts.CoefficientRingElement", "CoefficientRingElement" -> "coefficient_ring"
+            "sage.type_contracts.FreeModuleElement", "FreeModuleElement" -> "free_module"
+            "sage.type_contracts.FunctionFieldElement", "FunctionFieldElement" -> "function_field"
+            "sage.type_contracts.GroupElement", "GroupElement" -> "group"
+            "sage.type_contracts.LatticeElement", "LatticeElement" -> "lattice"
+            "sage.type_contracts.ModuleElement", "ModuleElement" -> "module"
+            "sage.type_contracts.IdealElement", "IdealElement" -> "ideal"
+            "sage.type_contracts.CurveElement", "CurveElement" -> "curve"
             else -> null
         }
         if (relatedRelation != null) {
             val receiver = bindings["Self"] as? PyClassType ?: return null
             return lowerRelatedParentElement(receiver, relatedRelation, anchor, context, query)
+        }
+        // Parent-returning relation contracts describe the concrete parent
+        // object reached through the receiver (for example ``f.base_ring()``
+        // or ``m.domain()``).  They are intentionally separate from the
+        // ``*Element[Self]`` contracts above: lowering first resolves the
+        // receiver's exact accessor result and only then exposes that parent
+        // class to completion/documentation.
+        val relatedParent = when (baseName) {
+            "sage.type_contracts.Parent", "Parent" -> "parent"
+            "sage.type_contracts.BaseRing", "BaseRing" -> "base_ring"
+            "sage.type_contracts.BaseField", "BaseField" -> "base_field"
+            "sage.type_contracts.Domain", "Domain" -> "domain"
+            "sage.type_contracts.Codomain", "Codomain" -> "codomain"
+            "sage.type_contracts.Ambient", "Ambient" -> "ambient"
+            "sage.type_contracts.BaseScheme", "BaseScheme" -> "base_scheme"
+            "sage.type_contracts.BaseSpace", "BaseSpace" -> "base_space"
+            "sage.type_contracts.ValueGroup", "ValueGroup" -> "value_group"
+            "sage.type_contracts.ValueSemigroup", "ValueSemigroup" -> "value_semigroup"
+            "sage.type_contracts.ResidueRing", "ResidueRing" -> "residue_ring"
+            "sage.type_contracts.ResidueField", "ResidueField" -> "residue_field"
+            "sage.type_contracts.Group", "Group" -> "group"
+            "sage.type_contracts.Lattice", "Lattice" -> "lattice"
+            "sage.type_contracts.Module", "Module" -> "module"
+            "sage.type_contracts.FreeModule", "FreeModule" -> "free_module"
+            "sage.type_contracts.MessageSpace", "MessageSpace" -> "message_space"
+            "sage.type_contracts.InputSpace", "InputSpace" -> "input_space"
+            "sage.type_contracts.CoefficientRing", "CoefficientRing" -> "coefficient_ring"
+            "sage.type_contracts.FunctionField", "FunctionField" -> "function_field"
+            "sage.type_contracts.Curve", "Curve" -> "curve"
+            "sage.type_contracts.Ideal", "Ideal" -> "ideal"
+            "sage.type_contracts.MessageSpaceElement", "MessageSpaceElement" -> "message_space"
+            "sage.type_contracts.InputSpaceElement", "InputSpaceElement" -> "input_space"
+            "sage.type_contracts.CoefficientRingElement", "CoefficientRingElement" -> "coefficient_ring"
+            "sage.type_contracts.FreeModuleElement", "FreeModuleElement" -> "free_module"
+            "sage.type_contracts.FunctionFieldElement", "FunctionFieldElement" -> "function_field"
+            "sage.type_contracts.GroupElement", "GroupElement" -> "group"
+            "sage.type_contracts.LatticeElement", "LatticeElement" -> "lattice"
+            "sage.type_contracts.ModuleElement", "ModuleElement" -> "module"
+            "sage.type_contracts.IdealElement", "IdealElement" -> "ideal"
+            "sage.type_contracts.CurveElement", "CurveElement" -> "curve"
+            else -> null
+        }
+        if (relatedParent != null) {
+            val receiver = bindings["Self"] as? PyClassType ?: return null
+            return lowerRelatedParent(receiver, relatedParent, anchor, context, query)
         }
         val arguments = expression.arguments.map { lower(it, anchor, context, query, bindings) ?: return null }
         if (baseName == "tuple") {
@@ -710,6 +834,85 @@ object SageTypeLowering {
             .toList()
         val parent = relatedParents.singleOrNull() ?: return null
         return lowerParentElement(parent, anchor, context, query)
+    }
+
+    /** Resolve a concrete parent object through one receiver relation. */
+    private fun lowerRelatedParent(
+        receiver: PyClassType,
+        relationName: String,
+        anchor: PsiElement,
+        context: TypeEvalContext,
+        query: SageApiIndexQuery,
+    ): PyType? {
+        val owner = SageStubIndex.canonicalQualifiedName(receiver.pyClass) ?: return null
+        val relationContractNames = setOf(
+            "sage.type_contracts.Parent", "Parent",
+            "sage.type_contracts.BaseRing", "BaseRing",
+            "sage.type_contracts.BaseField", "BaseField",
+            "sage.type_contracts.Domain", "Domain",
+            "sage.type_contracts.Codomain", "Codomain",
+            "sage.type_contracts.Ambient", "Ambient",
+            "sage.type_contracts.BaseScheme", "BaseScheme",
+            "sage.type_contracts.BaseSpace", "BaseSpace",
+            "sage.type_contracts.ValueGroup", "ValueGroup",
+            "sage.type_contracts.ValueSemigroup", "ValueSemigroup",
+            "sage.type_contracts.ResidueRing", "ResidueRing",
+            "sage.type_contracts.ResidueField", "ResidueField",
+            "sage.type_contracts.ResidueRingElement", "ResidueRingElement",
+            "sage.type_contracts.ResidueFieldElement", "ResidueFieldElement",
+            "sage.type_contracts.WeightLatticeElement", "WeightLatticeElement",
+            "sage.type_contracts.DomainElement", "DomainElement",
+            "sage.type_contracts.Group", "Group",
+            "sage.type_contracts.Lattice", "Lattice",
+            "sage.type_contracts.Module", "Module",
+            "sage.type_contracts.FreeModule", "FreeModule",
+            "sage.type_contracts.MessageSpace", "MessageSpace",
+            "sage.type_contracts.InputSpace", "InputSpace",
+            "sage.type_contracts.CoefficientRing", "CoefficientRing",
+            "sage.type_contracts.FunctionField", "FunctionField",
+            "sage.type_contracts.Curve", "Curve",
+            "sage.type_contracts.Ideal", "Ideal",
+            "sage.type_contracts.MessageSpaceElement", "MessageSpaceElement",
+            "sage.type_contracts.InputSpaceElement", "InputSpaceElement",
+            "sage.type_contracts.CoefficientRingElement", "CoefficientRingElement",
+            "sage.type_contracts.FreeModuleElement", "FreeModuleElement",
+            "sage.type_contracts.FunctionFieldElement", "FunctionFieldElement",
+            "sage.type_contracts.GroupElement", "GroupElement",
+            "sage.type_contracts.LatticeElement", "LatticeElement",
+            "sage.type_contracts.ModuleElement", "ModuleElement",
+            "sage.type_contracts.IdealElement", "IdealElement",
+            "sage.type_contracts.CurveElement", "CurveElement",
+        )
+        val concreteParents = query.members(owner, relationName)
+            .asSequence()
+            .filter { it.kind == SageApiSymbolKind.METHOD || it.kind == SageApiSymbolKind.PROPERTY }
+            .flatMap { it.signatures.asSequence() }
+            .mapNotNull { signature ->
+                if (signature.returnType.state != SageTypeState.KNOWN ||
+                    signature.returnType.expression.isNullOrBlank()
+                ) return@mapNotNull null
+                val typeNames = signature.typeParameters.map { it.name }.toSet()
+                val paramSpecNames = signature.typeParameters
+                    .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                    .map { it.name }
+                    .toSet()
+                val parsed = SageTypeRefExpressionParser.parse(
+                    signature.returnType.expression!!,
+                    typeNames,
+                    paramSpecNames,
+                ) ?: return@mapNotNull null
+                if (parsed is SageTypeExpression.Generic &&
+                    normalizeName(parsed.base.qualifiedName) in relationContractNames
+                ) return@mapNotNull null
+                lower(parsed, anchor, context, query, mapOf("Self" to receiver))
+            }
+            .filterNot { it is com.jetbrains.python.psi.types.PyAnyType }
+            .distinctBy { type ->
+                (type as? PyClassType)?.let { SageStubIndex.canonicalQualifiedName(it.pyClass) }
+                    ?: type.toString()
+            }
+            .toList()
+        return concreteParents.singleOrNull()
     }
 
     private fun containsParentElementContract(expression: SageTypeExpression): Boolean = when (expression) {

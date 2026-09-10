@@ -1106,6 +1106,7 @@ class SageTypeProviderTest : SagePluginTestBase() {
         SageApiIndexService.getInstance().install(index)
         try {
             myFixture.copyFileToProject("testData/sage-stubs/sage/matrix/matrix.pyi", "sage/matrix/matrix.pyi")
+            myFixture.copyFileToProject("testData/sage-stubs/sage/matrix/matrix2.pyi", "sage/matrix/matrix2.pyi")
             myFixture.configureByText("matrix.py", "from sage.matrix.matrix import matrix\nA = matrix([[1]])\n")
             myFixture.doHighlighting()
             val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
@@ -1540,6 +1541,71 @@ result = identity(matrix([[1]]))
         }
     }
 
+    fun testStoredConstructorParameterGetterBindsReceiverGenericArgument() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "box.pyi")
+        val payload = "sage.all.Payload"
+        val box = "sage.all.Box"
+        val factory = "sage.all.make_box"
+        val stored = "_SageStoredsageallBoxValueT"
+        val index = SageApiIndexQuery(SageApiIndex("10.9", "3.13", listOf(
+            SageApiEntry(payload, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(box, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(
+                factory,
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(SageApiSignature(
+                    returnType = SageTypeRef.known("$box[$payload]"),
+                )),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$box.value",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(
+                    returnType = SageTypeRef.known(stored),
+                    typeParameters = listOf(SageApiTypeParameter(stored)),
+                )),
+                sources = listOf(source),
+            ),
+        )))
+        SageApiIndexService.getInstance().install(index)
+        try {
+            myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+            myFixture.addFileToProject(
+                "site-packages/sage/all.pyi",
+                "from typing import Generic, TypeVar\n" +
+                    "$stored = TypeVar(\"$stored\")\n" +
+                    "class Payload: ...\n" +
+                    "class Box(Generic[$stored]):\n" +
+                    "    def __init__(self, value: $stored) -> None: ...\n" +
+                    "    def value(self) -> $stored: ...\n" +
+                    "def make_box() -> Box[Payload]: ...\n",
+            )
+            myFixture.configureByText(
+                "stored-generic.sage",
+                "box = make_box()\nresult = box.value()\n",
+            )
+            myFixture.doHighlighting()
+            val call = PsiTreeUtil.collectElementsOfType(myFixture.file, PyCallExpression::class.java)
+                .single { it.callee?.name == "value" }
+            val receiver = (call.callee as? com.jetbrains.python.psi.PyQualifiedExpression)?.qualifier
+            val receiverType = receiver?.let(defaultContext()::getType) as? PyClassType
+            assertEquals(box, receiverType?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+            assertEquals(1, receiverType?.typeArguments?.size)
+            assertEquals(payload, (receiverType?.typeArguments?.singleOrNull() as? PyClassType)?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+            val declaration = SageStubIndex.findClassByCanonicalName(myFixture.project, box)
+                ?.findMethodByName("value", false, defaultContext())
+            checkNotNull(declaration) { "Box.value fixture declaration was not indexed" }
+            val indexedMethod = object : PyFunction by declaration {
+                override fun getQualifiedName(): String = "$box.value"
+            }
+            val type = provider.getCallType(indexedMethod, call, defaultContext())?.get() as? PyClassType
+            assertEquals(payload, type?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
     fun testGenericBoundMismatchFailsClosed() {
         val source = SageApiSourceRef(SageApiSourceKind.STUB, "generic.pyi")
         val index = SageApiIndexQuery(
@@ -1624,6 +1690,7 @@ result = matrix([[1]])
         SageApiIndexService.getInstance().install(index)
         try {
             myFixture.copyFileToProject("testData/sage-stubs/sage/matrix/matrix.pyi", "sage/matrix/matrix.pyi")
+            myFixture.copyFileToProject("testData/sage-stubs/sage/matrix/matrix2.pyi", "sage/matrix/matrix2.pyi")
             myFixture.configureByText("matrix.sage", "from sage.matrix.matrix import matrix\nA = matrix([[1]])\n")
             myFixture.doHighlighting()
             val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
@@ -1633,6 +1700,45 @@ result = matrix([[1]])
         } finally {
             SageApiIndexService.getInstance().install(null)
         }
+    }
+
+    fun testLiveObservedWithCategoryTypeUsesImmediateConcreteStubParent() {
+        val concrete = "sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field"
+        myFixture.copyFileToProject(
+            "testData/sage-stubs/sage/schemes/elliptic_curves/ell_finite_field.pyi",
+            "site-packages/sage/schemes/elliptic_curves/ell_finite_field.pyi",
+        )
+
+        val resolved = SageObservedTypeResolver.resolve(
+            myFixture.project,
+            com.starnotesxj.sagemath.runtime.SageObservedType(
+                "${concrete}_with_category",
+                listOf("${concrete}_with_category", concrete, "sage.schemes.elliptic_curves.ell_generic.EllipticCurve_generic"),
+            ),
+        ) as? PyClassType
+
+        assertEquals(concrete, resolved?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+    }
+
+    fun testLiveObservedTypeDoesNotFallBackToPublicMroBase() {
+        myFixture.copyFileToProject(
+            "testData/sage-stubs/sage/schemes/elliptic_curves/ell_generic.pyi",
+            "site-packages/sage/schemes/elliptic_curves/ell_generic.pyi",
+        )
+
+        val resolved = SageObservedTypeResolver.resolve(
+            myFixture.project,
+            com.starnotesxj.sagemath.runtime.SageObservedType(
+                "sage.runtime_only.SpecializedCurve",
+                listOf(
+                    "sage.runtime_only.SpecializedCurve",
+                    "sage.runtime_only.UnstubbedParent",
+                    "sage.schemes.elliptic_curves.ell_generic.EllipticCurve_generic",
+                ),
+            ),
+        )
+
+        assertNull(resolved)
     }
 
     private fun defaultContext() = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(

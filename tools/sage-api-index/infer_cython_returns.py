@@ -26,8 +26,61 @@ DECLARED_TYPE = rf"(?:bint|float|double|void|{INTEGER}|{PYTHON_DECLARED}|[A-Za-z
 DECLARATION = re.compile(
     rf"^cpdef\s+(?:inline\s+)?(?P<type>{DECLARED_TYPE})\s+(?P<name>[A-Za-z_]\w*)\s*\("
 )
+# Internal ``cdef`` helpers are not public index members, but their declared
+# Python-visible result is still sound evidence when a ``def`` wrapper returns
+# the helper call.  Keeping this separate from ``DECLARATION`` prevents
+# private helpers from being emitted as public contracts.
+CDEF_DECLARATION = re.compile(
+    rf"^cdef\s+(?:inline\s+)?(?P<type>{DECLARED_TYPE})\s+(?P<name>[A-Za-z_]\w*)\s*\("
+)
 CLASS = re.compile(r"^(?:cdef\s+)?class\s+([A-Za-z_]\w*)\s*[:(]")
 LOCAL = re.compile(rf"^cdef\s+(?P<type>bint|float|double|{INTEGER})\s+(?P<names>[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)(?:\s*=.*)?$")
+
+# Direct Python-visible wrappers in ``.pyx`` files occasionally return a
+# builtin protocol result without a Cython return declaration (for example
+# ``return isinstance(x, Morphism)``).  These calls have fixed Python result
+# shapes independent of Sage's dynamic classes, so they are safe to reuse in
+# the same branch-free/explicit-branch proof as literal returns.  Calls not
+# listed here remain unresolved rather than being widened to ``object``.
+PYTHON_CALL_RETURNS = {
+    "all": "bool",
+    "any": "bool",
+    "ascii": "str",
+    "bool": "bool",
+    "bin": "str",
+    "bytes": "bytes",
+    "bytearray": "bytearray",
+    "callable": "bool",
+    "complex": "complex",
+    "dict": "dict",
+    "divmod": "tuple",
+    "enumerate": "Iterator",
+    "filter": "Iterator",
+    "float": "float",
+    "format": "str",
+    "hash": "int",
+    "hex": "str",
+    "id": "int",
+    "int": "int",
+    "isinstance": "bool",
+    "issubclass": "bool",
+    "len": "int",
+    "list": "list",
+    "map": "Iterator",
+    "memoryview": "memoryview",
+    "oct": "str",
+    "ord": "int",
+    "repr": "str",
+    "range": "range",
+    "reversed": "Iterator",
+    "set": "set",
+    "slice": "slice",
+    "sorted": "list",
+    "str": "str",
+    "tuple": "tuple",
+    "type": "type",
+    "zip": "Iterator",
+}
 
 
 def scalar_type(ctype: str) -> str | None:
@@ -235,6 +288,396 @@ def _unique_parameter_contracts(index: Path | None) -> dict[str, dict[str, str]]
     return result
 
 
+def _indexed_parameter_names(index: Path | None) -> dict[str, set[str]]:
+    """Return parameter names present in any indexed overload.
+
+    This distinguishes an unindexed Cython wrapper (eligible for a fresh
+    identity TypeVar) from a known-but-conflicting overload family, where a
+    generic alias would hide a real dispatch boundary.
+    """
+    if index is None:
+        return {}
+    try:
+        payload = json.loads(index.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    result: dict[str, set[str]] = {}
+    for entry in payload.get("entries", []):
+        qualified = entry.get("qualifiedName")
+        if not isinstance(qualified, str):
+            continue
+        names = {
+            parameter.get("name")
+            for signature in entry.get("signatures", [])
+            for parameter in signature.get("parameters", [])
+            if isinstance(parameter.get("name"), str)
+        }
+        if names:
+            result[qualified] = names
+    return result
+
+
+def _cdef_helper_returns(
+    text: str, class_types: dict[str, str] | None = None
+) -> dict[str, str]:
+    """Resolve local Cython helper declarations to Python result contracts.
+
+    A ``def`` wrapper may return a value produced by a ``cdef``/``cdef inline``
+    helper (for example ``new_BP_from_PBPoly``).  The helper's declared return
+    class is stronger evidence than a runtime sample, while unresolved or
+    ambiguous classes remain absent and therefore fail closed.
+    """
+    result: dict[str, str] = {}
+    for line in text.splitlines():
+        # ``cpdef`` helpers declared in a companion ``.pxd`` are also fixed
+        # contracts when called by a wrapper in the same module.  Keep only
+        # scalar/unique-class declarations; object-typed helpers remain
+        # dynamic.
+        match = CDEF_DECLARATION.match(line.strip()) or DECLARATION.match(line.strip())
+        if not match:
+            continue
+        ctype = match.group("type")
+        annotation = scalar_type(ctype)
+        if annotation is None and class_types is not None:
+            target = class_types.get(ctype)
+            if target is not None and _is_concrete_index_path(target):
+                annotation = f"'{target}'"
+        if annotation is not None:
+            result[match.group("name")] = annotation
+    return result
+
+
+def _global_helper_returns(
+    sources: list[tuple[Path, bytes, str, str]],
+    class_types: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Collect helper contracts whose short name is globally unambiguous.
+
+    Cython ``cimport`` makes helpers such as ``rich_to_bool`` available in
+    many modules without repeating their declaration.  Resolve those names
+    from the actual ``.pxd``/``.pyx`` declarations and retain a result only
+    when every declaration agrees on the same Python-visible shape.  This is
+    data-driven and deliberately rejects same-name conflicts.
+    """
+    candidates: dict[str, set[str]] = {}
+    for _, _, text, _ in sources:
+        for name, annotation in _cdef_helper_returns(text, class_types).items():
+            candidates.setdefault(name, set()).add(annotation)
+    return {
+        name: next(iter(values))
+        for name, values in candidates.items()
+        if len(values) == 1
+    }
+
+
+def _index_class_children(index: Path | None) -> dict[str, set[str]]:
+    """Load indexed class children for fail-closed Cython field resolution."""
+    if index is None:
+        return {}
+    try:
+        payload = json.loads(index.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    children: dict[str, set[str]] = {}
+    for entry in payload.get("entries", []):
+        if entry.get("kind") != "CLASS":
+            continue
+        child = entry.get("qualifiedName")
+        if not isinstance(child, str):
+            continue
+        for parent in entry.get("parents", []):
+            if isinstance(parent, str):
+                children.setdefault(parent, set()).add(child)
+    return children
+
+
+def _cdef_field_types(
+    text: str,
+    module: str,
+    class_types: dict[str, str] | None = None,
+    indexed_children: dict[str, set[str]] | None = None,
+) -> dict[str, dict[str, str]]:
+    """Collect concrete ``cdef`` fields from a PYX/PXD class declaration.
+
+    A field is usable only when its declared type resolves to a unique indexed
+    leaf (or a Python builtin).  Public bases such as ``ModuleElement`` have
+    indexed descendants and are intentionally excluded from final contracts.
+    """
+    result: dict[str, dict[str, str]] = {}
+    scopes: list[tuple[int, str]] = []
+    for raw in text.splitlines():
+        line = raw.expandtabs(8)
+        stripped = line.lstrip()
+        if not stripped:
+            continue
+        indent = len(line) - len(stripped)
+        while scopes and indent <= scopes[-1][0]:
+            scopes.pop()
+        match_class = CLASS.match(stripped)
+        if match_class:
+            owner = f"{module}.{match_class.group(1)}"
+            scopes.append((indent, owner))
+            continue
+        if not scopes or indent <= scopes[-1][0]:
+            continue
+        # ``readonly/public`` qualifiers do not alter the Python-visible
+        # result; pointer/array declarations remain unresolved.
+        field = re.match(
+            r"^cdef\s+(?:(?:readonly|public|api|extern)\s+)*"
+            r"(?P<type>[A-Za-z_]\w*)\s+(?P<names>[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)"
+            r"(?:\s*=.*)?$",
+            stripped,
+        )
+        if not field:
+            continue
+        ctype = field.group("type")
+        annotation = scalar_type(ctype)
+        if annotation is None and class_types is not None:
+            target = class_types.get(ctype)
+            if target is not None and target not in (indexed_children or {}):
+                if _is_concrete_index_path(target):
+                    annotation = f"'{target}'"
+        if annotation is None:
+            continue
+        owner_fields = result.setdefault(scopes[-1][1], {})
+        for name in re.split(r"\s*,\s*", field.group("names")):
+            owner_fields[name] = annotation
+    return result
+
+
+def _lexical_expression_type(
+    expression: str,
+    local_types: dict[str, str],
+    class_types: dict[str, str] | None,
+    helper_returns: dict[str, str] | None,
+    callable_returns: dict[str, str] | None = None,
+    owner_fields: dict[str, str] | None = None,
+    owner_qualified: str | None = None,
+    parameter_names: set[str] | None = None,
+) -> str | None:
+    """Classify a small Python-visible expression in a Cython ``def`` body.
+
+    This intentionally accepts only syntax-fixed containers, exact local
+    aliases, builtin constructors, unique indexed classes, and declared
+    internal helpers.  Arbitrary attributes, C pointers, and dynamic calls are
+    rejected instead of widening to a public base class.
+    """
+    value = expression.strip().rstrip(";").strip()
+    if not value:
+        return "None"
+    if value == "self":
+        return "Self"
+    if value in local_types:
+        return local_types[value]
+    # A multiline list return in Cython is still syntactically fixed even
+    # though the closing bracket is on a later line.
+    if value.startswith("["):
+        return "list"
+    if value.startswith("{"):
+        return "dict"
+    # Cython frequently splits a tuple return across physical lines.  A
+    # parenthesized expression containing a comma is unambiguously a tuple;
+    # parenthesized calls without a comma remain unresolved.
+    if value.startswith("(") and "," in value:
+        return "tuple"
+    try:
+        node = ast.parse(value, mode="eval").body
+    except (SyntaxError, ValueError):
+        return None
+    if isinstance(node, ast.List):
+        return "list"
+    if isinstance(node, ast.Tuple):
+        return "tuple"
+    if isinstance(node, ast.Dict):
+        return "dict"
+    if isinstance(node, ast.Set):
+        return "set"
+    if isinstance(node, ast.Constant):
+        literal = node.value
+        if literal is None:
+            return "None"
+        if isinstance(literal, bool):
+            return "bool"
+        if isinstance(literal, int):
+            return "int"
+        if isinstance(literal, float):
+            return "float"
+        if isinstance(literal, complex):
+            return "complex"
+        if isinstance(literal, bytes):
+            return "bytes"
+        if isinstance(literal, str):
+            return "str"
+        return None
+    if isinstance(node, ast.Name):
+        return local_types.get(node.id) or (
+            f"@parameter:{node.id}"
+            if parameter_names is not None and node.id in parameter_names
+            else None
+        )
+    if isinstance(node, ast.Attribute):
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+            and owner_fields is not None
+        ):
+            return owner_fields.get(node.attr)
+        return None
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        receiver = node.func.value
+        target: str | None = None
+        if isinstance(receiver, ast.Name) and receiver.id == "self" and owner_qualified:
+            target = owner_qualified + "." + node.func.attr
+        elif isinstance(receiver, ast.Name) and receiver.id in local_types:
+            receiver_type = local_types[receiver.id]
+            if isinstance(receiver_type, str) and receiver_type.startswith("'"):
+                target = receiver_type[1:-1] + "." + node.func.attr
+        elif (
+            isinstance(receiver, ast.Attribute)
+            and isinstance(receiver.value, ast.Name)
+            and receiver.value.id == "self"
+            and owner_fields is not None
+        ):
+            field_type = owner_fields.get(receiver.attr)
+            if isinstance(field_type, str) and field_type.startswith("'"):
+                target = field_type[1:-1] + "." + node.func.attr
+        if target is not None and callable_returns is not None:
+            return callable_returns.get(target)
+        return None
+    if not isinstance(node, ast.Call):
+        return None
+    if isinstance(node.func, ast.Name):
+        name = node.func.id
+        builtin = {
+            "bool": "bool", "bytes": "bytes", "bytearray": "bytearray",
+            "complex": "complex", "dict": "dict", "float": "float",
+            "frozenset": "frozenset", "int": "int", "list": "list",
+            "memoryview": "memoryview", "range": "range", "set": "set",
+            "slice": "slice", "str": "str", "tuple": "tuple", "type": "type",
+        }
+        if name in builtin:
+            return builtin[name]
+        if helper_returns is not None and name in helper_returns:
+            return helper_returns[name]
+        if class_types is not None:
+            target = class_types.get(name)
+            if target is not None and _is_concrete_index_path(target):
+                return f"'{target}'"
+    return None
+
+
+def _def_lexical_return(
+    lines: list[str],
+    masked: list[list[str]],
+    row: int,
+    indent: int,
+    starts: set[int],
+    class_types: dict[str, str] | None = None,
+    helper_returns: dict[str, str] | None = None,
+    callable_returns: dict[str, str] | None = None,
+    owner_fields: dict[str, str] | None = None,
+    owner_qualified: str | None = None,
+    parameter_names: set[str] | None = None,
+) -> str | None:
+    """Infer fixed local aliases/containers from otherwise non-Python Cython.
+
+    Cython ``def`` bodies often contain typed declarations or pointer syntax
+    that cannot be parsed by :mod:`ast`.  We still can prove a result when all
+    assignments and returns reduce to a syntax-fixed expression.  Conflicting
+    assignments and unresolved returns fail closed.
+    """
+    local_values: dict[str, set[str]] = {}
+    returns: list[str] = []
+    saw_top_level_terminal = False
+    top_level_if_without_else = False
+    open_top_level_if: int | None = None
+    top_level_if_has_else = False
+    for j in range(row - 1, len(lines)):
+        visible = "".join(masked[j]).expandtabs(8)
+        stripped = visible.strip()
+        col = len(visible) - len(visible.lstrip())
+        if j + 1 != row and j + 1 in starts and stripped and col <= indent:
+            break
+        if stripped.startswith("raise") and (
+            len(stripped) == 5 or stripped[5].isspace()
+        ):
+            # Conditional/exception-dependent control flow is deliberately
+            # outside this lexical proof; the Python AST path handles only
+            # shapes it can model completely.
+            return None
+        if col == indent + 4 and stripped.startswith("if "):
+            if open_top_level_if is not None and not top_level_if_has_else:
+                top_level_if_without_else = True
+            open_top_level_if = j
+            top_level_if_has_else = False
+        elif col == indent + 4 and stripped.startswith("else") and open_top_level_if is not None:
+            top_level_if_has_else = True
+        elif col == indent + 4 and stripped and not stripped.startswith(("elif ",)):
+            if open_top_level_if is not None and not top_level_if_has_else:
+                top_level_if_without_else = True
+            open_top_level_if = None
+            top_level_if_has_else = False
+        if col == indent + 4 and stripped.startswith(("return", "raise")):
+            saw_top_level_terminal = True
+        # A method-local assignment is enough to recover fixed container and
+        # constructor aliases (``face = []``, ``G = Graph(...)``).  Cython
+        # declarations without an initializer carry no evidence by themselves.
+        assignment = re.match(
+            r"^(?:cdef\s+(?:[A-Za-z_]\w*(?:\s*\[[^\]]+\])?\s+)?)*"
+            r"(?P<name>[A-Za-z_]\w*)\s*=\s*(?P<value>.+)$",
+            stripped,
+        )
+        if assignment and not stripped.startswith(("return ", "if ", "while ", "for ")):
+            name = assignment.group("name")
+            known_locals = {
+                key: next(iter(values))
+                for key, values in local_values.items()
+                if len(values) == 1 and "<unknown>" not in values
+            }
+            inferred = _lexical_expression_type(
+                assignment.group("value"), known_locals, class_types, helper_returns,
+                callable_returns, owner_fields, owner_qualified,
+                parameter_names,
+            )
+            local_values.setdefault(name, set()).add(inferred or "<unknown>")
+        if stripped.startswith("return") and (
+            len(stripped) == 6 or stripped[6].isspace()
+        ):
+            expression = stripped[6:].strip()
+            known_locals = {
+                key: next(iter(values))
+                for key, values in local_values.items()
+                if len(values) == 1 and "<unknown>" not in values
+            }
+            returns.append(
+                _lexical_expression_type(
+                    expression, known_locals, class_types, helper_returns,
+                    callable_returns, owner_fields, owner_qualified,
+                    parameter_names,
+                )
+                or "<unknown>"
+            )
+    local_types = {
+        name: next(iter(values))
+        for name, values in local_values.items()
+        if len(values) == 1 and "<unknown>" not in values
+    }
+    if not returns or "<unknown>" in returns:
+        return None
+    if open_top_level_if is not None and not top_level_if_has_else:
+        top_level_if_without_else = True
+    if top_level_if_without_else and not saw_top_level_terminal:
+        return None
+    if len(set(returns)) != 1:
+        return None
+    # Replace aliases that were recorded before their assignment became
+    # available (the common ``G = Graph(...); return G`` shape).
+    result = returns[0]
+    if result in local_types:
+        result = local_types[result]
+    return result
+
+
 def local_return(lines: list[str], masked: list[list[str]], row: int, indent: int, starts: set[int]) -> str | None:
     """Prove returns of scalar C locals in otherwise parseable Python bodies."""
     body = []
@@ -321,6 +764,7 @@ def _def_trivial_return(
     qualified: str | None = None,
     module: str | None = None,
     parameter_types: dict[str, str] | None = None,
+    scalar_parameters: set[str] | None = None,
 ) -> str | None:
     """Infer a branch-free ``def`` that immediately returns a literal/value.
 
@@ -374,28 +818,13 @@ def _def_trivial_return(
             expression_node = ast.parse(expression, mode="eval").body
         except (SyntaxError, ValueError):
             return None
+        if _fixed_scalar_expression(expression_node, scalar_parameters):
+            return "bool"
         if isinstance(expression_node, ast.Call) and isinstance(expression_node.func, ast.Name):
             constructor = expression_node.func.id
-            builtin_constructors = {
-                "bool": "bool",
-                "bytes": "bytes",
-                "bytearray": "bytearray",
-                "complex": "complex",
-                "dict": "dict",
-                "float": "float",
-                "frozenset": "frozenset",
-                "int": "int",
-                "list": "list",
-                "memoryview": "memoryview",
-                "range": "range",
-                "set": "set",
-                "slice": "slice",
-                "str": "str",
-                "tuple": "tuple",
-                "type": "type",
-            }
-            if constructor in builtin_constructors:
-                return builtin_constructors[constructor]
+            builtin_result = PYTHON_CALL_RETURNS.get(constructor)
+            if builtin_result is not None:
+                return builtin_result
             if class_types is not None:
                 target = class_types.get(constructor)
                 if target is not None:
@@ -492,6 +921,7 @@ def _def_uniform_return(
     qualified: str | None = None,
     module: str | None = None,
     parameter_types: dict[str, str] | None = None,
+    scalar_parameters: set[str] | None = None,
 ) -> str | None:
     """Prove a Python-visible function whose explicit branches agree.
 
@@ -508,7 +938,14 @@ def _def_uniform_return(
         col = len(visible) - len(visible.lstrip())
         if j + 1 in starts and stripped and col <= indent:
             break
-        if stripped.startswith(("cdef ", "cpdef ", "cimport ", "from ")):
+        # Ordinary Python imports are valid statements in a Python-visible
+        # wrapper and do not affect the shape of a fixed return expression.
+        # Reject only Cython-only declarations here; treating every ``from``
+        # import as unsupported used to hide contracts such as
+        # ``from ... import helper; return isinstance(...)``.
+        if stripped.startswith(("cdef ", "cpdef ", "cimport ")) or re.match(
+            r"^from\s+.*\bcimport\b", stripped
+        ):
             return None
         expanded = lines[j].expandtabs(8)
         prefix = indent + 4
@@ -549,6 +986,7 @@ def _def_uniform_return(
             qualified,
             module,
             parameter_types,
+            scalar_parameters,
         )
         if annotation is None:
             return None
@@ -575,7 +1013,7 @@ def _def_header(
         return None
     first = "".join(masked[row - 1]).expandtabs(8)
     stripped = first.lstrip()
-    match = re.match(r"^def\s+([A-Za-z_]\w*)\s*\(", stripped)
+    match = re.match(r"^(?:def|cpdef)\s+([A-Za-z_]\w*)\s*\(", stripped)
     if not match:
         return None
     depth = 0
@@ -595,12 +1033,111 @@ def _def_header(
     return None
 
 
+def _def_parameter_names(
+    lines: list[str], masked: list[list[str]], row: int, body_row: int
+) -> set[str]:
+    """Extract simple Python parameter names from a Cython ``def`` header."""
+    header = "".join("".join(masked[index]).expandtabs(8) for index in range(row - 1, body_row))
+    start = header.find("(")
+    end = header.rfind(")")
+    if start < 0 or end <= start:
+        return set()
+    names: set[str] = set()
+    for item in header[start + 1:end].split(","):
+        item = item.strip().lstrip("*")
+        if not item:
+            continue
+        item = item.split("=", 1)[0].strip()
+        item = item.split(":", 1)[0].strip()
+        words = item.split()
+        if not words:
+            continue
+        candidate = words[-1]
+        if re.fullmatch(r"[A-Za-z_]\w*", candidate) and candidate not in {"self", "cls"}:
+            names.add(candidate)
+    return names
+
+
+def _def_scalar_parameter_names(
+    lines: list[str], masked: list[list[str]], row: int, body_row: int
+) -> set[str]:
+    """Extract names declared as Cython scalar parameters from a ``def`` header.
+
+    Python-visible Cython functions can expose C scalar arguments while their
+    return annotation is omitted.  Comparisons over those arguments always
+    produce Python ``bool`` values, unlike comparisons over arbitrary Sage
+    objects whose rich-comparison overload may return a non-bool object.
+    """
+    header = "".join(
+        "".join(masked[index]).expandtabs(8)
+        for index in range(row - 1, body_row)
+    )
+    start = header.find("(")
+    end = header.rfind(")")
+    if start < 0 or end <= start:
+        return set()
+    scalar = re.compile(
+        rf"^(?:\*{{0,2}}\s*)?(?:bint|float|double|{INTEGER})\s+"
+        rf"(?P<name>[A-Za-z_]\w*)$"
+    )
+    names: set[str] = set()
+    for item in header[start + 1:end].split(","):
+        item = item.strip()
+        match = scalar.fullmatch(item)
+        if match:
+            names.add(match.group("name"))
+    return names
+
+
+def _fixed_scalar_expression(node: ast.AST, scalar_parameters: set[str] | None) -> bool:
+    """Return whether ``node`` is a comparison over C scalar expressions."""
+    if not scalar_parameters or not isinstance(node, ast.Compare):
+        return False
+
+    def scalar_expression(value: ast.AST) -> bool:
+        if isinstance(value, ast.Constant):
+            return isinstance(value.value, (bool, int, float, complex))
+        if isinstance(value, ast.Name):
+            return value.id in scalar_parameters
+        if isinstance(value, ast.UnaryOp) and isinstance(
+            value.op, (ast.UAdd, ast.USub, ast.Invert)
+        ):
+            return scalar_expression(value.operand)
+        if isinstance(value, ast.BinOp) and isinstance(
+            value.op,
+            (
+                ast.Add,
+                ast.Sub,
+                ast.Mult,
+                ast.Div,
+                ast.FloorDiv,
+                ast.Mod,
+                ast.Pow,
+                ast.LShift,
+                ast.RShift,
+                ast.BitAnd,
+                ast.BitOr,
+                ast.BitXor,
+            ),
+        ):
+            return scalar_expression(value.left) and scalar_expression(value.right)
+        return False
+
+    return scalar_expression(node.left) and all(
+        scalar_expression(comparator) for comparator in node.comparators
+    )
+
+
 def declarations(
     text: str,
     class_types: dict[str, str] | None = None,
     callable_returns: dict[str, str] | None = None,
     module: str | None = None,
     parameter_contracts: dict[str, dict[str, str]] | None = None,
+    helper_returns: dict[str, str] | None = None,
+    field_types: dict[str, dict[str, str]] | None = None,
+    allow_parameter_identity: bool = False,
+    indexed_parameter_names: dict[str, set[str]] | None = None,
 ) -> list[tuple[str, str, int]]:
     """Read supported headers at module/class scope after masking literals.
 
@@ -672,12 +1209,16 @@ def declarations(
                 qualified = '.'.join([s[1] for s in scopes] + [function_name])
                 lookup_qualified = f"{module}.{qualified}" if module else qualified
                 parameter_types = parameter_contracts.get(lookup_qualified) if parameter_contracts else None
+                scalar_parameters = _def_scalar_parameter_names(
+                    lines, masked, row, body_row
+                )
                 if _def_always_raises(lines, masked, body_row, indent, starts):
                     result.append((qualified, 'NoReturn', row))
                 elif (annotation := _def_uniform_return(
                     lines, masked, body_row, indent, starts, class_types,
                     callable_returns, lookup_qualified, module,
                     parameter_types,
+                    scalar_parameters,
                 )):
                     result.append((qualified, annotation, row))
                 elif _def_implicit_none(lines, masked, body_row, indent, starts):
@@ -686,10 +1227,29 @@ def declarations(
                     lines, masked, body_row, indent, starts, class_types,
                     callable_returns, lookup_qualified, module,
                     parameter_types,
+                    scalar_parameters,
                 )):
                     result.append((qualified, annotation, row))
                 elif not previous.startswith('@'):
-                    annotation = local_return(lines, masked, body_row, indent, starts)
+                    owner_qualified = lookup_qualified.rsplit('.', 1)[0] if '.' in lookup_qualified else None
+                    parameter_names = (
+                        _def_parameter_names(lines, masked, row, body_row)
+                        if allow_parameter_identity
+                        else set()
+                    )
+                    if indexed_parameter_names and lookup_qualified in indexed_parameter_names:
+                        parameter_names.difference_update(
+                            indexed_parameter_names[lookup_qualified]
+                        )
+                    annotation = _def_lexical_return(
+                        lines, masked, body_row, indent, starts,
+                        class_types, helper_returns, callable_returns,
+                        (field_types or {}).get(owner_qualified or ''),
+                        owner_qualified,
+                        parameter_names,
+                    )
+                    if annotation is None:
+                        annotation = local_return(lines, masked, body_row, indent, starts)
                     if annotation:
                         result.append((qualified, annotation, row))
     return result
@@ -701,6 +1261,10 @@ def infer(root: Path, index: Path | None = None) -> tuple[dict[str, str], list[d
     class_types = _unique_class_types(index)
     callable_returns = _unique_callable_returns(index)
     parameter_contracts = _unique_parameter_contracts(index)
+    indexed_parameter_names = _indexed_parameter_names(index)
+    indexed_children = _index_class_children(index)
+    sources: list[tuple[Path, bytes, str, str]] = []
+    field_types: dict[str, dict[str, str]] = {}
     for path in sorted(p for p in root.rglob('*') if p.suffix in {'.pyx', '.pxd'}):
         data = path.read_bytes()
         try:
@@ -711,9 +1275,31 @@ def infer(root: Path, index: Path | None = None) -> tuple[dict[str, str], list[d
         if parts[-1] == '__init__':
             parts.pop()
         module = '.'.join([root.name, *parts])
+        sources.append((path, data, text, module))
+        for owner, fields in _cdef_field_types(text, module, class_types, indexed_children).items():
+            field_types.setdefault(owner, {}).update(fields)
+    global_helper_returns = _global_helper_returns(sources, class_types)
+    for path, data, text, module in sources:
+        helper_returns = _cdef_helper_returns(text, class_types)
+        helper_returns.update(global_helper_returns)
         for name, annotation, line in declarations(
-            text, class_types, callable_returns, module, parameter_contracts
+            text, class_types, callable_returns, module, parameter_contracts,
+            helper_returns, field_types,
+            True,
+            indexed_parameter_names,
         ):
+            # A PXD declaration without an explicit Cython return type is an
+            # interface signature, not a Python function body.  The lexical
+            # fallback in ``declarations`` can otherwise interpret the
+            # declaration as an empty ``def`` and emit ``None`` (or
+            # ``NoReturn``), which conflicts with the real PYX implementation
+            # and hides a proven body contract.  Keep explicitly typed
+            # ``cpdef`` declarations (including ``void``) while ignoring
+            # only this untyped interface form.
+            if path.suffix == ".pxd":
+                source_line = text.splitlines()[line - 1].strip()
+                if source_line.startswith(("cpdef ", "cdef ")) and not DECLARATION.match(source_line):
+                    continue
             qualified = module + '.' + name
             types.setdefault(qualified, set()).add(annotation)
             evidence.append({'qualifiedName': qualified, 'returnType': annotation,
