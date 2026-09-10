@@ -109,3 +109,9 @@
 - WSL Sage 10.9 直接复核 `E=EllipticCurve(GF(11),[1,1]); P=E(0,1); G=E.gen(0); P.log(G)` 返回 `<class 'sage.rings.integer.Integer'>`（值 `12`），证明该调用路径可由动态快照提供 `Integer`，而不是静态公共基类。
 - 同一 worker 协议端到端发送合成赋值 `__sage_ide_live_result = P.log(G)`，响应记录为 `sage.rings.integer.Integer`；这验证了 provider 新增的调用表达式快照输入格式和结果解析，而不只是单独运行 Sage 命令。
 - 修正 worker 空请求、输出上限和构造器参数校验；新增调用路径注释与回归。`core:runtime:test` 69 项通过，未带 full-index 的 `SageTypeProviderTest` 40 项通过，插件 Kotlin 编译通过，`git diff --check` 通过。使用 v155 full-index 重新构建 ZIP：`plugins/sage-core/build/distributions/sage-core-0.1.0-dev.zip`，SHA-256 `1C62CFF7D643D94513BC2A76C0531761BA46CEC9C75E486D1AE97B128661EB9E`。真实 PyCharm UI smoke 尚未完成。
+
+## 2026-09-10 增量（v159，运行时探测稳定性与后续方案）
+
+- `SageLiveTypeEvidenceCache` 用精确 `file/source/runtime` 键替换“满 64 条整体清空”：成功观测为 LRU，失败观测仅退避 10 秒。同一未完成源文件、Sage 异常或超时不会在每一轮 daemon 分析中重复启动 worker；成功结果仍只作用于该精确快照，绝不泛化成静态 Sage 合同。缓存单测和既有 `SageTypeProviderTest` 40 项均通过。
+- 新 ZIP 已用 v155 完整索引构建，SHA-256 `8253D287BC9878AF72CC0FAE0CF036F903A7BDD79E4A611150577DE738650849`。未完成 fresh PyCharm UI smoke；完整 v155 provider fixture 的 2 个矩阵迁移断言仍待更新。
+- 更优的下一层不是用一次样本伪造静态类型，而是“真实运行回传”：Sage Run 配置在用户正常运行脚本时以独立、受限协议报告实际执行路径中的变量/调用类，IDE 将其作为带运行时/源码/执行序列指纹的会话证据。静态合同优先；精确编辑快照次之；真实运行证据可覆盖条件分支和动态后端；任一指纹变化或缺少证据仍为 UNKNOWN。这样能消除用户当前上下文中的未知而不把全局 `3569` 个本质非唯一接口错误标成具体类。

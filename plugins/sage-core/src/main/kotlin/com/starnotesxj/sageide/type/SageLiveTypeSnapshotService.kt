@@ -48,7 +48,10 @@ import java.util.concurrent.TimeUnit
  */
 @Service(Service.Level.PROJECT)
 class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
-    private val completed = ConcurrentHashMap<SnapshotKey, Map<String, SageObservedType>>()
+    private val evidence = SageLiveTypeEvidenceCache<SnapshotKey, Map<String, SageObservedType>>(
+        MAX_CACHED_SNAPSHOTS,
+        FAILURE_RETRY_MILLIS,
+    )
     private val inFlight = ConcurrentHashMap.newKeySet<SnapshotKey>()
     private val scheduled = ConcurrentHashMap<SnapshotKey, ScheduledFuture<*>>()
     private val active = ConcurrentHashMap<SnapshotKey, SageRuntimeProbeHandle<*>>()
@@ -83,7 +86,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         if (PsiTreeUtil.getParentOfType(call, PyFunction::class.java) != null) return null
         val request = callSnapshotRequest(call) ?: return null
         val name = LIVE_RESULT_NAME
-        val observed = completed[request.key]?.get(name)
+        val observed = evidence.completed(request.key)?.get(name)
         if (observed != null) return SageObservedTypeResolver.resolve(project, observed)
         schedule(request)
         return null
@@ -92,7 +95,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     private fun typeFor(anchor: com.intellij.psi.PsiElement, name: String, includeContainingStatement: Boolean): PyType? {
         if (!isSafeIdentifier(name) || !SageRunSettings.getInstance().getState().liveTypeProbingEnabled) return null
         val request = snapshotRequest(anchor, name, includeContainingStatement) ?: return null
-        val observed = completed[request.key]?.get(name)
+        val observed = evidence.completed(request.key)?.get(name)
         if (observed != null) return SageObservedTypeResolver.resolve(project, observed)
         schedule(request)
         return null
@@ -186,6 +189,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     }
 
     private fun schedule(request: SnapshotRequest) {
+        if (!evidence.maySchedule(request.key)) return
         cancelStaleSnapshots(request.key)
         if (!inFlight.add(request.key)) return
         scheduled[request.key] = debounceExecutor.schedule({
@@ -207,9 +211,13 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
                 active.remove(request.key)
                 inFlight.remove(request.key)
                 if (error == null && result?.status == RuntimeExecutionStatus.SUCCESS) {
-                    if (completed.size >= MAX_CACHED_SNAPSHOTS) completed.clear()
-                    completed[request.key] = result.observedTypes
+                    evidence.recordSuccess(request.key, result.observedTypes)
                     restartDaemon(request.file)
+                } else if (result?.status != RuntimeExecutionStatus.CANCELLED) {
+                    // A deterministic source error or an unavailable runtime must
+                    // not cause an endless daemon -> worker -> daemon loop.  The
+                    // backoff is keyed by this exact source and runtime only.
+                    evidence.recordFailure(request.key)
                 }
             }
         }, DEBOUNCE_MILLIS, TimeUnit.MILLISECONDS)
@@ -243,7 +251,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         scheduled.clear()
         active.clear()
         inFlight.clear()
-        completed.clear()
+        evidence.clear()
         debounceExecutor.shutdownNow()
     }
 
@@ -274,6 +282,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         private const val MAX_SOURCE_BYTES = 256 * 1024
         private const val MAX_OUTPUT_BYTES = 128 * 1024
         private const val MAX_CACHED_SNAPSHOTS = 64
+        private const val FAILURE_RETRY_MILLIS = 10_000L
         private const val DEBOUNCE_MILLIS = 650L
         // A fresh WSL Sage process can spend more than ten seconds loading
         // finite-field and elliptic-curve backends.  This is a background
