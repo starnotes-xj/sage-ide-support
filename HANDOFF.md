@@ -115,3 +115,10 @@
 - `SageLiveTypeEvidenceCache` 用精确 `file/source/runtime` 键替换“满 64 条整体清空”：成功观测为 LRU，失败观测仅退避 10 秒。同一未完成源文件、Sage 异常或超时不会在每一轮 daemon 分析中重复启动 worker；成功结果仍只作用于该精确快照，绝不泛化成静态 Sage 合同。缓存单测和既有 `SageTypeProviderTest` 40 项均通过。
 - 新 ZIP 已用 v155 完整索引构建，SHA-256 `8253D287BC9878AF72CC0FAE0CF036F903A7BDD79E4A611150577DE738650849`。未完成 fresh PyCharm UI smoke；完整 v155 provider fixture 的 2 个矩阵迁移断言仍待更新。
 - 更优的下一层不是用一次样本伪造静态类型，而是“真实运行回传”：Sage Run 配置在用户正常运行脚本时以独立、受限协议报告实际执行路径中的变量/调用类，IDE 将其作为带运行时/源码/执行序列指纹的会话证据。静态合同优先；精确编辑快照次之；真实运行证据可覆盖条件分支和动态后端；任一指纹变化或缺少证据仍为 UNKNOWN。这样能消除用户当前上下文中的未知而不把全局 `3569` 个本质非唯一接口错误标成具体类。
+
+## 2026-09-10 增量（v160，正常 Sage 运行类型回传）
+
+- 已实现 v159 的第三层：开启现有 Settings | Tools | SageMath 的 “Enable live Sage type evidence” 后，Native/WSL 的正常 `.sage` 运行只执行用户脚本一次。每次运行创建私有临时 `sitecustomize`，该钩子包装 Sage 原有 `RunFileCmd.run`、在原函数结束后把**新增或改变的全局变量**真实类/MRO写入受限 sidecar；IDE 校验随机 run ID、保存文件原始字节 SHA-256 和 runtime key 后才接纳为本会话证据并重启该文件的分析。没有向 Run 控制台输出标记，也不更新全局 API 索引。
+- WSL 使用短固定 `/bin/sh -c` 前缀仅将临时启动目录追加到既有 Linux `PYTHONPATH`，保留用户原有变量；所有用户路径和脚本参数仍为独立 argv，不嵌入 shell 文本，也不重现 Conda 探测脚本。Docker/SSH 继续 fail-closed，未伪造远端文件回传。
+- 运行证据只影响当前保存内容：任何未保存编辑都会使源摘要不匹配、立即不再使用旧类型；运行时变更也因 key 不同而失效。`P = ...`、`g = gcd(...)` 等实际执行赋值可在随后获得具体补全；裸 `P.log(G)` 仍由 v158 的当前调用快照负责，二者互补。
+- 验证：core runtime 全量 `71` 项通过（默认跳过 1 个外部 WSL 集成测试）；启用该测试后，真实 WSL Sage 10.9 正常运行回传 `P=EllipticCurvePoint_finite_field` 与 `g=Integer`，并断言控制台没有协议 marker；`SageTypeProviderTest` `41/41` 通过（包括“同一保存内容+runtime key 才采用 run evidence”，未保存编辑立即拒绝旧 evidence）；v155 full-index `buildPlugin` 成功，ZIP SHA-256 `D496F0BF4E99FEEDD347FDC4C9E774DFC227BB6F415DB18E24202E34A2342CA9`。真实 PyCharm UI smoke、v155 matrix fixture 的 2 个旧迁移断言仍待完成。

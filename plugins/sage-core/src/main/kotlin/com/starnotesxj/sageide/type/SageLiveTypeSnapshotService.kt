@@ -3,6 +3,7 @@ package com.starnotesxj.sageide.type
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
@@ -52,6 +53,10 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         MAX_CACHED_SNAPSHOTS,
         FAILURE_RETRY_MILLIS,
     )
+    private val runEvidence = SageLiveTypeEvidenceCache<RunEvidenceKey, Map<String, SageObservedType>>(
+        MAX_CACHED_SNAPSHOTS,
+        FAILURE_RETRY_MILLIS,
+    )
     private val inFlight = ConcurrentHashMap.newKeySet<SnapshotKey>()
     private val scheduled = ConcurrentHashMap<SnapshotKey, ScheduledFuture<*>>()
     private val active = ConcurrentHashMap<SnapshotKey, SageRuntimeProbeHandle<*>>()
@@ -65,13 +70,32 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     fun typeForReference(reference: PyReferenceExpression): PyType? {
         if (PsiTreeUtil.getParentOfType(reference, PyFunction::class.java) != null) return null
         val name = reference.referencedName ?: return null
+        observedRunType(reference, name)?.let { return it }
         return typeFor(reference, name, includeContainingStatement = false)
     }
 
     fun typeForTarget(target: PyTargetExpression): PyType? {
         if (target.qualifier != null || PsiTreeUtil.getParentOfType(target, PyFunction::class.java) != null) return null
         val name = target.name ?: return null
+        observedRunType(target, name)?.let { return it }
         return typeFor(target, name, includeContainingStatement = true)
+    }
+
+    /**
+     * Receives one normal Sage file run after the original Sage runner exits.
+     * The sidecar is accepted only for the exact saved document bytes and
+     * runtime key that launched it; it is session evidence, never an API index
+     * update or a reusable static return contract.
+     */
+    internal fun recordRunEvidence(
+        file: VirtualFile,
+        sourceDigest: String,
+        runtimeKey: String,
+        observedTypes: Map<String, SageObservedType>,
+    ) {
+        if (observedTypes.isEmpty() || project.isDisposed || !file.isValid) return
+        runEvidence.recordSuccess(RunEvidenceKey(file.url, sourceDigest, runtimeKey), observedTypes)
+        restartDaemon(file)
     }
 
     /**
@@ -99,6 +123,22 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         if (observed != null) return SageObservedTypeResolver.resolve(project, observed)
         schedule(request)
         return null
+    }
+
+    private fun observedRunType(anchor: com.intellij.psi.PsiElement, name: String): PyType? {
+        if (!SageRunSettings.getInstance().getState().liveTypeProbingEnabled || !isSafeIdentifier(name)) return null
+        val file = anchor.containingFile as? PyFile ?: return null
+        if (!SageFileUtils.isSageFile(file) || SageStubIndex.isSageStubFile(file)) return null
+        val virtualFile = file.virtualFile ?: return null
+        // A normal run executes bytes from disk.  An unsaved IDE document can
+        // have the same VirtualFile bytes but different PSI text, so it must
+        // not inherit an observation from the older saved program.
+        val document = FileDocumentManager.getInstance().getDocument(virtualFile)
+        if (document != null && FileDocumentManager.getInstance().isDocumentUnsaved(document)) return null
+        val runtime = configuredRuntime() ?: return null
+        val digest = runCatching { sha256(virtualFile.contentsToByteArray()) }.getOrNull() ?: return null
+        val observed = runEvidence.completed(RunEvidenceKey(virtualFile.url, digest, runtime.key))?.get(name) ?: return null
+        return SageObservedTypeResolver.resolve(project, observed)
     }
 
     private fun snapshotRequest(
@@ -252,6 +292,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         active.clear()
         inFlight.clear()
         evidence.clear()
+        runEvidence.clear()
         debounceExecutor.shutdownNow()
     }
 
@@ -259,6 +300,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         val key: String get() = "$target\u0000$executable"
     }
     private data class SnapshotKey(val fileUrl: String, val sourceDigest: String, val runtimeKey: String)
+    private data class RunEvidenceKey(val fileUrl: String, val sourceDigest: String, val runtimeKey: String)
     private data class SnapshotRequest(
         val key: SnapshotKey,
         val source: String,
@@ -294,8 +336,11 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         fun getInstance(project: Project): SageLiveTypeSnapshotService = project.getService(SageLiveTypeSnapshotService::class.java)
 
         private fun isSafeIdentifier(name: String): Boolean = name.matches(IDENTIFIER)
-        private fun sha256(source: String): String = MessageDigest.getInstance("SHA-256")
-            .digest(source.toByteArray(StandardCharsets.UTF_8))
+        internal fun runtimeKey(target: RuntimeTarget, executable: String): String = "$target\u0000$executable"
+
+        private fun sha256(source: String): String = sha256(source.toByteArray(StandardCharsets.UTF_8))
+        private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
             .joinToString("") { byte -> "%02x".format(byte) }
 
     }

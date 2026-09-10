@@ -1,6 +1,7 @@
 package com.starnotesxj.sageide.type
 
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.psi.PsiDocumentManager
 import com.starnotesxj.sageide.SagePluginTestBase
 import com.jetbrains.python.psi.PyCallExpression
 import com.jetbrains.python.psi.PyFunction
@@ -1739,6 +1740,62 @@ result = matrix([[1]])
         )
 
         assertNull(resolved)
+    }
+
+    fun testNormalRunEvidenceTypesOnlyTheExactSavedSageSource() {
+        val point = "sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field"
+        myFixture.copyFileToProject(
+            "testData/sage-stubs/sage/schemes/elliptic_curves/ell_point.pyi",
+            "site-packages/sage/schemes/elliptic_curves/ell_point.pyi",
+        )
+        myFixture.configureByText("run-evidence.sage", "P = dynamically_created_point()\n")
+        val settings = com.starnotesxj.sageide.run.SageRunSettings.getInstance().getState()
+        val originalEnabled = settings.liveTypeProbingEnabled
+        val originalMode = settings.executionMode
+        val originalDistribution = settings.wslDistribution
+        val originalExecutable = settings.wslSageExecutable
+        try {
+            settings.liveTypeProbingEnabled = true
+            settings.executionMode = "WSL"
+            settings.wslDistribution = "EvidenceTest"
+            settings.wslSageExecutable = "/opt/sage/bin/sage"
+            val file = myFixture.file.virtualFile
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(file.contentsToByteArray())
+                .joinToString("") { byte -> "%02x".format(byte) }
+            SageLiveTypeSnapshotService.getInstance(myFixture.project).recordRunEvidence(
+                file,
+                digest,
+                SageLiveTypeSnapshotService.runtimeKey(
+                    com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl("EvidenceTest"),
+                    "/opt/sage/bin/sage",
+                ),
+                mapOf(
+                    "P" to com.starnotesxj.sagemath.runtime.SageObservedType(
+                        point,
+                        listOf(point, "sage.structure.element.Element"),
+                    ),
+                ),
+            )
+            val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .single { it.name == "P" }
+            val observed = provider.getReferenceType(target, defaultContext(), null)?.get() as? PyClassType
+            assertEquals(point, observed?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+
+            val document = checkNotNull(com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file))
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(myFixture.project) {
+                document.insertString(0, "# unsaved change invalidates run evidence\n")
+                PsiDocumentManager.getInstance(myFixture.project).commitDocument(document)
+            }
+            val changedTarget = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .single { it.name == "P" }
+            assertNull(provider.getReferenceType(changedTarget, defaultContext(), null)?.get())
+        } finally {
+            settings.liveTypeProbingEnabled = originalEnabled
+            settings.executionMode = originalMode
+            settings.wslDistribution = originalDistribution
+            settings.wslSageExecutable = originalExecutable
+        }
     }
 
     private fun defaultContext() = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(

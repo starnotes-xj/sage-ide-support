@@ -41,7 +41,7 @@ class SageRunSettingsConfigurable : Configurable {
     private val dockerContainerDirField = JBTextField()
     private val dockerCommandField = JBTextField()
     private val sageParametersField = JBTextField()
-    private val liveTypeProbingCheckBox = JBCheckBox("Enable live type snapshots (executes the current Sage prefix in an isolated process)")
+    private val liveTypeProbingCheckBox = JBCheckBox("Enable live Sage type evidence (isolated snapshots and normal-run feedback)")
     private val sshCard = JPanel(GridBagLayout())
     private val sshHostField = JBTextField()
     private val sshUserField = JBTextField()

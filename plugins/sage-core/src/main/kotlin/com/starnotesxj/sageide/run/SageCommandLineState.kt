@@ -14,6 +14,8 @@ import com.starnotesxj.sagemath.runtime.RuntimePathMapper
 import com.starnotesxj.sagemath.runtime.RuntimeTarget
 import com.starnotesxj.sagemath.runtime.SshOpenSshCommandBuilder
 import com.starnotesxj.sagemath.runtime.SshSageRunRequest
+import com.starnotesxj.sageide.type.SageLiveTypeSnapshotService
+import com.starnotesxj.sageide.type.SageRunTypeFeedbackSession
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -51,11 +53,18 @@ class SageCommandLineState(
                 is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh -> ExecutionMode.SSH
             }
         }
+        var runFeedback: SageRunTypeFeedbackSession? = null
         val commandLine = when (mode) {
-            ExecutionMode.NATIVE -> GeneralCommandLine(executables!!.sage)
-                .withParameters(sageArguments)
-                .withParameters(configuration.scriptPath)
-                .withParameters(scriptArguments)
+            ExecutionMode.NATIVE -> {
+                val sageExecutable = executables!!.sage
+                runFeedback = prepareRunFeedback(s, SageLiveTypeSnapshotService.runtimeKey(RuntimeTarget.Native, sageExecutable))
+                GeneralCommandLine(sageExecutable).apply {
+                    runFeedback?.let { withEnvironment(it.nativeEnvironment()) }
+                    withParameters(sageArguments)
+                    withParameters(configuration.scriptPath)
+                    withParameters(scriptArguments)
+                }
+            }
 
             ExecutionMode.WSL -> {
                 val distribution = if (usesConfiguredWsl) {
@@ -73,8 +82,31 @@ class SageCommandLineState(
                 } else {
                     executables!!.sage
                 }
+                runFeedback = prepareRunFeedback(
+                    s,
+                    SageLiveTypeSnapshotService.runtimeKey(RuntimeTarget.Wsl(distribution), sageExecutable),
+                )
                 GeneralCommandLine("wsl.exe")
-                    .withParameters(wslDirectRunArguments(distribution, sageExecutable, arguments))
+                    .apply {
+                        val feedback = runFeedback
+                        if (feedback != null) {
+                            withEnvironment(feedback.wslEnvironment())
+                            withParameters(
+                                listOf(
+                                    "-d",
+                                    distribution,
+                                    "--exec",
+                                    "/bin/sh",
+                                    "-c",
+                                    SageRunTypeFeedbackSession.WSL_BOOTSTRAP_COMMAND,
+                                    "sage-ide-run-feedback",
+                                    sageExecutable,
+                                ) + arguments,
+                            )
+                        } else {
+                            withParameters(wslDirectRunArguments(distribution, sageExecutable, arguments))
+                        }
+                    }
             }
 
             ExecutionMode.DOCKER -> {
@@ -112,13 +144,19 @@ class SageCommandLineState(
                 GeneralCommandLine(SshOpenSshCommandBuilder.build(request))
             }
         }
-        return try {
+        val handler = try {
             OSProcessHandler(commandLine)
         }
         catch (e: ExecutionException) {
+            runFeedback?.close()
             throw ExecutionException("Failed to start sage: ${e.message}", e)
         }
+        runFeedback?.attach(handler, configuration.project)
+        return handler
     }
+
+    private fun prepareRunFeedback(settings: SageRunSettings.State, runtimeKey: String): SageRunTypeFeedbackSession? =
+        if (settings.liveTypeProbingEnabled) SageRunTypeFeedbackSession.prepare(configuration.scriptPath, runtimeKey) else null
 
     private fun dockerCommandLine(
         s: SageRunSettings.State,
