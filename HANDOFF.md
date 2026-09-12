@@ -122,3 +122,21 @@
 - WSL 使用短固定 `/bin/sh -c` 前缀仅将临时启动目录追加到既有 Linux `PYTHONPATH`，保留用户原有变量；所有用户路径和脚本参数仍为独立 argv，不嵌入 shell 文本，也不重现 Conda 探测脚本。Docker/SSH 继续 fail-closed，未伪造远端文件回传。
 - 运行证据只影响当前保存内容：任何未保存编辑都会使源摘要不匹配、立即不再使用旧类型；运行时变更也因 key 不同而失效。`P = ...`、`g = gcd(...)` 等实际执行赋值可在随后获得具体补全；裸 `P.log(G)` 仍由 v158 的当前调用快照负责，二者互补。
 - 验证：core runtime 全量 `71` 项通过（默认跳过 1 个外部 WSL 集成测试）；启用该测试后，真实 WSL Sage 10.9 正常运行回传 `P=EllipticCurvePoint_finite_field` 与 `g=Integer`，并断言控制台没有协议 marker；`SageTypeProviderTest` `41/41` 通过（包括“同一保存内容+runtime key 才采用 run evidence”，未保存编辑立即拒绝旧 evidence）；v155 full-index `buildPlugin` 成功，ZIP SHA-256 `D496F0BF4E99FEEDD347FDC4C9E774DFC227BB6F415DB18E24202E34A2342CA9`。真实 PyCharm UI smoke、v155 matrix fixture 的 2 个旧迁移断言仍待完成。
+
+## 2026-09-11 增量（v161，运行后 `P.` 的交互回归）
+
+- 测试发现 v160 的“任意未保存编辑即拒绝 run evidence”会把用户刚键入的 `P.` 也拒绝，因此虽安全却不能实现运行后即时成员补全。现已只在当前未保存文档仍以已运行源码为前缀、且从该前缀到新接收者之间仅有空白时采用该 run evidence；任何已执行部分的编辑、或新语句/重赋值仍 fail-closed。多个历史运行记录只选择最长的匹配前缀。
+- `SageTypeProvider` 现在会先对成员接收者根引用尝试运行时证据，再执行普通 qualified-reference 拒绝；服务本身仍拒绝真正属性表达式（`obj.P`），避免把同名全局变量错误用于属性。新增回归精确模拟：运行得到动态 `P` 类型后在末尾键入 `P.log`，接收者仍为 `EllipticCurvePoint_finite_field`；编辑已运行前缀后类型为 UNKNOWN。
+- 本轮验证：真实 WSL Sage 10.9 输出 `P=EllipticCurvePoint_finite_field`、`P.log(G)=12`、返回 `Integer`；`SageRunTypeFeedbackTest` `2/2`、`SageTypeProviderTest` `41/41` 通过，`git diff --check` 通过；v155 full-index fresh `buildPlugin` 成功，ZIP SHA-256 `C455A704499C5948A84F0DEF2D01B04371094819F20816ED359780960E3285F0`。当前自动化环境未暴露可控制的 PyCharm 窗口，真实弹窗 smoke 仍需在 PyCharm 安装此 ZIP 后执行。
+
+## 2026-09-11 增量（v162，测试沙盒环境限制）
+
+- 在 v161 已通过后再次强制重跑 IDE 测试，JetBrains 生成的 `...\.intellijPlatform\sandbox\sage-core\PY-2026.2.1\system-test\index\hashfragmentindex` 报 `IntToIntBtree` 存储损坏，导致后续多个测试在索引初始化阶段失败，未出现产品代码断言失败。该目录已确认位于工作区生成沙盒内，但当前执行环境阻止删除操作；不把该次环境失败记为回归失败，也不删除用户/仓库文件。
+- 当前源代码未因该尝试保留额外测试改动；重新以 v155 完整索引构建插件成功。fresh ZIP SHA-256 为 `C455A704499C5948A84F0DEF2D01B04371094819F20816ED359780960E3285F0`；下一次干净测试沙盒应重跑 `SageTypeProviderTest`，再完成真实 PyCharm UI smoke。
+
+## 2026-09-12 增量（v163，旧插件原位升级发布链）
+
+- 正式插件身份已迁移为旧 Marketplace ID `com.starnotesxj.sageide`，显示名为 `SageMath Core`、版本 `1.8.0`（高于旧公开 `1.7.9`）；因此它是原位更新，不会与旧插件并存。旧 `G:\Projects\sage-ide-support` 工作树未修改。
+- 新增 `sanitize_release_index.py` 和 `validate_release_index.py`：前者将完整索引文档中的构建机绝对路径转换为 `sage/...` 或安全红字，后者校验 SHA-256、Sage 10.9 / Python 3.13、完整条目数和零主机路径。实际 v155 索引已生成到工作区外 `G:\sage-build\release-assets\sage-api-index-10.9-v155.json`，为 `86,339` entries、`106,486,050` bytes、SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3`。
+- Gradle `publishPlugin` 现在强制完整索引 hash 和 `GITHUB_REF_NAME=v<version>` 双校验；GitHub tag workflow 还会下载同一 SHA 的脱敏索引、再次校验后才打包、发布 Marketplace 并附加同一 ZIP。缺 `PUBLISH_TOKEN`、`SAGE_RELEASE_INDEX_URL` 或 `SAGE_RELEASE_INDEX_SHA256` 时明确失败，绝不发布 32 KiB fixture 降级版。
+- 验证：索引工具回归 `2/2`、Python 编译、workflow YAML 解析、`verifyReleaseVersion`、`verifyReleaseFullIndex`、v155 full-index `buildPlugin` 均通过。fresh `sage-core-1.8.0.zip` SHA-256 为 `507D254FD2528239E752B197EF5173EAFC2F20BBFAD697BF7A584D4B4165A278`；嵌套资源为 `106,486,050` bytes，并确认 descriptor 的 ID/name/version 正确。真实 PyCharm UI smoke、远端仓库/秘密变量配置、Marketplace 实际上传仍未进行。

@@ -3,6 +3,7 @@ name: standalone-ide-build
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -23,10 +24,64 @@ jobs:
         run: ./gradlew :core:model:compileKotlin :core:runtime:compileKotlin :core:runtime:compileTestKotlin :plugins:sage-core:compileKotlin --no-daemon
       - name: Run model and runtime tests
         run: ./gradlew :core:model:test :core:runtime:test -PrunModelTests=true -PrunRuntimeTests=true --no-daemon
-      - name: Build Sage core plugin
+      - name: Build Sage core plugin with the checked-in fixture index
         run: ./gradlew :plugins:sage-core:buildPlugin --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: sage-core-plugin
+          name: sagemath-core-fixture-plugin
           path: plugins/sage-core/build/distributions/*.zip
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: core
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SAGE_RELEASE_INDEX_URL: ${{ vars.SAGE_RELEASE_INDEX_URL }}
+      SAGE_RELEASE_INDEX_SHA256: ${{ vars.SAGE_RELEASE_INDEX_SHA256 }}
+      PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Require release secrets and a pinned full-index artifact
+        shell: bash
+        run: |
+          test -n "$PUBLISH_TOKEN" || { echo "::error::PUBLISH_TOKEN is not configured"; exit 1; }
+          test -n "$SAGE_RELEASE_INDEX_URL" || { echo "::error::SAGE_RELEASE_INDEX_URL repository variable is not configured"; exit 1; }
+          test -n "$SAGE_RELEASE_INDEX_SHA256" || { echo "::error::SAGE_RELEASE_INDEX_SHA256 repository variable is not configured"; exit 1; }
+      - name: Download and validate sanitized Sage 10.9 full index
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 "$SAGE_RELEASE_INDEX_URL" --output "$RUNNER_TEMP/sage-api-index.json"
+          python3 tools/sage-api-index/validate_release_index.py \
+            --index "$RUNNER_TEMP/sage-api-index.json" \
+            --sha256 "$SAGE_RELEASE_INDEX_SHA256"
+      - name: Build release plugin with the validated full index
+        shell: bash
+        run: |
+          ./gradlew :plugins:sage-core:verifyReleaseVersion :plugins:sage-core:verifyReleaseFullIndex :plugins:sage-core:buildPlugin \
+            "-Psage.bundle.fullIndex=$RUNNER_TEMP/sage-api-index.json" \
+            "-Psage.release.fullIndex.sha256=$SAGE_RELEASE_INDEX_SHA256" \
+            --no-daemon
+      - name: Publish the in-place SageMath Core upgrade
+        shell: bash
+        run: |
+          ./gradlew :plugins:sage-core:publishPlugin \
+            "-Psage.bundle.fullIndex=$RUNNER_TEMP/sage-api-index.json" \
+            "-Psage.release.fullIndex.sha256=$SAGE_RELEASE_INDEX_SHA256" \
+            --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sagemath-core-release-plugin
+          path: plugins/sage-core/build/distributions/*.zip
+          if-no-files-found: error
+      - name: Attach the exact published plugin ZIP to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: plugins/sage-core/build/distributions/*.zip

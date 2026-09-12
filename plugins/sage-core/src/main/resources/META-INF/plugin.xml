@@ -1,12 +1,18 @@
 <!-- BUILD_USING_BAZEL_MARKER -->
 <idea-plugin>
-  <id>com.starnotesxj.sagemath.ctf.sage-core</id>
+  <id>com.starnotesxj.sageide</id>
   <name>SageMath Core</name>
-  <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-math-ctf-ide">starnotes-xj</vendor>
-  <version>0.1.0-dev</version>
+  <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
+  <version>1.8.0</version>
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.8.0 — Sage IDE Support is upgraded in place to SageMath Core. The
+        Marketplace plugin ID is intentionally unchanged, so existing users
+        receive this version as an update rather than installing a conflicting
+        second plugin. Adds the SageMath CTF IDE's language support, Sage 10.9
+        type intelligence, native completion, rendered documentation, Sage
+        run/debug integration, and opt-in exact live type evidence.</li>
     <li>1.7.9 — Adds a Debug Sage Script action backed by PyCharm's native
         Python debug executor. Native Sage launches preserve the .sage filename
         through a preparser launcher for breakpoints and stack frames. WSL

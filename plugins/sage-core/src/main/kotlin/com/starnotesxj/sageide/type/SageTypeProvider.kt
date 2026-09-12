@@ -118,14 +118,16 @@ class SageTypeProvider : PyTypeProviderBase() {
     ): PyType? {
         val file = referenceExpression.containingFile ?: return null
         if (!SageFileUtils.isSageFile(file)) return null
-        if (referenceExpression.isQualified) return null
 
         // A completed live snapshot is more specific than static inference,
-        // but never blocks an editor query: the service only returns a cached
-        // exact observed class and schedules any missing work off the EDT.
+        // but never blocks an editor query.  This intentionally happens before
+        // the generic qualified-reference guard: the root ``P`` in ``P.log``
+        // is the global completion receiver, while the service itself rejects
+        // a real attribute expression such as ``obj.P``.
         SageLiveTypeSnapshotService.getInstance(referenceExpression.project)
             .typeForReference(referenceExpression)
             ?.let { return it }
+        if (referenceExpression.isQualified) return null
 
         // Unannotated parameters in a .sage function are ordinary reference
         // expressions when the editor asks for the type of a receiver.  Do not

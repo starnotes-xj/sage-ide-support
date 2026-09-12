@@ -4,7 +4,10 @@ plugins {
 }
 
 group = "com.starnotesxj"
-version = "0.1.0-dev"
+// Keep this above the public Sage IDE Support 1.7.9 release.  The plugin
+// module deliberately retains that plugin's Marketplace ID so this is an
+// in-place upgrade rather than a second, conflicting installation.
+version = "1.8.0"
 
 allprojects {
     group = rootProject.group

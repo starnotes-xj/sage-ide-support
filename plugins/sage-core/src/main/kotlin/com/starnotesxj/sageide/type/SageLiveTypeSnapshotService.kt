@@ -53,7 +53,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         MAX_CACHED_SNAPSHOTS,
         FAILURE_RETRY_MILLIS,
     )
-    private val runEvidence = SageLiveTypeEvidenceCache<RunEvidenceKey, Map<String, SageObservedType>>(
+    private val runEvidence = SageLiveTypeEvidenceCache<RunEvidenceKey, RunEvidence>(
         MAX_CACHED_SNAPSHOTS,
         FAILURE_RETRY_MILLIS,
     )
@@ -68,7 +68,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     }
 
     fun typeForReference(reference: PyReferenceExpression): PyType? {
-        if (PsiTreeUtil.getParentOfType(reference, PyFunction::class.java) != null) return null
+        if (reference.qualifier != null || PsiTreeUtil.getParentOfType(reference, PyFunction::class.java) != null) return null
         val name = reference.referencedName ?: return null
         observedRunType(reference, name)?.let { return it }
         return typeFor(reference, name, includeContainingStatement = false)
@@ -84,17 +84,26 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     /**
      * Receives one normal Sage file run after the original Sage runner exits.
      * The sidecar is accepted only for the exact saved document bytes and
-     * runtime key that launched it; it is session evidence, never an API index
-     * update or a reusable static return contract.
+     * runtime key that launched it.  The saved document text is retained only
+     * to permit a whitespace-only append before a newly typed completion
+     * reference; it remains session evidence, never an API index update or a
+     * reusable static return contract.
      */
     internal fun recordRunEvidence(
         file: VirtualFile,
         sourceDigest: String,
+        sourceText: String? = null,
         runtimeKey: String,
         observedTypes: Map<String, SageObservedType>,
     ) {
         if (observedTypes.isEmpty() || project.isDisposed || !file.isValid) return
-        runEvidence.recordSuccess(RunEvidenceKey(file.url, sourceDigest, runtimeKey), observedTypes)
+        runEvidence.recordSuccess(
+            RunEvidenceKey(file.url, sourceDigest, runtimeKey),
+            RunEvidence(
+                observedTypes,
+                sourceText?.takeIf { it.toByteArray(StandardCharsets.UTF_8).size <= MAX_SOURCE_BYTES },
+            ),
+        )
         restartDaemon(file)
     }
 
@@ -130,15 +139,44 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         val file = anchor.containingFile as? PyFile ?: return null
         if (!SageFileUtils.isSageFile(file) || SageStubIndex.isSageStubFile(file)) return null
         val virtualFile = file.virtualFile ?: return null
-        // A normal run executes bytes from disk.  An unsaved IDE document can
-        // have the same VirtualFile bytes but different PSI text, so it must
-        // not inherit an observation from the older saved program.
         val document = FileDocumentManager.getInstance().getDocument(virtualFile)
-        if (document != null && FileDocumentManager.getInstance().isDocumentUnsaved(document)) return null
         val runtime = configuredRuntime() ?: return null
-        val digest = runCatching { sha256(virtualFile.contentsToByteArray()) }.getOrNull() ?: return null
-        val observed = runEvidence.completed(RunEvidenceKey(virtualFile.url, digest, runtime.key))?.get(name) ?: return null
+        val evidence = if (document != null && FileDocumentManager.getInstance().isDocumentUnsaved(document)) {
+            runEvidence.completedEntries()
+                .asSequence()
+                .filter { (key, value) ->
+                    key.fileUrl == virtualFile.url &&
+                        key.runtimeKey == runtime.key &&
+                        name in value.observedTypes &&
+                        isWhitespaceOnlyAppendBefore(anchor, document.text, value.sourceText)
+                }
+                // Several historic runs may be cached for one file.  The
+                // longest matching executed prefix is the only current one.
+                .maxByOrNull { (_, value) -> value.sourceText?.length ?: -1 }
+                ?.second
+        } else {
+            val digest = runCatching { sha256(virtualFile.contentsToByteArray()) }.getOrNull() ?: return null
+            runEvidence.completed(RunEvidenceKey(virtualFile.url, digest, runtime.key))
+        } ?: return null
+        val observed = evidence.observedTypes[name] ?: return null
         return SageObservedTypeResolver.resolve(project, observed)
+    }
+
+    /**
+     * Typing ``P.`` after a completed run makes the document unsaved.  It is
+     * still safe to use the run's type for that new reference when the executed
+     * prefix is byte-for-byte represented by the saved document text and the
+     * user added only whitespace before the reference.  Any edit to the
+     * executed source, or any new statement before the reference, stays
+     * fail-closed so an old value of ``P`` cannot leak past a reassignment.
+     */
+    private fun isWhitespaceOnlyAppendBefore(anchor: com.intellij.psi.PsiElement, currentText: String, savedSource: String?): Boolean {
+        if (savedSource == null) return false
+        if (currentText == savedSource) return true
+        if (!currentText.startsWith(savedSource)) return false
+        val anchorOffset = anchor.textRange.startOffset
+        if (anchorOffset < savedSource.length || anchorOffset > currentText.length) return false
+        return currentText.substring(savedSource.length, anchorOffset).all(Char::isWhitespace)
     }
 
     private fun snapshotRequest(
@@ -301,6 +339,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     }
     private data class SnapshotKey(val fileUrl: String, val sourceDigest: String, val runtimeKey: String)
     private data class RunEvidenceKey(val fileUrl: String, val sourceDigest: String, val runtimeKey: String)
+    private data class RunEvidence(val observedTypes: Map<String, SageObservedType>, val sourceText: String?)
     private data class SnapshotRequest(
         val key: SnapshotKey,
         val source: String,

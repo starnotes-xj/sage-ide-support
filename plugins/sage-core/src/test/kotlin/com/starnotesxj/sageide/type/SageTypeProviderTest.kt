@@ -1742,7 +1742,7 @@ result = matrix([[1]])
         assertNull(resolved)
     }
 
-    fun testNormalRunEvidenceTypesOnlyTheExactSavedSageSource() {
+    fun testNormalRunEvidenceSupportsWhitespaceOnlyCompletionAppend() {
         val point = "sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field"
         myFixture.copyFileToProject(
             "testData/sage-stubs/sage/schemes/elliptic_curves/ell_point.pyi",
@@ -1766,6 +1766,7 @@ result = matrix([[1]])
             SageLiveTypeSnapshotService.getInstance(myFixture.project).recordRunEvidence(
                 file,
                 digest,
+                myFixture.file.text,
                 SageLiveTypeSnapshotService.runtimeKey(
                     com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl("EvidenceTest"),
                     "/opt/sage/bin/sage",
@@ -1783,6 +1784,15 @@ result = matrix([[1]])
             assertEquals(point, observed?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
 
             val document = checkNotNull(com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file))
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(myFixture.project) {
+                document.insertString(document.textLength, "\nP.log\n")
+                PsiDocumentManager.getInstance(myFixture.project).commitDocument(document)
+            }
+            val appendedReference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+                .single { it.referencedName == "P" && it.textRange.startOffset >= target.textRange.endOffset }
+            val appendedType = provider.getReferenceExpressionType(appendedReference, defaultContext()) as? PyClassType
+            assertEquals(point, appendedType?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+
             com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(myFixture.project) {
                 document.insertString(0, "# unsaved change invalidates run evidence\n")
                 PsiDocumentManager.getInstance(myFixture.project).commitDocument(document)

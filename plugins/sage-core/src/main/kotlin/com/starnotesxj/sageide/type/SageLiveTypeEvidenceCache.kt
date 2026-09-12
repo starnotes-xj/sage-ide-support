@@ -30,6 +30,13 @@ internal class SageLiveTypeEvidenceCache<K : Any, V : Any>(
     @Synchronized
     fun completed(key: K): V? = completed[key]
 
+    /**
+     * Returns a stable snapshot for the rare case where a caller must choose
+     * between several exact observations using stronger local evidence.
+     */
+    @Synchronized
+    fun completedEntries(): List<Pair<K, V>> = completed.entries.map { it.key to it.value }
+
     @Synchronized
     fun maySchedule(key: K): Boolean =
         !completed.containsKey(key) && (retryAfter[key] ?: Long.MIN_VALUE) <= nowMillis()

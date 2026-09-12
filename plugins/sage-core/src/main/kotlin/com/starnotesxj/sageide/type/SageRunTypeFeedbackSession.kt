@@ -4,6 +4,7 @@ import com.intellij.execution.process.ProcessAdapter
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessHandler
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class SageRunTypeFeedbackSession private constructor(
     private val scriptFile: VirtualFile,
     private val sourceDigest: String,
+    private val sourceText: String?,
     private val runtimeKey: String,
     private val bootstrapDirectory: Path,
     private val responseFile: Path,
@@ -77,6 +79,7 @@ internal class SageRunTypeFeedbackSession private constructor(
                             SageLiveTypeSnapshotService.getInstance(project).recordRunEvidence(
                                 scriptFile,
                                 sourceDigest,
+                                sourceText,
                                 runtimeKey,
                                 feedback.observedTypes,
                             )
@@ -125,12 +128,25 @@ internal class SageRunTypeFeedbackSession private constructor(
             val path = Path.of(scriptPath).toAbsolutePath().normalize()
             if (!Files.isRegularFile(path)) return@runCatching null
             val virtualFile = LocalFileSystem.getInstance().findFileByNioFile(path) ?: return@runCatching null
-            val digest = sha256(Files.readAllBytes(path))
+            val sourceBytes = Files.readAllBytes(path)
+            val digest = sha256(sourceBytes)
+            val documentManager = FileDocumentManager.getInstance()
+            val sourceText = documentManager.getDocument(virtualFile)
+                ?.takeUnless(documentManager::isDocumentUnsaved)
+                ?.text
+                ?.takeIf { it.toByteArray(StandardCharsets.UTF_8).size <= MAX_APPEND_SOURCE_BYTES }
+                ?: String(sourceBytes, StandardCharsets.UTF_8)
+                    .takeIf {
+                        sourceBytes.size <= MAX_APPEND_SOURCE_BYTES &&
+                            it.toByteArray(StandardCharsets.UTF_8).contentEquals(sourceBytes)
+                    }
             val directory = Files.createTempDirectory("sage-ide-run-feedback-")
             val response = directory.resolve("feedback.tsv")
             Files.writeString(directory.resolve("sitecustomize.py"), SageRunTypeFeedbackProtocol.SITE_CUSTOMIZE_SOURCE, StandardCharsets.UTF_8)
-            SageRunTypeFeedbackSession(virtualFile, digest, runtimeKey, directory, response, UUID.randomUUID().toString())
+            SageRunTypeFeedbackSession(virtualFile, digest, sourceText, runtimeKey, directory, response, UUID.randomUUID().toString())
         }.getOrNull()
+
+        private const val MAX_APPEND_SOURCE_BYTES = 256 * 1024
 
         private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
             .digest(bytes)
