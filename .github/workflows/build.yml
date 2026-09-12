@@ -58,7 +58,8 @@ jobs:
       - name: Download and validate sanitized Sage 10.9 full index
         shell: bash
         run: |
-          curl --fail --location --retry 3 "$SAGE_RELEASE_INDEX_URL" --output "$RUNNER_TEMP/sage-api-index.json"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 "$SAGE_RELEASE_INDEX_URL" --output "$RUNNER_TEMP/sage-api-index.json.gz"
+          gzip --decompress --stdout "$RUNNER_TEMP/sage-api-index.json.gz" > "$RUNNER_TEMP/sage-api-index.json"
           python3 tools/sage-api-index/validate_release_index.py \
             --index "$RUNNER_TEMP/sage-api-index.json" \
             --sha256 "$SAGE_RELEASE_INDEX_SHA256"

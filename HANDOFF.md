@@ -140,3 +140,9 @@
 - 新增 `sanitize_release_index.py` 和 `validate_release_index.py`：前者将完整索引文档中的构建机绝对路径转换为 `sage/...` 或安全红字，后者校验 SHA-256、Sage 10.9 / Python 3.13、完整条目数和零主机路径。实际 v155 索引已生成到工作区外 `G:\sage-build\release-assets\sage-api-index-10.9-v155.json`，为 `86,339` entries、`106,486,050` bytes、SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3`。
 - Gradle `publishPlugin` 现在强制完整索引 hash 和 `GITHUB_REF_NAME=v<version>` 双校验；GitHub tag workflow 还会下载同一 SHA 的脱敏索引、再次校验后才打包、发布 Marketplace 并附加同一 ZIP。缺 `PUBLISH_TOKEN`、`SAGE_RELEASE_INDEX_URL` 或 `SAGE_RELEASE_INDEX_SHA256` 时明确失败，绝不发布 32 KiB fixture 降级版。
 - 验证：索引工具回归 `2/2`、Python 编译、workflow YAML 解析、`verifyReleaseVersion`、`verifyReleaseFullIndex`、v155 full-index `buildPlugin` 均通过。fresh `sage-core-1.8.0.zip` SHA-256 为 `507D254FD2528239E752B197EF5173EAFC2F20BBFAD697BF7A584D4B4165A278`；嵌套资源为 `106,486,050` bytes，并确认 descriptor 的 ID/name/version 正确。真实 PyCharm UI smoke、远端仓库/秘密变量配置、Marketplace 实际上传仍未进行。
+
+## 2026-09-12 增量（v164，远端发布资产压缩链）
+
+- 已将迁移提交 `2e8bfea` 非破坏性推送到旧公开仓库的新分支 `sagemath-core-1.8.0`，没有覆盖 `master`。GitHub 凭据确认该仓库已有 `PUBLISH_TOKEN`。
+- 原始 `106,486,050` byte 索引在当前网络上传超时，因此生成同内容 gzip 发布资产 `G:\sage-build\release-assets\sage-api-index-10.9-v155.json.gz`（`12,810,807` bytes）；release workflow 改为下载 gzip、解压后仍以原始 JSON SHA-256 和完整条目校验为准，不会降低类型索引。
+- gzip 索引资产已上传并发布到 `sage-api-index-10.9-v155` release，GitHub 报告大小 `12,810,807`、资产 SHA-256 `92a4bdfff92a780a0928aad451628c3f023dfdf4cccb032d65b673316085a5a1`；旧仓库已设置 `SAGE_RELEASE_INDEX_URL` 与原始 JSON SHA-256 变量。Windows 直连下载在 26 秒后被本机网络重置，未取得新的远端解压验证；GitHub asset digest、本地压缩 hash 与 CI 的解压后原始 JSON hash 三层校验仍可阻止错误发布。下一步推送本次 gzip workflow 更新并推送 `v1.8.0` 标签触发 Marketplace 发布。

@@ -21,7 +21,7 @@ Sage 10.9 / Python 3.13 索引。缺少下列任一项时，发布会主动失�
 发布降级插件：
 
 1. PUBLISH_TOKEN GitHub secret：旧 Marketplace 插件的发布 token；
-2. SAGE_RELEASE_INDEX_URL GitHub repository variable：已上传的脱敏完整索引 URL；
+2. SAGE_RELEASE_INDEX_URL GitHub repository variable：已上传的脱敏完整索引 gzip URL；
 3. SAGE_RELEASE_INDEX_SHA256 GitHub repository variable：该 URL 内容的 SHA-256。
 
 从本机 v155 索引生成发布资产：
@@ -29,11 +29,12 @@ Sage 10.9 / Python 3.13 索引。缺少下列任一项时，发布会主动失�
     $raw = 'G:\sage-build\staging-build6\sage-api-curated-type-contracts-v155.json'
     $release = 'G:\sage-build\release-assets\sage-api-index-10.9.json'
     python tools/sage-api-index/sanitize_release_index.py --input $raw --output $release
+    python -c "import gzip, shutil; source=open(r'$release','rb'); target=gzip.open(r'$release.gz','wb',compresslevel=9); shutil.copyfileobj(source,target); target.close(); source.close()"
 
 工具会将文档中的构建机绝对路径（例如
 File: /home/.../sage/structure/element.pyx）保留为可公开的
 File: sage/structure/element.pyx，并拒绝仍含主机路径的结果。上传该文件到
-稳定的发布资产位置后，记录工具输出的 SHA-256 到
+稳定的 .json.gz 发布资产位置后，记录工具输出的原始 JSON SHA-256 到
 SAGE_RELEASE_INDEX_SHA256。可独立复核：
 
     python tools/sage-api-index/validate_release_index.py --index $release --sha256 '<sanitize_release_index.py 输出的 sha256>'
