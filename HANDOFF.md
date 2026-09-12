@@ -156,3 +156,9 @@
 
 - 第二次 `v1.8.0` tag CI 已越过编译阶段，但 `core:runtime:test` 的 71 项中有 5 项失败，均为 Linux `FileRuntimeManifestVerifier` 正确拒绝测试夹具写出的非可执行 `bin/sage`。受影响的 lifecycle/SDK adapter 场景此前仅在 Windows 上执行，Windows ACL 掩盖了缺少 POSIX 执行位的问题。
 - 两个测试夹具现在只在 Posix 文件属性可用时为临时 `bin/sage` 增加 `OWNER_EXECUTE`；生产运行时验证没有放宽，仍会拒绝真实 Linux 安装中的不可执行启动文件。Windows 本地 `:core:runtime:test -PrunRuntimeTests=true` 重新通过 `71/71`，`git diff --check` 通过；本机 WSL 没有 Java，Linux 行为将由下一次 GitHub Linux CI 复核。
+
+## 2026-09-12 增量（v167，SageMath Core 1.8.0 已发布）
+
+- `v1.8.0` 已指向 `278f155`，GitHub Actions run `34670708517` 的 core 与 release job 均成功：Linux 编译/模型与运行时测试、Sage 10.9 完整索引下载/解压/原始 SHA 校验、最终 ZIP 构建、`com.starnotesxj.sageide` 的 Marketplace 原位发布和 GitHub Release 附件均已完成。
+- GitHub Release：`https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.8.0`；公开 ZIP `sage-core-1.8.0.zip` 为 `15,701,319` bytes、SHA-256 `fdb240862aa6e2fe052a5b3c065bf14bcfac93694c4e15c8cbbdc9548e2a5757`。重新下载并解开后，嵌入的 `sage-api-index.json` 为 `106,486,050` bytes、SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3`，与发布门的完整 v155 索引一致。
+- 仍未完成的仅是干净 PyCharm 中的人工交互 smoke；PyPI/stubgen 本次没有发布，因为该独立包没有 CLI 或生成结果改动。
