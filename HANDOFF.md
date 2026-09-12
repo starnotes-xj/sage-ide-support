@@ -146,3 +146,8 @@
 - 已将迁移提交 `2e8bfea` 非破坏性推送到旧公开仓库的新分支 `sagemath-core-1.8.0`，没有覆盖 `master`。GitHub 凭据确认该仓库已有 `PUBLISH_TOKEN`。
 - 原始 `106,486,050` byte 索引在当前网络上传超时，因此生成同内容 gzip 发布资产 `G:\sage-build\release-assets\sage-api-index-10.9-v155.json.gz`（`12,810,807` bytes）；release workflow 改为下载 gzip、解压后仍以原始 JSON SHA-256 和完整条目校验为准，不会降低类型索引。
 - gzip 索引资产已上传并发布到 `sage-api-index-10.9-v155` release，GitHub 报告大小 `12,810,807`、资产 SHA-256 `92a4bdfff92a780a0928aad451628c3f023dfdf4cccb032d65b673316085a5a1`；旧仓库已设置 `SAGE_RELEASE_INDEX_URL` 与原始 JSON SHA-256 变量。Windows 直连下载在 26 秒后被本机网络重置，未取得新的远端解压验证；GitHub asset digest、本地压缩 hash 与 CI 的解压后原始 JSON hash 三层校验仍可阻止错误发布。下一步推送本次 gzip workflow 更新并推送 `v1.8.0` 标签触发 Marketplace 发布。
+
+## 2026-09-12 增量（v165，首个标签 CI 修复）
+
+- 首次 `v1.8.0` tag CI 在 Linux runner 的第一条 Gradle 命令失败：`./gradlew: Permission denied`（exit 126）；编译、索引下载、Marketplace 上传和 GitHub release 均未执行。
+- workflow 的 core/release jobs 现在均在 checkout 后执行 `chmod +x gradlew`。由于 `v1.8.0` 从未上传 Marketplace，修复提交验证后可删除刚创建的远端标签并重新创建同版本标签，不会覆盖任何公开插件版本。
