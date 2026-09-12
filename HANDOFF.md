@@ -151,3 +151,8 @@
 
 - 首次 `v1.8.0` tag CI 在 Linux runner 的第一条 Gradle 命令失败：`./gradlew: Permission denied`（exit 126）；编译、索引下载、Marketplace 上传和 GitHub release 均未执行。
 - workflow 的 core/release jobs 现在均在 checkout 后执行 `chmod +x gradlew`。由于 `v1.8.0` 从未上传 Marketplace，修复提交验证后可删除刚创建的远端标签并重新创建同版本标签，不会覆盖任何公开插件版本。
+
+## 2026-09-12 增量（v166，Linux 运行时夹具修复）
+
+- 第二次 `v1.8.0` tag CI 已越过编译阶段，但 `core:runtime:test` 的 71 项中有 5 项失败，均为 Linux `FileRuntimeManifestVerifier` 正确拒绝测试夹具写出的非可执行 `bin/sage`。受影响的 lifecycle/SDK adapter 场景此前仅在 Windows 上执行，Windows ACL 掩盖了缺少 POSIX 执行位的问题。
+- 两个测试夹具现在只在 Posix 文件属性可用时为临时 `bin/sage` 增加 `OWNER_EXECUTE`；生产运行时验证没有放宽，仍会拒绝真实 Linux 安装中的不可执行启动文件。Windows 本地 `:core:runtime:test -PrunRuntimeTests=true` 重新通过 `71/71`，`git diff --check` 通过；本机 WSL 没有 Java，Linux 行为将由下一次 GitHub Linux CI 复核。

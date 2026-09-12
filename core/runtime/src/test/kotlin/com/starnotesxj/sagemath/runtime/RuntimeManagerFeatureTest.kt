@@ -3,6 +3,8 @@ package com.starnotesxj.sagemath.runtime
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
@@ -394,6 +396,7 @@ class RuntimeManagerFeatureTest {
         Files.createDirectories(runtimeRoot.resolve("bin"))
         val executable = runtimeRoot.resolve("bin/sage")
         Files.writeString(executable, "sage-$label")
+        markExecutableWhenSupported(executable)
         val digest = Sha256ChecksumVerifier().sha256(executable)
         val manifest = RuntimeManifest(
             schemaVersion = 1,
@@ -404,6 +407,12 @@ class RuntimeManagerFeatureTest {
         )
         Files.write(root.resolve("versions").resolve(".$name.meta"), RuntimeManifestCodec.encode(manifest))
         return CreatedRuntime(name, runtimeRoot, id)
+    }
+
+    private fun markExecutableWhenSupported(path: Path) {
+        if (Files.getFileAttributeView(path, PosixFileAttributeView::class.java) != null) {
+            Files.setPosixFilePermissions(path, Files.getPosixFilePermissions(path) + PosixFilePermission.OWNER_EXECUTE)
+        }
     }
 
     private fun deleteTree(root: Path) {
