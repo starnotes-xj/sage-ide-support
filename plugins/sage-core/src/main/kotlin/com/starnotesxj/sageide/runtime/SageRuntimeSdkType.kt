@@ -12,6 +12,7 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
+import com.starnotesxj.sageide.SageBundle
 import com.starnotesxj.sageide.sugar.SageIcons
 import com.starnotesxj.sagemath.runtime.InstalledRuntime
 import com.starnotesxj.sagemath.runtime.RuntimeTarget
@@ -41,7 +42,8 @@ class SageRuntimeSdkType private constructor() : SdkType(NAME) {
     }.getOrDefault(false)
 
     override fun suggestSdkName(currentSdkName: String?, sdkHome: String): String =
-        currentSdkName?.takeIf { it.isNotBlank() } ?: "SageMath Runtime (${Path.of(sdkHome).fileName})"
+        currentSdkName?.takeIf { it.isNotBlank() }
+            ?: SageBundle.message("runtime.sdk.name", Path.of(sdkHome).fileName)
 
     override fun createAdditionalDataConfigurable(
         sdkModel: SdkModel,
@@ -55,14 +57,14 @@ class SageRuntimeSdkType private constructor() : SdkType(NAME) {
     override fun loadAdditionalData(currentSdk: Sdk, additional: Element): SdkAdditionalData? =
         SageRuntimeSdkAdditionalData.load(additional)
 
-    override fun getPresentableName(): String = "SageMath Runtime"
+    override fun getPresentableName(): String = SageBundle.message("runtime.sdk.presentable.name")
 
     override fun getIcon() = SageIcons.SAGE
 
     override fun getVersionString(sdk: Sdk): String? =
         (sdk.sdkAdditionalData as? SageRuntimeSdkAdditionalData)?.runtimeId?.version
             ?: sdk.versionString
-            ?: sdk.homePath?.let { "managed runtime at $it" }
+            ?: sdk.homePath?.let { SageBundle.message("runtime.sdk.managed.location", it) }
 
     override fun sdkHasValidPath(sdk: Sdk): Boolean =
         SageRuntimeSdkService.getInstance().sdkAdapter.validate(sdk).succeeded
@@ -82,16 +84,16 @@ class SageRuntimeSdkType private constructor() : SdkType(NAME) {
         if (runtimes.isEmpty()) {
             Messages.showInfoMessage(
                 parentComponent,
-                "Install a verified SageMath runtime from the Runtime Manager before adding an SDK.",
-                "SageMath Runtime",
+                SageBundle.message("runtime.sdk.install.first"),
+                SageBundle.message("runtime.sdk.presentable.name"),
             )
             return
         }
         val labels = runtimes.map { SageRuntimeSdkDisplay.runtimeLabel(it.id) }.toTypedArray()
         @Suppress("DEPRECATION")
         val selected = Messages.showChooseDialog(
-            "Select a verified SageMath runtime:",
-            "SageMath Runtime",
+            SageBundle.message("runtime.sdk.choose"),
+            SageBundle.message("runtime.sdk.presentable.name"),
             labels,
             labels.first(),
             SageIcons.SAGE,
@@ -106,7 +108,7 @@ class SageRuntimeSdkType private constructor() : SdkType(NAME) {
             ?: Messages.showErrorDialog(
                 parentComponent,
                 result.diagnostics.joinToString("\n") { it.message },
-                "Cannot Add SageMath Runtime",
+                SageBundle.message("runtime.sdk.add.failed"),
             )
     }
 
@@ -121,7 +123,14 @@ class SageRuntimeSdkType private constructor() : SdkType(NAME) {
 private class SageRuntimeSdkAdditionalDataConfigurable(
     private val sdkModificator: SdkModificator,
 ) : AdditionalDataConfigurable {
-    private enum class TargetKind { NATIVE, WSL, DOCKER, SSH }
+    private enum class TargetKind {
+        NATIVE,
+        WSL,
+        DOCKER,
+        SSH;
+
+        override fun toString(): String = SageBundle.message("runtime.sdk.target.$name")
+    }
 
     private var sdk: Sdk? = null
     private var workingData: SageRuntimeSdkAdditionalData? = null
@@ -145,7 +154,7 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
         reset()
     }
 
-    override fun getTabName(): String = "Sage Runtime"
+    override fun getTabName(): String = SageBundle.message("runtime.sdk.tab")
 
     override fun createComponent(): JComponent {
         component?.let { return it }
@@ -162,16 +171,16 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
             panel.add(field, right)
             return labelComponent
         }
-        row(0, "Target:", targetKind)
-        val containerEngineLabel = row(1, "Container engine:", containerEngine)
+        row(0, SageBundle.message("runtime.sdk.label.target"), targetKind)
+        val containerEngineLabel = row(1, SageBundle.message("runtime.sdk.label.container.engine"), containerEngine)
         containerEngine.putClientProperty("sage.label", containerEngineLabel)
-        row(2, "Distribution / image / host:", detailsField)
-        row(3, "SSH user:", userField)
-        row(4, "SSH port:", portField)
-        val runtimeRootLabel = row(5, "SSH runtime root:", runtimeRootField)
-        val mappingLocalLabel = row(6, "Local mapping root:", mappingLocalRootField)
-        val mappingTargetLabel = row(7, "Target mapping root:", mappingTargetRootField)
-        row(8, "Validation:", statusLabel)
+        row(2, SageBundle.message("runtime.sdk.label.details"), detailsField)
+        row(3, SageBundle.message("runtime.sdk.label.ssh.user"), userField)
+        row(4, SageBundle.message("runtime.sdk.label.ssh.port"), portField)
+        val runtimeRootLabel = row(5, SageBundle.message("runtime.sdk.label.ssh.runtime.root"), runtimeRootField)
+        val mappingLocalLabel = row(6, SageBundle.message("runtime.sdk.label.mapping.local"), mappingLocalRootField)
+        val mappingTargetLabel = row(7, SageBundle.message("runtime.sdk.label.mapping.target"), mappingTargetRootField)
+        row(8, SageBundle.message("runtime.sdk.label.validation"), statusLabel)
         runtimeRootField.putClientProperty("sage.label", runtimeRootLabel)
         mappingLocalRootField.putClientProperty("sage.label", mappingLocalLabel)
         mappingTargetRootField.putClientProperty("sage.label", mappingTargetLabel)
@@ -195,18 +204,18 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
     }
 
     override fun apply() {
-        val data = workingData ?: throw ConfigurationException("SageMath SDK metadata is missing")
+        val data = workingData ?: throw ConfigurationException(SageBundle.message("runtime.sdk.error.metadata"))
         val target = targetFromFieldsSafely()
-            ?: throw ConfigurationException("SageMath target fields are invalid")
+            ?: throw ConfigurationException(SageBundle.message("runtime.sdk.error.target"))
         val result = SageRuntimeSdkService.getInstance().validate(data.runtimeId, target)
         if (!result.succeeded) {
-            statusLabel.text = result.diagnostics.firstOrNull()?.message ?: "Runtime validation failed"
+            statusLabel.text = result.diagnostics.firstOrNull()?.message ?: SageBundle.message("runtime.sdk.status.failed")
             throw ConfigurationException(statusLabel.text)
         }
         data.target = target
         sdkModificator.setSdkAdditionalData(data)
         initial = data.copyData()
-        statusLabel.text = "Valid: ${SageRuntimeSdkDisplay.targetLabel(target)}"
+        statusLabel.text = SageBundle.message("runtime.sdk.status.valid", SageRuntimeSdkDisplay.targetLabel(target))
     }
 
     override fun reset() {
@@ -299,15 +308,15 @@ private class SageRuntimeSdkAdditionalDataConfigurable(
         (mappingLocalRootField.getClientProperty("sage.label") as? JComponent)?.isVisible = mapped
         (mappingTargetRootField.getClientProperty("sage.label") as? JComponent)?.isVisible = mapped
         detailsField.toolTipText = when (targetKind.selectedItem) {
-            TargetKind.NATIVE -> "Uses the local host"
-            TargetKind.WSL -> "WSL distribution name"
-            TargetKind.DOCKER -> "Docker image reference"
-            TargetKind.SSH -> "Remote SSH host"
+            TargetKind.NATIVE -> SageBundle.message("runtime.sdk.tooltip.native")
+            TargetKind.WSL -> SageBundle.message("runtime.sdk.tooltip.wsl")
+            TargetKind.DOCKER -> SageBundle.message("runtime.sdk.tooltip.docker")
+            TargetKind.SSH -> SageBundle.message("runtime.sdk.tooltip.ssh")
             else -> null
         }
         userField.isEnabled = ssh
         portField.isEnabled = ssh
         runtimeRootField.isEnabled = ssh
-        runtimeRootField.toolTipText = "Absolute POSIX path of the verified Sage runtime on the SSH host"
+        runtimeRootField.toolTipText = SageBundle.message("runtime.sdk.tooltip.ssh.runtime.root")
     }
 }

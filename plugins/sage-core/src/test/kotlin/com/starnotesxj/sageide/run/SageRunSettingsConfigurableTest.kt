@@ -7,8 +7,32 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
+import java.util.Locale
+import java.util.ResourceBundle
 
 class SageRunSettingsConfigurableTest {
+    @Test
+    fun `live Sage type evidence defaults on and upgrades legacy settings once`() {
+        assertTrue(SageRunSettings.State().liveTypeProbingEnabled)
+
+        val legacy = SageRunSettings.State().apply {
+            liveTypeProbingEnabled = false
+            liveTypeProbingConfigured = false
+        }
+        SageRunSettings().loadState(legacy)
+
+        assertTrue(legacy.liveTypeProbingEnabled)
+        assertTrue(legacy.liveTypeProbingConfigured)
+    }
+
+    @Test
+    fun `Chinese bundle follows the IDE locale resource convention`() {
+        val messages = ResourceBundle.getBundle("messages.SageBundle", Locale.SIMPLIFIED_CHINESE)
+
+        assertEquals("运行 Sage 脚本", messages.getString("run.action.run"))
+        assertEquals("启用 Sage 实时类型证据（隔离快照与正常运行回传）", messages.getString("settings.live.type.evidence"))
+    }
+
     @Test
     fun `settings state keeps native WSL SSH and legacy executable independent`() {
         val state = SageRunSettings.State().apply {

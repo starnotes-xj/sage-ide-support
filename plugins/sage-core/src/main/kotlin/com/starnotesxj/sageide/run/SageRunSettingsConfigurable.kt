@@ -5,15 +5,19 @@ import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.components.JBCheckBox
+import com.starnotesxj.sageide.SageBundle
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnostic
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnosticCode
 import com.starnotesxj.sagemath.runtime.RuntimeOperationResult
 import com.intellij.util.ui.JBUI
 import java.awt.CardLayout
+import java.awt.Component
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import javax.swing.JButton
+import javax.swing.DefaultListCellRenderer
 import javax.swing.JComponent
+import javax.swing.JList
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
@@ -41,7 +45,7 @@ class SageRunSettingsConfigurable : Configurable {
     private val dockerContainerDirField = JBTextField()
     private val dockerCommandField = JBTextField()
     private val sageParametersField = JBTextField()
-    private val liveTypeProbingCheckBox = JBCheckBox("Enable live Sage type evidence (isolated snapshots and normal-run feedback)")
+    private val liveTypeProbingCheckBox = JBCheckBox(SageBundle.message("settings.live.type.evidence"))
     private val sshCard = JPanel(GridBagLayout())
     private val sshHostField = JBTextField()
     private val sshUserField = JBTextField()
@@ -54,13 +58,29 @@ class SageRunSettingsConfigurable : Configurable {
     private val sshLocalRootField = JBTextField()
     private val sshTargetRootField = JBTextField()
     private val sshTimeoutField = JBTextField("10")
-    private val detectButton = JButton("Detect Sage installation")
+    private val detectButton = JButton(SageBundle.message("settings.button.detect"))
     private val statusLabel = JLabel()
     private var rootComponent: JComponent? = null
     private var detectRequest = 0L
     private var activeProbe: SageRuntimeProbeHandle<*>? = null
 
-    override fun getDisplayName(): String = "SageMath"
+    init {
+        modeCombo.renderer = object : DefaultListCellRenderer() {
+            override fun getListCellRendererComponent(
+                list: JList<*>?,
+                value: Any?,
+                index: Int,
+                isSelected: Boolean,
+                cellHasFocus: Boolean,
+            ): Component {
+                val component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+                text = (value as? ExecutionMode)?.let { SageBundle.message("settings.mode.${it.name}") }.orEmpty()
+                return component
+            }
+        }
+    }
+
+    override fun getDisplayName(): String = SageBundle.message("settings.display.name")
 
     override fun createComponent(): JComponent? {
         rootComponent?.let { return it }
@@ -82,30 +102,30 @@ class SageRunSettingsConfigurable : Configurable {
             panel.add(component, c)
         }
 
-        cardRow(nativeCard, 0, "Sage executable:", nativeSageExecutableField)
+        cardRow(nativeCard, 0, SageBundle.message("settings.label.sage.executable"), nativeSageExecutableField)
 
-        cardRow(wslCard, 0, "Sage executable (inside WSL):", wslSageExecutableField)
-        cardRow(wslCard, 1, "Python executable (inside WSL):", wslPythonExecutableField)
-        cardRow(wslCard, 2, "WSL distribution:", wslDistributionField)
-        cardRow(wslCard, 3, "Conda environment:", wslCondaEnvironmentField)
-        cardRow(wslCard, 4, "Conda executable (optional):", wslCondaExecutableField)
+        cardRow(wslCard, 0, SageBundle.message("settings.label.wsl.sage.executable"), wslSageExecutableField)
+        cardRow(wslCard, 1, SageBundle.message("settings.label.wsl.python.executable"), wslPythonExecutableField)
+        cardRow(wslCard, 2, SageBundle.message("settings.label.wsl.distribution"), wslDistributionField)
+        cardRow(wslCard, 3, SageBundle.message("settings.label.conda.environment"), wslCondaEnvironmentField)
+        cardRow(wslCard, 4, SageBundle.message("settings.label.conda.executable"), wslCondaExecutableField)
 
-        cardRow(dockerCard, 0, "Container executable (docker/podman):", containerExecutableField)
-        cardRow(dockerCard, 1, "Container image:", dockerImageField)
-        cardRow(dockerCard, 2, "Container mount directory:", dockerContainerDirField)
-        cardRow(dockerCard, 3, "Command inside the container:", dockerCommandField)
+        cardRow(dockerCard, 0, SageBundle.message("settings.label.container.executable"), containerExecutableField)
+        cardRow(dockerCard, 1, SageBundle.message("settings.label.container.image"), dockerImageField)
+        cardRow(dockerCard, 2, SageBundle.message("settings.label.container.mount"), dockerContainerDirField)
+        cardRow(dockerCard, 3, SageBundle.message("settings.label.container.command"), dockerCommandField)
 
-        cardRow(sshCard, 0, "SSH host:", sshHostField)
-        cardRow(sshCard, 1, "SSH user (optional):", sshUserField)
-        cardRow(sshCard, 2, "SSH port:", sshPortField)
-        cardRow(sshCard, 3, "Known hosts file:", sshKnownHostsField)
-        cardRow(sshCard, 4, "Authentication (AGENT/IDENTITY_FILE):", sshAuthenticationField)
-        cardRow(sshCard, 5, "Identity file (for IDENTITY_FILE):", sshIdentityField)
-        cardRow(sshCard, 6, "Remote runtime root:", sshRuntimeRootField)
-        cardRow(sshCard, 7, "Remote Sage executable:", sshSageExecutableField)
-        cardRow(sshCard, 8, "Local mapping root:", sshLocalRootField)
-        cardRow(sshCard, 9, "Remote mapping root:", sshTargetRootField)
-        cardRow(sshCard, 10, "Connect timeout (seconds):", sshTimeoutField)
+        cardRow(sshCard, 0, SageBundle.message("settings.label.ssh.host"), sshHostField)
+        cardRow(sshCard, 1, SageBundle.message("settings.label.ssh.user"), sshUserField)
+        cardRow(sshCard, 2, SageBundle.message("settings.label.ssh.port"), sshPortField)
+        cardRow(sshCard, 3, SageBundle.message("settings.label.ssh.known.hosts"), sshKnownHostsField)
+        cardRow(sshCard, 4, SageBundle.message("settings.label.ssh.authentication"), sshAuthenticationField)
+        cardRow(sshCard, 5, SageBundle.message("settings.label.ssh.identity"), sshIdentityField)
+        cardRow(sshCard, 6, SageBundle.message("settings.label.ssh.runtime.root"), sshRuntimeRootField)
+        cardRow(sshCard, 7, SageBundle.message("settings.label.ssh.sage.executable"), sshSageExecutableField)
+        cardRow(sshCard, 8, SageBundle.message("settings.label.mapping.local.root"), sshLocalRootField)
+        cardRow(sshCard, 9, SageBundle.message("settings.label.mapping.remote.root"), sshTargetRootField)
+        cardRow(sshCard, 10, SageBundle.message("settings.label.ssh.timeout"), sshTimeoutField)
 
         cards.layout = CardLayout()
         cards.add(nativeCard, ExecutionMode.NATIVE.name)
@@ -130,7 +150,7 @@ class SageRunSettingsConfigurable : Configurable {
             val containerImage = dockerImageField.text
             val containerCommand = dockerCommandField.text
             detectButton.isEnabled = false
-            statusLabel.text = "Detecting…"
+            statusLabel.text = SageBundle.message("settings.status.detecting")
             activeProbe?.cancel()
             activeProbe = null
             val service = SageRuntimeService.getInstance()
@@ -170,9 +190,9 @@ class SageRunSettingsConfigurable : Configurable {
                             val probe = pair?.second as? com.starnotesxj.sagemath.runtime.RuntimeProbeResult
                             if (error == null && probe?.status == com.starnotesxj.sagemath.runtime.RuntimeExecutionStatus.SUCCESS && executable != null) {
                                 nativeSageExecutableField.text = executable
-                                statusLabel.text = "Validated native Sage"
+                                statusLabel.text = SageBundle.message("settings.status.native.valid")
                             } else {
-                                statusLabel.text = "Native Sage probe failed: ${probe?.status ?: error?.message ?: "unknown"}"
+                                statusLabel.text = SageBundle.message("settings.status.native.failed", probe?.status ?: error?.message ?: "unknown")
                             }
                         }
                         ExecutionMode.WSL -> {
@@ -181,20 +201,20 @@ class SageRunSettingsConfigurable : Configurable {
                                 wslSageExecutableField.text = result.sageExecutable
                                 wslPythonExecutableField.text = result.pythonExecutable.orEmpty()
                                 wslCondaExecutableField.text = result.condaExecutable.orEmpty()
-                                statusLabel.text = "Validated WSL Sage ${result.version ?: "runtime"} · ${result.pythonExecutable ?: "Python unavailable"}"
+                                statusLabel.text = SageBundle.message("settings.status.wsl.valid", result.version ?: "runtime", result.pythonExecutable ?: "Python unavailable")
                             } else {
-                                statusLabel.text = "WSL Conda/Sage probe failed"
+                                statusLabel.text = SageBundle.message("settings.status.wsl.failed")
                             }
                         }
                         ExecutionMode.DOCKER -> {
                             val result = value as? RuntimeOperationResult<*>
                             if (error == null && result?.succeeded == true) {
-                                statusLabel.text = "Validated image-owned Sage probe: $containerImage"
+                                statusLabel.text = SageBundle.message("settings.status.container.valid", containerImage)
                             } else {
-                                statusLabel.text = result?.diagnostics?.firstOrNull()?.message ?: "Container Sage probe failed"
+                                statusLabel.text = result?.diagnostics?.firstOrNull()?.message ?: SageBundle.message("settings.status.container.failed")
                             }
                         }
-                        ExecutionMode.SSH -> statusLabel.text = "SSH runtime discovery is unsupported; configure and validate explicit paths"
+                        ExecutionMode.SSH -> statusLabel.text = SageBundle.message("settings.status.ssh.unsupported")
                     }
                 }
             }
@@ -208,7 +228,7 @@ class SageRunSettingsConfigurable : Configurable {
         c.gridy = 0
         c.gridx = 0
         c.weightx = 0.0
-        panel.add(JLabel("Execution mode:"), c)
+        panel.add(JLabel(SageBundle.message("settings.label.execution.mode")), c)
         c.gridx = 1
         c.weightx = 1.0
         panel.add(modeCombo, c)
@@ -221,7 +241,7 @@ class SageRunSettingsConfigurable : Configurable {
         c.gridx = 0
         c.gridwidth = 2
         c.weighty = 0.0
-        panel.add(JLabel("Additional sage parameters:"), c)
+        panel.add(JLabel(SageBundle.message("settings.label.additional.parameters")), c)
         c.gridy = 3
         c.gridx = 0
         c.gridwidth = 2
@@ -298,16 +318,16 @@ class SageRunSettingsConfigurable : Configurable {
         }
         validateCandidate(mode, candidate)
         if (mode == ExecutionMode.NATIVE && candidate.nativeSageExecutable.isBlank()) {
-            throw ConfigurationException("Native Sage executable must be configured or discovered with Detect before Apply")
+            throw ConfigurationException(SageBundle.message("settings.error.native.required"))
         }
         SageRunSettings.getInstance().loadState(candidate)
     }
 
     private fun parsePort(): Int = sshPortField.text.trim().toIntOrNull()?.takeIf { it in 1..65535 }
-        ?: throw ConfigurationException("SSH port must be an integer between 1 and 65535")
+        ?: throw ConfigurationException(SageBundle.message("settings.error.ssh.port"))
 
     private fun parseTimeout(): Int = sshTimeoutField.text.trim().toIntOrNull()?.takeIf { it in 1..300 }
-        ?: throw ConfigurationException("SSH connect timeout must be an integer between 1 and 300 seconds")
+        ?: throw ConfigurationException(SageBundle.message("settings.error.ssh.timeout"))
 
     private fun validateCandidate(mode: ExecutionMode, candidate: SageRunSettings.State) {
         val result: RuntimeOperationResult<*> = when (mode) {
@@ -326,7 +346,7 @@ class SageRunSettingsConfigurable : Configurable {
             ExecutionMode.SSH -> SageRuntimeService.getInstance().validateSshSettings(candidate)
         }
         if (!result.succeeded) {
-            throw ConfigurationException(result.diagnostics.firstOrNull()?.message ?: "Selected Sage runtime settings are invalid")
+            throw ConfigurationException(result.diagnostics.firstOrNull()?.message ?: SageBundle.message("settings.error.runtime.invalid"))
         }
     }
 

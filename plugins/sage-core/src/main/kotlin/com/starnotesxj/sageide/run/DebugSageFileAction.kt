@@ -7,9 +7,10 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.project.DumbAwareAction
+import com.starnotesxj.sageide.SageBundle
 
 /** Launches the current Sage file through PyCharm's Python debug executor. */
-class DebugSageFileAction : DumbAwareAction("Debug Sage Script") {
+class DebugSageFileAction : DumbAwareAction(SageBundle.message("run.action.debug")) {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -37,6 +38,8 @@ class DebugSageFileAction : DumbAwareAction("Debug Sage Script") {
     }
 
     override fun update(e: AnActionEvent) {
+        e.presentation.text = SageBundle.message("run.action.debug")
+        e.presentation.description = SageBundle.message("run.action.debug.description")
         val file = selectedSageFile(e)
         val available = file?.extension == "sage"
         e.presentation.isEnabledAndVisible = available

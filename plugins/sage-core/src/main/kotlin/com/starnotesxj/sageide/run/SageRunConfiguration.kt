@@ -212,7 +212,7 @@ class SageConfigurationFactory(type: ConfigurationType) : ConfigurationFactory(t
 
 class SageRunConfigurationType : ConfigurationType {
     override fun getDisplayName(): String = "SageMath"
-    override fun getConfigurationTypeDescription(): String = "SageMath run configuration"
+    override fun getConfigurationTypeDescription(): String = com.starnotesxj.sageide.SageBundle.message("run.configuration.description")
     override fun getIcon() = SageIcons.SAGE
     override fun getId(): String = "SageRunConfiguration"
     override fun getConfigurationFactories(): Array<ConfigurationFactory> = arrayOf(SageConfigurationFactory(this))

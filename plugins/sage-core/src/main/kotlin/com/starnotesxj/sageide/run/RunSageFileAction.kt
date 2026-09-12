@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.vfs.VirtualFile
+import com.starnotesxj.sageide.SageBundle
 
 /**
  * Runs the current Sage file through the Sage run configuration; used as the
@@ -17,7 +18,7 @@ internal fun selectedSageFile(e: AnActionEvent): VirtualFile? =
     e.getData(CommonDataKeys.VIRTUAL_FILE)
         ?: e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY)?.singleOrNull()
 
-class RunSageFileAction : DumbAwareAction("Run Sage Script") {
+class RunSageFileAction : DumbAwareAction(SageBundle.message("run.action.run")) {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -39,6 +40,8 @@ class RunSageFileAction : DumbAwareAction("Run Sage Script") {
     }
 
     override fun update(e: AnActionEvent) {
+        e.presentation.text = SageBundle.message("run.action.run")
+        e.presentation.description = SageBundle.message("run.action.run.description")
         val file = selectedSageFile(e)
         val available = file?.extension == "sage"
         e.presentation.isEnabledAndVisible = available

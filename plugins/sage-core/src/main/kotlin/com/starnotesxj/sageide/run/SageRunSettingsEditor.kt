@@ -6,6 +6,7 @@ import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
+import com.starnotesxj.sageide.SageBundle
 import com.starnotesxj.sageide.runtime.SageRuntimeSdkType
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
@@ -56,9 +57,9 @@ class SageRunSettingsEditor : SettingsEditor<SageRunConfiguration>() {
             panel.add(component, c)
         }
 
-        row(0, "Sage SDK:", sdkCombo)
-        row(1, "Script path:", scriptPathField)
-        row(2, "Script parameters:", parametersField)
+        row(0, SageBundle.message("run.editor.sdk"), sdkCombo)
+        row(1, SageBundle.message("run.editor.script.path"), scriptPathField)
+        row(2, SageBundle.message("run.editor.script.parameters"), parametersField)
         rebuildSdkChoices()
         return panel
     }
@@ -66,7 +67,7 @@ class SageRunSettingsEditor : SettingsEditor<SageRunConfiguration>() {
     private fun rebuildSdkChoices() {
         val selected = sdkCombo.selectedItem as? SdkChoice
         sdkCombo.removeAllItems()
-        sdkCombo.addItem(SdkChoice(null, "Global Sage runtime (ignore project SDK)"))
+        sdkCombo.addItem(SdkChoice(null, SageBundle.message("run.editor.global.runtime")))
         ProjectJdkTable.getInstance()
             .getSdksOfType(SageRuntimeSdkType.getInstance())
             .sortedBy { it.name }

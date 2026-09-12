@@ -1,5 +1,7 @@
 package com.starnotesxj.sageide.run
 
+import com.intellij.execution.configurations.GeneralCommandLine
+
 /** Converts a Windows path to the path exposed by WSL's DrvFs mount. */
 internal fun toWslPath(windowsPath: String): String {
     val normalized = windowsPath.replace('\\', '/')
@@ -50,6 +52,15 @@ internal fun wslDirectRunArguments(
     executable: String,
     arguments: List<String>,
 ): List<String> = listOf("-d", distribution, "--", executable) + arguments
+
+/** Console-safe display form for a run that internally needs a feedback wrapper. */
+internal fun wslRunPresentationCommand(
+    distribution: String,
+    executable: String,
+    arguments: List<String>,
+): String = GeneralCommandLine("wsl.exe")
+    .withParameters(wslDirectRunArguments(distribution, executable, arguments))
+    .commandLineString
 
 /** Uses the new WSL field first and keeps the legacy saved setting compatible. */
 internal fun configuredWslSageExecutable(settings: SageRunSettings.State): String? =

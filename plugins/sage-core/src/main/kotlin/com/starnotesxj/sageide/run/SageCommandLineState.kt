@@ -54,6 +54,7 @@ class SageCommandLineState(
             }
         }
         var runFeedback: SageRunTypeFeedbackSession? = null
+        var presentationCommand: String? = null
         val commandLine = when (mode) {
             ExecutionMode.NATIVE -> {
                 val sageExecutable = executables!!.sage
@@ -86,6 +87,9 @@ class SageCommandLineState(
                     s,
                     SageLiveTypeSnapshotService.runtimeKey(RuntimeTarget.Wsl(distribution), sageExecutable),
                 )
+                if (runFeedback != null) {
+                    presentationCommand = wslRunPresentationCommand(distribution, sageExecutable, arguments)
+                }
                 GeneralCommandLine("wsl.exe")
                     .apply {
                         val feedback = runFeedback
@@ -145,7 +149,8 @@ class SageCommandLineState(
             }
         }
         val handler = try {
-            OSProcessHandler(commandLine)
+            presentationCommand?.let { OSProcessHandler(commandLine.createProcess(), it, commandLine.charset) }
+                ?: OSProcessHandler(commandLine)
         }
         catch (e: ExecutionException) {
             runFeedback?.close()

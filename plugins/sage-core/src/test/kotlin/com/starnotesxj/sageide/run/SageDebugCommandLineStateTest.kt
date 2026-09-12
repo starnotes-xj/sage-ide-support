@@ -54,6 +54,19 @@ class SageDebugCommandLineStateTest {
     }
 
     @Test
+    fun `WSL feedback console presentation omits the internal bootstrap wrapper`() {
+        val presentation = wslRunPresentationCommand(
+            "Ubuntu",
+            "/home/user/miniconda3/envs/sage/bin/sage",
+            listOf("/mnt/c/Users/星记/Downloads/test.sage"),
+        )
+
+        assertTrue(presentation.contains("-- /home/user/miniconda3/envs/sage/bin/sage"))
+        assertTrue(!presentation.contains("--exec"))
+        assertTrue(!presentation.contains("sage-ide-run-feedback"))
+    }
+
+    @Test
     fun `configured WSL executable prefers dedicated field and legacy POSIX fallback`() {
         val state = SageRunSettings.State()
         state.sageExecutable = "/legacy/sage"

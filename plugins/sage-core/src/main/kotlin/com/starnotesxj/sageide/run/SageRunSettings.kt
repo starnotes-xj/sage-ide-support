@@ -35,8 +35,9 @@ class SageRunSettings : PersistentStateComponent<SageRunSettings.State> {
         var wslCondaEnvironment: String = "sage"
         /** Optional absolute WSL path to conda; blank uses standard locations. */
         var wslCondaExecutable: String = ""
-        /** Opt-in: execute bounded current-document prefixes to observe live Sage types. */
-        var liveTypeProbingEnabled: Boolean = false
+        /** Enabled by default; older settings without the migration marker are upgraded once. */
+        var liveTypeProbingEnabled: Boolean = true
+        var liveTypeProbingConfigured: Boolean = true
         var containerExecutable: String = "docker"
         var dockerImage: String = "sagemath/sagemath"
         var dockerContainerDir: String = "/mnt/sage"
@@ -63,6 +64,10 @@ class SageRunSettings : PersistentStateComponent<SageRunSettings.State> {
     override fun loadState(state: State) {
         if (state.nativeSageExecutable.isBlank() && state.sageExecutable.isNotBlank()) {
             state.nativeSageExecutable = state.sageExecutable
+        }
+        if (!state.liveTypeProbingConfigured) {
+            state.liveTypeProbingEnabled = true
+            state.liveTypeProbingConfigured = true
         }
         myState = state
     }
