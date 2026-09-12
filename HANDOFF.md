@@ -168,3 +168,9 @@
 - WSL 正常运行的实时类型回传仍使用私有 `sitecustomize` 与 `/bin/sh -c` bootstrap，但 `OSProcessHandler` 现在用等价的直接 `wsl.exe -d <发行版> -- <sage> <脚本>` 作为控制台展示命令；因此运行窗口不再暴露 `--exec /bin/sh -c`、`PYTHONPATH` 或 `sage-ide-run-feedback`，实际执行和 sidecar 证据校验不变。
 - `liveTypeProbingEnabled` 对新配置默认启用；旧配置缺少一次性迁移标记时也升级为启用，之后用户手动关闭会正常保留。设置页、运行配置编辑器、右键运行/调试动作、Sage SDK 对话框和新建 Sage 文件项改由 `DynamicBundle` 的英文/`zh_CN` 资源包提供文本，随 JetBrains 当前语言包切换。
 - 已建立但未发布 `1.8.1` 完整索引候选包：`plugins/sage-core/build/distributions/sage-core-1.8.1.zip`，SHA-256 `06CC8F0522BE4A14BB5EF0B91C17A6454DEF6D8EA7C74B9F12BC398BAAB8B1D7`；嵌入索引 `106,486,050` bytes、SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3`。`SageDebugCommandLineStateTest`、`SageRunSettingsConfigurableTest` 定向运行均通过，且 `buildPlugin`、`git diff --check` 通过；尚未在真实 PyCharm 运行窗口人工确认，也未上传 Marketplace。
+
+## 2026-09-12 增量（v169，SageMath Core 1.8.1 已发布）
+
+- `v1.8.1` 已指向 `3b804269`；GitHub Actions run `34684783261` 的 core 与 release job 均成功，包含 Linux 编译/模型与运行时测试、完整 Sage 10.9 索引下载/解压/原始 SHA 校验、最终 ZIP 构建、`com.starnotesxj.sageide` Marketplace 原位发布及 GitHub Release 附件上传。
+- GitHub Release：`https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.8.1`。从该 release 重新下载的 `sage-core-1.8.1.zip` 为 `15,707,868` bytes、SHA-256 `8eedd76343f498e75ca47549234509bcea09d52f515501e004b9468229cca4a0`；嵌套 descriptor 为 `1.8.1`，含中文资源包，嵌入完整索引仍为 `106,486,050` bytes、SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3`。
+- 仍未完成的仅是干净 PyCharm 的人工 UI smoke（确认运行控制台只显示简洁命令、设置页和右键动作随中文语言包切换）；发布 CI 与远端资产验证不能替代该交互检查。
