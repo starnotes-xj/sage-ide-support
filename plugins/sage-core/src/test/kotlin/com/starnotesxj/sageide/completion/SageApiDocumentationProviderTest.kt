@@ -158,6 +158,73 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
         assertTrue(provider.getUrlFor(constructor, constructor)?.isEmpty() == true)
     }
 
+    fun testNativeDocumentationRejectsStaleTargetForListElement() {
+        myFixture.addFileToProject(
+            "image_module.py",
+            """
+                class Image:
+                    def split(self):
+                        '''WRONG Image.split documentation.'''
+                        ...
+            """.trimIndent(),
+        )
+        val imageVirtualFile = myFixture.findFileInTempDir("image_module.py")
+        val imageFile = requireNotNull(PsiManager.getInstance(project).findFile(imageVirtualFile))
+        val imageClass = requireNotNull(PsiTreeUtil.findChildOfType(imageFile, PyClass::class.java))
+        val staleTarget = requireNotNull(
+            imageClass.findMethodByName("split", false, TypeEvalContext.codeInsightFallback(project)),
+        )
+
+        myFixture.configureByText(
+            "cipher.py",
+            "intro: list[str] = ['prefix: 0011']\nflag_ciphertext = bytes.fromhex(intro[0].split(': ', 1)[1])",
+        )
+        val splitReference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+            .single { it.referencedName == "split" }
+        val documentation = SageApiDocumentationProvider().generateDoc(staleTarget, splitReference)
+        assertTrue(
+            documentation == null || "WRONG Image.split documentation" !in documentation,
+            documentation.orEmpty(),
+        )
+    }
+
+    fun testNativeDocumentationUsesProvenReceiverTypeBeforePlatformTarget() {
+        myFixture.addFileToProject(
+            "image_module.py",
+            """
+                class Image:
+                    def split(self):
+                        '''WRONG Image.split documentation.'''
+                        ...
+            """.trimIndent(),
+        )
+        val imageVirtualFile = myFixture.findFileInTempDir("image_module.py")
+        val imageFile = requireNotNull(PsiManager.getInstance(project).findFile(imageVirtualFile))
+        val imageClass = requireNotNull(PsiTreeUtil.findChildOfType(imageFile, PyClass::class.java))
+        val staleTarget = requireNotNull(
+            imageClass.findMethodByName("split", false, TypeEvalContext.codeInsightFallback(project)),
+        )
+
+        myFixture.configureByText(
+            "typed.py",
+            """
+                class Text:
+                    def split(self):
+                        '''RIGHT Text.split documentation.'''
+                        ...
+                value: Text = Text()
+                value.split()
+            """.trimIndent(),
+        )
+        val splitReference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+            .single { it.referencedName == "split" }
+        val documentation = requireNotNull(
+            SageApiDocumentationProvider().generateDoc(staleTarget, splitReference),
+        )
+        assertTrue("RIGHT Text.split documentation" in documentation, documentation)
+        assertTrue("WRONG Image.split documentation" !in documentation, documentation)
+    }
+
     fun testNativePythonDocumentationAvoidsRemoteSdkFormatter() {
         myFixture.addFileToProject(
             "native_docs.py",

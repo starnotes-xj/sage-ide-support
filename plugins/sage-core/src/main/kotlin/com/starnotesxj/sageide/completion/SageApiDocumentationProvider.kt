@@ -20,6 +20,8 @@ import com.jetbrains.python.psi.PyNamedParameter
 import com.jetbrains.python.psi.PyParameter
 import com.jetbrains.python.psi.PyQualifiedNameOwner
 import com.jetbrains.python.psi.PyReferenceExpression
+import com.jetbrains.python.psi.types.PyClassType
+import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sagemath.sageapi.SageApiEntry
 import com.starnotesxj.sagemath.sageapi.SageApiParameter
 import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
@@ -197,7 +199,20 @@ class SageApiDocumentationProvider : DocumentationProvider {
     private fun nativeDocumentationCandidates(
         element: PsiElement,
         originalElement: PsiElement?,
-    ): List<PsiElement> = sequenceOf(originalElement, element)
+    ): List<PsiElement> {
+        val originalReference = originalElement as? PyReferenceExpression
+        // A qualified source expression carries stronger identity than the
+        // platform documentation target.  If ``value.member`` has a
+        // receiver, never replace a failed/ambiguous receiver lookup with an
+        // unrelated same-named target such as ``Image.split``.  Returning no
+        // native owner is safer than showing documentation for another type.
+        val candidates = if (originalReference?.qualifier != null) {
+            sequenceOf(nativeReceiverMember(originalElement), originalElement)
+        }
+        else {
+            sequenceOf(nativeReceiverMember(originalElement), originalElement, element)
+        }
+        return candidates
             .filterNotNull()
             .flatMap { candidate ->
                 sequenceOf(
@@ -208,6 +223,26 @@ class SageApiDocumentationProvider : DocumentationProvider {
             .filterNotNull()
             .distinct()
             .toList()
+    }
+
+    /**
+     * The platform may hand a documentation provider a stale or ambiguous
+     * target (for example ``Image.split``) even though the original editor
+     * expression is ``intro[4].split`` and ``intro`` is ``list[str]``.  Ask
+     * the Python type evaluator about that receiver first and resolve the
+     * member on the proven class.  This keeps documentation tied to the
+     * expression under the caret instead of to a same-named declaration.
+     */
+    private fun nativeReceiverMember(originalElement: PsiElement?): PsiElement? {
+        val reference = originalElement as? PyReferenceExpression ?: return null
+        val memberName = reference.referencedName?.takeIf { it.isNotBlank() } ?: return null
+        val qualifier = reference.qualifier ?: return null
+        val context = runCatching { TypeEvalContext.codeInsightFallback(reference.project) }.getOrNull()
+            ?: return null
+        val receiverClass = (runCatching { context.getType(qualifier) }.getOrNull() as? PyClassType)?.pyClass
+            ?: return null
+        return runCatching { receiverClass.findMethodByName(memberName, true, context) }.getOrNull()
+    }
 
     private fun nativeDocString(owner: PyDocStringOwner): String? {
         val expressionText = runCatching { owner.docStringExpression?.stringValue }.getOrNull()

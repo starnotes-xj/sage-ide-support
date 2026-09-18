@@ -206,3 +206,10 @@
 - `SageApiDocumentationProvider` 现在从 typeshed 文件路径 `/typeshed/stdlib/<module>.pyi` 与嵌套 `PyClass`/`PyFunction` 还原稳定的标准库键；对 `__new__`/`__init__` 构造器先跳过构造器记录，直接查所属类文档，再沿父模块回退。普通函数、项目 docstring 和 Sage 索引顺序不变，外链继续返回空列表。
 - 新增 product 与 builtins.zip 两个真实 typeshed 路径回归：均断言显示 CPython 丰富正文、不含通用 object 文本、不产生 docs.python.org URL。定向 `SageApiDocumentationProviderTest` 已通过 `7/7`，包含原有 Sage/普通 Python/代码块测试。
 - 根版本升为 `1.8.6`；完整 v155 索引 `buildPlugin` 与 `verifyPluginStructure` 均成功。候选包 `plugins/sage-core/build/distributions/sage-core-1.8.6.zip` 大小 `21,050,849` bytes、SHA-256 `16F014078A902690D328D499949E983A45FBC3AE39DAFD6684C6BB24DB8B5DBB`；包内 descriptor 为 `com.starnotesxj.sageide`/`1.8.6`、`require-restart=true`，主 `sage-api-index.json` 为 `47,641,036` bytes，含 `64` 个 Python 和 `64` 个 Sage 文档桶，且 product/zip 文档记录均在包内。提交 `4b120db` 已推送到 `https://github.com/starnotes-xj/sage-ide-support.git` 的 `sagemath-core-1.8.0` 分支；尚未打 `v1.8.6` 发布标签或发布 Marketplace。仍需完全退出并重启 PyCharm 后人工确认 `product()`、`zip()` 的 Ctrl+Q 正文与截图一致。
+
+## 2026-09-18 增量（v175，按接收者类型防止错配文档）
+
+- 用户实测 `intro: list[str]` 的 `intro[4].split(": ", 1)` 被显示为无关的 `Image.split`；这不是文档正文问题，而是 DocumentationProvider 同时收到原始表达式和平台 documentation target 后，无条件信任了错误 target。
+- `SageApiDocumentationProvider` 现在对带接收者的原始成员表达式优先使用接收者实际 `PyClassType` 的成员声明；若接收者类型无法证明，则 fail-closed，不再把另一个同名 platform target（如 `Image.split`）作为候选。无接收者的普通函数、构造器和 Sage 索引路径不变。
+- 新增两个回归：`list[str]` 场景不会显示错误 `Image.split`；已证明的本地 `Text.split` 接收者会覆盖伪造的 `Image.split` target。`SageApiDocumentationProviderTest` 全部 `9/9` 通过。
+- 根版本升为 `1.8.7`；完整 v155 索引 `buildPlugin` 与 `verifyPluginStructure` 均成功。候选包 `plugins/sage-core/build/distributions/sage-core-1.8.7.zip` 大小 `21,051,643` bytes、SHA-256 `9E75C0F136A9888C8CF9D6DC56278C9AE6B77CA70586C04062A31675822656E9`；包内 descriptor 为 `com.starnotesxj.sageide`/`1.8.7`、`require-restart=true`，主索引 `47,641,036` bytes，含 `64` 个 Python 和 `64` 个 Sage 文档桶。定向 provider 测试 `9/9` 通过；待提交并推送 `sagemath-core-1.8.0` 分支。真实 PyCharm 中应确认 `intro[4].split` 显示 `str.split`，而不是 `Image.split`。
