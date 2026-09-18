@@ -1,8 +1,11 @@
 package com.starnotesxj.sageide.completion
 
+import com.intellij.psi.PsiManager
 import com.intellij.psi.util.PsiTreeUtil
+import com.jetbrains.python.psi.PyClass
 import com.jetbrains.python.psi.PyDocStringOwner
 import com.jetbrains.python.psi.PyReferenceExpression
+import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sageide.SagePluginTestBase
 import com.starnotesxj.sagemath.sageapi.SageApiDocumentation
 import com.starnotesxj.sagemath.sageapi.SageApiEntry
@@ -12,7 +15,6 @@ import com.starnotesxj.sagemath.sageapi.SageApiParameter
 import com.starnotesxj.sagemath.sageapi.SageApiSignature
 import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
 import com.starnotesxj.sagemath.sageapi.SageTypeRef
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SageApiDocumentationProviderTest : SagePluginTestBase() {
@@ -42,20 +44,118 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
         }
     }
 
-    fun testPlainPythonFileDoesNotConsumeSageIndex() {
+    fun testPlainPythonFileDoesNotConsumeSageIndexButRendersLocalDocstrings() {
         val indexResource = javaClass.classLoader.getResourceAsStream("sage-api-index.json")!!
         SageApiIndexService.getInstance().install(
             SageApiIndexQuery(indexResource.bufferedReader().use { SageApiIndexJsonReader.read(it.readText()) }),
         )
         try {
-            myFixture.configureByText("plain.py", "solve_right<caret>")
-            val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
-                .firstOrNull()
-            requireNotNull(target)
-            assertTrue(SageApiDocumentationProvider().generateDoc(target, target) == null)
+            myFixture.addFileToProject(
+                "plain_native_docs.py",
+                """
+                    def documented(value: int) -> int:
+                        '''Return the exact value for a normal Python file.'''
+                        return value
+                """.trimIndent(),
+            )
+            myFixture.configureByText("plain.py", "from plain_native_docs import documented\ndocumented<caret>")
+            val reference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+                .lastOrNull { it.referencedName == "documented" }
+            requireNotNull(reference)
+            val resolved = requireNotNull(reference.reference.resolve())
+            val documentation = requireNotNull(SageApiDocumentationProvider().generateDoc(resolved, reference))
+            assertTrue("Return the exact value" in documentation, documentation)
+            assertTrue("sage." !in documentation, documentation)
         } finally {
             SageApiIndexService.getInstance().install(null)
         }
+    }
+
+    fun testOfflineStdlibDocumentationCoversTypeshedConstructors() {
+        val builtinDocumentation = requireNotNull(PythonStdlibDocumentationService.documentationFor("len"))
+        assertTrue("Return the number of items" in builtinDocumentation, builtinDocumentation)
+
+        // The platform fixture does not mount its own typeshed SDK.  This
+        // deliberately documentation-free stub has the same qualified PSI
+        // shape as typeshed's ``itertools.product`` constructor.
+        myFixture.addFileToProject(
+            "itertools.pyi",
+            """
+                class product:
+                    def __new__(cls, *iterables: object, repeat: int = 1) -> product:
+                        '''Create and return a new object. See help(type) for accurate signature.'''
+                        ...
+            """.trimIndent(),
+        )
+        myFixture.configureByText("stdlib.py", "from itertools import product\nproduct<caret>([1, 2])")
+        val reference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+            .lastOrNull { it.referencedName == "product" }
+        requireNotNull(reference)
+        val resolved = requireNotNull(reference.reference.resolve())
+        val constructor = requireNotNull(
+            (resolved as? PyClass)?.findMethodByName("__new__", false, TypeEvalContext.codeInsightFallback(project)),
+        )
+        val provider = SageApiDocumentationProvider()
+        val documentation = requireNotNull(provider.generateDoc(constructor, reference))
+        assertTrue("Cartesian product of input iterables" in documentation, documentation)
+        assertTrue("Create and return a new object" !in documentation, documentation)
+        assertTrue("docs.python.org" !in documentation, documentation)
+        assertTrue(provider.getUrlFor(constructor, reference)?.isEmpty() == true)
+    }
+
+    fun testTypeshedPathRecoversStdlibNameWhenPsiQualifiedNameIsTransient() {
+        // This uses the same path segment as the SDK bundled typeshed.  The
+        // fixture's PSI qualified name is project-dependent (and therefore
+        // deliberately not asserted); the provider must instead recover the
+        // stable ``itertools.product`` key from the typeshed layout.
+        myFixture.addFileToProject(
+            "typeshed/stdlib/itertools.pyi",
+            """
+                class product:
+                    def __new__(cls, *iterables: object, repeat: int = 1) -> product:
+                        '''Create and return a new object. See help(type) for accurate signature.'''
+                        ...
+            """.trimIndent(),
+        )
+        val virtualFile = myFixture.findFileInTempDir("typeshed/stdlib/itertools.pyi")
+        val typeshedFile = requireNotNull(PsiManager.getInstance(project).findFile(virtualFile))
+        val product = requireNotNull(PsiTreeUtil.findChildOfType(typeshedFile, PyClass::class.java))
+        val constructor = requireNotNull(
+            product.findMethodByName("__new__", false, TypeEvalContext.codeInsightFallback(project)),
+        )
+
+        val provider = SageApiDocumentationProvider()
+        val documentation = requireNotNull(provider.generateDoc(constructor, constructor))
+        assertTrue("Cartesian product of input iterables" in documentation, documentation)
+        assertTrue("Create and return a new object" !in documentation, documentation)
+        assertTrue(provider.getUrlFor(constructor, constructor)?.isEmpty() == true)
+    }
+
+    fun testTypeshedPathRecoversBuiltinsConstructorDocumentation() {
+        // ``zip`` is the builtin counterpart of the product regression from
+        // the user report: its constructor record also carries object.__new__
+        // prose, while the enclosing builtins.zip record has the useful text.
+        myFixture.addFileToProject(
+            "typeshed/stdlib/builtins.pyi",
+            """
+                class zip:
+                    def __new__(cls, *iterables: object, strict: bool = False) -> zip:
+                        '''Create and return a new object. See help(type) for accurate signature.'''
+                        ...
+            """.trimIndent(),
+        )
+        val virtualFile = myFixture.findFileInTempDir("typeshed/stdlib/builtins.pyi")
+        val typeshedFile = requireNotNull(PsiManager.getInstance(project).findFile(virtualFile))
+        val zip = requireNotNull(PsiTreeUtil.findChildOfType(typeshedFile, PyClass::class.java))
+        val constructor = requireNotNull(
+            zip.findMethodByName("__new__", false, TypeEvalContext.codeInsightFallback(project)),
+        )
+
+        val provider = SageApiDocumentationProvider()
+        val documentation = requireNotNull(provider.generateDoc(constructor, constructor))
+        assertTrue("The zip object yields n-length tuples" in documentation, documentation)
+        assertTrue("Create and return a new object" !in documentation, documentation)
+        assertTrue(provider.getUrlFor(constructor, constructor)?.isEmpty() == true)
     }
 
     fun testNativePythonDocumentationAvoidsRemoteSdkFormatter() {

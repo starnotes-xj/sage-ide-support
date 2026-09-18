@@ -24,6 +24,7 @@ import com.starnotesxj.sagemath.sageapi.SageApiReturnEvidence
 import com.starnotesxj.sagemath.sageapi.SageApiReturnEvidenceKind
 import com.starnotesxj.sagemath.sageapi.SageTypeRef
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import com.starnotesxj.sageide.completion.SageApiIndexService
@@ -1740,6 +1741,29 @@ result = matrix([[1]])
         )
 
         assertNull(resolved)
+    }
+
+    fun testLiveSnapshotDemandIsLimitedToTopLevelMemberReceivers() {
+        myFixture.configureByText(
+            "probe-policy.sage",
+            """P = dynamically_created_point()
+P.log()
+def local(T):
+    T.log()
+""",
+        )
+        val references = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+        val topLevelReceiver = references.single { it.referencedName == "P" }
+        val functionReceiver = references.single { it.referencedName == "T" }
+        val calls = PsiTreeUtil.collectElementsOfType(myFixture.file, PyCallExpression::class.java)
+        val memberCall = calls.single { it.callee?.text == "P.log" }
+        val globalFactoryCall = calls.single { it.callee?.text == "dynamically_created_point" }
+        val service = SageLiveTypeSnapshotService.getInstance(myFixture.project)
+
+        assertTrue(service.acceptsMemberProbe(topLevelReceiver))
+        assertFalse(service.acceptsMemberProbe(functionReceiver))
+        assertTrue(service.acceptsDynamicCallProbe(memberCall))
+        assertFalse(service.acceptsDynamicCallProbe(globalFactoryCall))
     }
 
     fun testNormalRunEvidenceSupportsWhitespaceOnlyCompletionAppend() {

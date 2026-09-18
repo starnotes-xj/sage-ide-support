@@ -38,17 +38,18 @@ object SageApiIndexJsonWriter {
         fields += jsonField("signatures", entry.signatures.joinToString(prefix = "[", postfix = "]", transform = ::signatureJson))
         entry.valueType?.let { fields += jsonField("valueType", typeJson(it)) }
         entry.documentation?.let { documentation ->
-            fields += jsonField(
-                "documentation",
-                "{" +
-                    jsonField("summary", documentation.summary?.let(::jsonString) ?: "null") + "," +
-                    jsonField("body", documentation.body?.let(::jsonString) ?: "null") + "," +
-                    jsonField("examples", stringArray(documentation.examples)) +
-                    "}",
-            )
+            fields += jsonField("documentation", writeDocumentation(documentation))
         }
         return fields.joinToString(prefix = "{", postfix = "}", separator = ",")
     }
+
+    /** JSON representation used by the lazy plugin documentation sidecar. */
+    fun writeDocumentation(documentation: SageApiDocumentation): String =
+        "{" +
+            jsonField("summary", documentation.summary?.let(::jsonString) ?: "null") + "," +
+            jsonField("body", documentation.body?.let(::jsonString) ?: "null") + "," +
+            jsonField("examples", stringArray(documentation.examples)) +
+            "}"
 
     private fun signatureJson(signature: SageApiSignature): String =
         "{" +

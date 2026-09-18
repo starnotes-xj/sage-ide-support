@@ -1,9 +1,16 @@
 <!-- BUILD_USING_BAZEL_MARKER -->
-<idea-plugin>
+<!--
+  Sage registers application services, Language/MetaLanguage singletons,
+  inspections and actions.  Those platform registries cannot safely hold two
+  generations while the old plugin ID is being migrated, so updates must be
+  activated only after a full IDE restart.
+-->
+<idea-plugin require-restart="true">
   <id>com.starnotesxj.sageide</id>
   <name>SageMath Core</name>
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
   <version>1.8.0</version>
+  <incompatible-with>com.starnotesxj.sagemath.ctf.sage-core</incompatible-with>
 
   <change-notes><![CDATA[
   <ul>

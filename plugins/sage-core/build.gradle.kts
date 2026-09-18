@@ -1,6 +1,9 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import java.io.File
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
 plugins {
@@ -85,6 +88,61 @@ private fun sha256(file: File): String {
     return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 }
 
+private val SAGE_DOCUMENTATION_RESOURCE_DIRECTORY = "sage-api-docs"
+private val SAGE_DOCUMENTATION_FIELD_SEPARATOR = '\u001f'
+private val SAGE_DOCUMENTATION_RECORD_SEPARATOR = '\t'
+private val SAGE_DOCUMENTATION_BUCKET_MASK = 0x3f
+
+private fun documentationRecord(documentation: Map<String, Any?>): String = JsonOutput.toJson(documentation)
+
+@Suppress("UNCHECKED_CAST")
+private fun splitSageIndexDocumentation(source: File, resourceRoot: File) {
+    val parsed = JsonSlurper().parse(source) as? Map<String, Any?>
+        ?: error("sage.bundle.fullIndex must contain a JSON object: $source")
+    val entries = parsed["entries"] as? List<*>
+        ?: error("sage.bundle.fullIndex must contain an entries array: $source")
+    val records = linkedMapOf<String, StringBuilder>()
+    val contractEntries = entries.map { value ->
+        val entry = value as? Map<String, Any?>
+            ?: error("sage.bundle.fullIndex entries must be JSON objects: $source")
+        val documentation = entry["documentation"] as? Map<String, Any?>
+        if (documentation != null) {
+            val kind = entry["kind"] as? String ?: error("Sage index entry kind is missing")
+            val qualifiedName = entry["qualifiedName"] as? String ?: error("Sage index entry qualifiedName is missing")
+            val key = kind + SAGE_DOCUMENTATION_FIELD_SEPARATOR + qualifiedName
+            val resourceName = "%s/%02x.ndjson".format(
+                SAGE_DOCUMENTATION_RESOURCE_DIRECTORY,
+                key.hashCode() and SAGE_DOCUMENTATION_BUCKET_MASK,
+            )
+            records.getOrPut(resourceName, ::StringBuilder)
+                .append(key)
+                .append(SAGE_DOCUMENTATION_RECORD_SEPARATOR)
+                .append(documentationRecord(documentation))
+                .append('\n')
+        }
+        entry - "documentation"
+    }
+    val contractIndex = parsed + ("entries" to contractEntries)
+    resourceRoot.resolve("sage-api-index.json").writeText(JsonOutput.toJson(contractIndex), StandardCharsets.UTF_8)
+
+    val documentationDirectory = resourceRoot.resolve(SAGE_DOCUMENTATION_RESOURCE_DIRECTORY)
+    if (documentationDirectory.exists()) {
+        check(documentationDirectory.toPath().startsWith(resourceRoot.toPath())) {
+            "Refusing to remove documentation resources outside processResources output"
+        }
+        documentationDirectory.deleteRecursively()
+    }
+    records.forEach { (resourceName, lines) ->
+        val target = resourceRoot.resolve(resourceName)
+        target.parentFile.mkdirs()
+        target.writeText(lines.toString(), StandardCharsets.UTF_8)
+    }
+    logger.lifecycle(
+        "Bundled Sage contracts without documentation bodies: ${entries.size} entries, " +
+            "${records.values.sumOf { it.count { character -> character == '\n' } }} documentation records in ${records.size} buckets",
+    )
+}
+
 val verifyReleaseFullIndex = tasks.register("verifyReleaseFullIndex") {
     group = "verification"
     description = "Refuses Marketplace publication without a verified full Sage API index."
@@ -144,13 +202,21 @@ tasks.matching { it.name == "publishPlugin" }.configureEach {
 
 tasks.named<ProcessResources>("processResources") {
     inputs.property("sage.bundle.fullIndex", fullIndexPath ?: "")
+    doLast {
+        val documentationDirectory = destinationDir.resolve(SAGE_DOCUMENTATION_RESOURCE_DIRECTORY)
+        if (fullIndexPath == null && documentationDirectory.exists()) {
+            check(documentationDirectory.toPath().startsWith(destinationDir.toPath())) {
+                "Refusing to remove documentation resources outside processResources output"
+            }
+            documentationDirectory.deleteRecursively()
+        }
+    }
     if (fullIndexPath != null) {
         val source = file(fullIndexPath)
         inputs.file(source)
         doLast {
             require(source.isFile) { "sage.bundle.fullIndex must point to a regular file: $source" }
-            val target = destinationDir.resolve("sage-api-index.json")
-            source.copyTo(target, overwrite = true)
+            splitSageIndexDocumentation(source, destinationDir)
         }
     }
 }

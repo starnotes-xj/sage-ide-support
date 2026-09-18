@@ -6,6 +6,7 @@ import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.PythonDocumentationHighlightingService
 import com.jetbrains.python.documentation.PythonDocumentationProvider
@@ -13,6 +14,7 @@ import com.jetbrains.python.highlighting.PyHighlighter
 import com.jetbrains.python.psi.PyAnnotationOwner
 import com.jetbrains.python.psi.PyClass
 import com.jetbrains.python.psi.PyDocStringOwner
+import com.jetbrains.python.psi.PyFile
 import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyNamedParameter
 import com.jetbrains.python.psi.PyParameter
@@ -28,10 +30,12 @@ import com.starnotesxj.sageide.sugar.SageStubIndex
 /**
  * Supplies Quick Documentation from the validated Sage API index and local PSI.
  *
- * Sage index documentation is authoritative for Sage source and Sage SDK stubs;
- * native Python declarations are handled only inside the Sage context gate.
- * Ordinary Python files remain untouched, so Python's native provider keeps its
- * normal behavior outside the Sage boundary.
+ * Sage index documentation is authoritative for Sage source and Sage SDK stubs.
+ * Native Python declarations use local PSI docstrings in every Python file, with
+ * an offline standard-library sidecar for declarations such as typeshed's
+ * ``itertools.product`` that deliberately contain only signatures.  This keeps
+ * Ctrl+Q useful with a remote/WSL SDK without invoking the Python formatter or
+ * reducing standard-library documentation to a browser link.
  */
 class SageApiDocumentationProvider : DocumentationProvider {
     override fun getQuickNavigateInfo(element: PsiElement, originalElement: PsiElement?): String? =
@@ -41,6 +45,21 @@ class SageApiDocumentationProvider : DocumentationProvider {
     override fun generateDoc(element: PsiElement, originalElement: PsiElement?): String? =
         findEntry(element, originalElement)?.let { renderDocumentation(it, element.project) }
             ?: renderNativeDocumentation(element, originalElement)
+
+    /**
+     * A rich offline result must not be decorated with Python's remote-SDK
+     * fallback URL.  An empty list is intentional here: unlike ``null``, it
+     * says that this provider has no external documentation links to append.
+     */
+    override fun getUrlFor(element: PsiElement, originalElement: PsiElement?): List<String>? =
+        if (findEntry(element, originalElement) != null ||
+            findNativeDocumentationOwner(element, originalElement) != null
+        ) {
+            emptyList()
+        }
+        else {
+            null
+        }
 
     /**
      * The Python provider's full doc builder invokes an external formatter and
@@ -56,7 +75,19 @@ class SageApiDocumentationProvider : DocumentationProvider {
     private fun renderNativeDocumentation(element: PsiElement, originalElement: PsiElement?): String? {
         val owner = findNativeDocumentationOwner(element, originalElement) ?: return null
         val quickInfo = nativeQuickInfo(owner, originalElement ?: element)
-        val docString = nativeDocString(owner)
+        val psiDocString = nativeDocString(owner)
+        val standardLibraryDocumentation = nativeStandardLibraryDocumentation(element, originalElement, owner)
+        // PyCharm commonly resolves ``product()`` and ``zip()`` through an
+        // inherited ``object.__new__``.  Its generic “Create and return a new
+        // object” text is technically true but not useful; the original call
+        // reference still identifies the concrete runtime class, so prefer
+        // that class's CPython documentation for constructor targets.
+        val docString = if (isConstructorOwner(owner)) {
+            standardLibraryDocumentation ?: psiDocString
+        }
+        else {
+            psiDocString ?: standardLibraryDocumentation
+        }
         if (quickInfo.isNullOrBlank() && docString.isNullOrBlank()) return null
 
         return buildString {
@@ -141,19 +172,9 @@ class SageApiDocumentationProvider : DocumentationProvider {
         val contextElement = originalElement ?: element
         val contextFile = runCatching { contextElement.containingFile }.getOrNull()
             ?: runCatching { element.containingFile }.getOrNull()
-        if (!SageFileUtils.isSageFile(contextFile) && !SageStubIndex.isSageStubFile(contextFile)) return null
+        if (!isNativeDocumentationContext(contextFile)) return null
 
-        val candidates = sequenceOf(originalElement, element)
-            .filterNotNull()
-            .flatMap { candidate ->
-                sequenceOf(
-                    candidate,
-                    runCatching { candidate.reference?.resolve() }.getOrNull(),
-                )
-            }
-            .filterNotNull()
-            .distinct()
-            .toList()
+        val candidates = nativeDocumentationCandidates(element, originalElement)
         // Prefer the resolved declaration itself.  The containing PyFile is
         // also a doc-string owner, but selecting it first would show
         // ``File \"native.sage\"`` instead of the function/class under Ctrl+Q.
@@ -167,6 +188,26 @@ class SageApiDocumentationProvider : DocumentationProvider {
             }
             .firstOrNull()
     }
+
+    private fun isNativeDocumentationContext(contextFile: PsiFile?): Boolean =
+        SageFileUtils.isSageFile(contextFile) ||
+            SageStubIndex.isSageStubFile(contextFile) ||
+            contextFile is PyFile
+
+    private fun nativeDocumentationCandidates(
+        element: PsiElement,
+        originalElement: PsiElement?,
+    ): List<PsiElement> = sequenceOf(originalElement, element)
+            .filterNotNull()
+            .flatMap { candidate ->
+                sequenceOf(
+                    candidate,
+                    runCatching { candidate.reference?.resolve() }.getOrNull(),
+                )
+            }
+            .filterNotNull()
+            .distinct()
+            .toList()
 
     private fun nativeDocString(owner: PyDocStringOwner): String? {
         val expressionText = runCatching { owner.docStringExpression?.stringValue }.getOrNull()
@@ -196,6 +237,95 @@ class SageApiDocumentationProvider : DocumentationProvider {
             }
         }.takeIf { it.isNotBlank() }
     }
+
+    /**
+     * Typeshed is intentionally documentation-free.  For a standard-library
+     * class constructor it consequently resolves a ``__new__`` function with
+     * no useful prose even though the enclosing runtime class has it.  Look
+     * up the exact declaration first, then its lexical owners in the
+     * generated, offline Python 3.13 documentation sidecar.  Constructors
+     * are the sole exception: CPython gives many ``__new__`` records the
+     * generic object text, so they start at the enclosing class instead.
+     * Local/project declarations never match these qualified keys and remain
+     * PSI-first above.
+     */
+    private fun nativeStandardLibraryDocumentation(
+        element: PsiElement,
+        originalElement: PsiElement?,
+        owner: PyDocStringOwner,
+    ): String? {
+        val candidateOwners = nativeDocumentationCandidates(element, originalElement)
+            .plus(owner)
+            .distinct()
+            .asSequence()
+            .flatMap(::nativeQualifiedNames)
+            .flatMap { qualifiedName ->
+                val initialName = qualifiedName.takeUnless {
+                    isConstructorOwner(owner) && it.substringAfterLast('.') in CONSTRUCTOR_METHOD_NAMES
+                } ?: qualifiedName.substringBeforeLast('.', missingDelimiterValue = "")
+                generateSequence(initialName.takeIf { it.isNotBlank() }) { current ->
+                    current.substringBeforeLast('.', missingDelimiterValue = "").takeIf { it.isNotBlank() }
+                }
+            }
+            .distinct()
+        return candidateOwners.mapNotNull(PythonStdlibDocumentationService::documentationFor)
+            .firstOrNull()
+    }
+
+    /**
+     * The Python plugin sometimes presents a constructor target with only an
+     * unqualified name (or directly as ``object.__new__``).  Typeshed's file
+     * layout is authoritative in that case: ``typeshed/stdlib/itertools.pyi``
+     * containing ``class product`` denotes ``itertools.product`` regardless
+     * of what the transient resolver called the target.
+     */
+    private fun nativeQualifiedNames(candidate: PsiElement): Sequence<String> = sequence {
+        val candidateQualifiedName = (candidate as? PyQualifiedNameOwner)?.qualifiedName
+        if (!candidateQualifiedName.isNullOrBlank()) {
+            yield(candidateQualifiedName)
+        }
+        val enclosingClassQualifiedName = runCatching {
+            PsiTreeUtil.getParentOfType(candidate, PyClass::class.java, false)
+        }.getOrNull()
+            ?.qualifiedName
+        if (!enclosingClassQualifiedName.isNullOrBlank()) {
+            yield(enclosingClassQualifiedName)
+        }
+        val typeshedName = typeshedQualifiedName(candidate)
+        if (!typeshedName.isNullOrBlank()) {
+            yield(typeshedName)
+        }
+    }
+
+    private fun typeshedQualifiedName(candidate: PsiElement): String? {
+        val path = candidate.containingFile?.virtualFile?.path
+            ?.replace('\\', '/')
+            ?: return null
+        val marker = "/typeshed/stdlib/"
+        val relativePath = path.substringAfter(marker, missingDelimiterValue = "")
+            .removeSuffix(".pyi")
+            .removeSuffix(".py")
+        if (relativePath.isBlank()) return null
+        val module = relativePath
+            .removeSuffix("/__init__")
+            .replace('/', '.')
+            .takeIf { it.isNotBlank() }
+            ?: return null
+        val nestedNames = generateSequence(candidate) { current -> current.parent }
+            .mapNotNull { element ->
+                when (element) {
+                    is PyClass -> element.name
+                    is PyFunction -> element.name
+                    else -> null
+                }
+            }
+            .toList()
+            .asReversed()
+        return listOf(module).plus(nestedNames).joinToString(".")
+    }
+
+    private fun isConstructorOwner(owner: PyDocStringOwner): Boolean =
+        owner is PyFunction && owner.name in CONSTRUCTOR_METHOD_NAMES
 
     private fun findEntry(element: PsiElement, originalElement: PsiElement?): SageApiEntry? {
         // Ctrl+Q supplies the documentation target separately from the caret
@@ -262,7 +392,10 @@ class SageApiDocumentationProvider : DocumentationProvider {
         append(DocumentationMarkup.DEFINITION_START)
         append(renderSignatureHtml(entry))
         append(DocumentationMarkup.DEFINITION_END)
-        val documentation = entry.documentation
+        // The full release index keeps documentation in small lazy sidecar
+        // buckets.  Completion/type metadata stays resident, while Ctrl+Q
+        // retrieves only the requested document.
+        val documentation = SageApiDocumentationService.getInstance().documentation(entry)
         if (documentation == null) return@buildString
 
         append(DocumentationMarkup.CONTENT_START)
@@ -544,6 +677,7 @@ class SageApiDocumentationProvider : DocumentationProvider {
         val DOUBLE_INLINE_CODE = Regex("``([^`\\n]+)``")
         val INLINE_CODE = Regex("`([^`\\n]+)`")
         val BOLD = Regex("\\*\\*([^*\\n]+)\\*\\*")
+        val CONSTRUCTOR_METHOD_NAMES = setOf("__new__", "__init__")
         val SECTION_TITLES = setOf(
             "parameters", "parameter", "args", "arguments", "keyword arguments", "keywords",
             "input", "inputs", "output", "outputs", "return", "returns", "return value", "yields",

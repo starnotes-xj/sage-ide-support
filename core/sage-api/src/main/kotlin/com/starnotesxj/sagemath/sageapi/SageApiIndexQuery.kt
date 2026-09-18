@@ -1,26 +1,28 @@
 package com.starnotesxj.sagemath.sageapi
 
-import java.util.concurrent.ConcurrentHashMap
+import java.util.LinkedHashMap
 
 /** Read-only, indexed queries over the immutable, versioned Sage API index. */
 class SageApiIndexQuery(val index: SageApiIndex) {
     private val entriesByQualifiedName: Map<String, List<SageApiEntry>>
     private val entriesByOwner: Map<String, List<SageApiEntry>>
     private val entriesByNamespace: Map<String, List<SageApiEntry>>
-    private val moduleEntriesByOwner: Map<String, List<SageApiEntry>>
     private val aliasesToEntries: Map<String, List<SageApiEntry>>
     private val entriesByShortName: Map<String, List<SageApiEntry>>
     private val classesByLookup: Map<String, List<SageApiEntry>>
     private val classesByShortName: Map<String, List<SageApiEntry>>
     private val functionsByLookup: Map<String, List<SageApiEntry>>
     private val functionsByShortName: Map<String, List<SageApiEntry>>
-    private val reachableCache = ConcurrentHashMap<String, Map<String, Int>>()
+    // The full index has many concrete classes. These are lookup accelerators,
+    // not authoritative data, so they must stay bounded during long CTF
+    // sessions that visit many dynamically generated receiver types.
+    private val reachableCache = BoundedLruCache<String, Map<String, Int>>(MAX_CACHED_TYPE_GRAPHS)
+    private val linearizationCache = BoundedLruCache<String, List<String>>(MAX_CACHED_TYPE_GRAPHS)
 
     init {
         val byQualifiedName = linkedMapOf<String, MutableList<SageApiEntry>>()
         val byOwner = linkedMapOf<String, MutableList<SageApiEntry>>()
         val byNamespace = linkedMapOf<String, MutableList<SageApiEntry>>()
-        val byModuleOwner = linkedMapOf<String, MutableList<SageApiEntry>>()
         val byAlias = linkedMapOf<String, MutableList<SageApiEntry>>()
         val byShortName = linkedMapOf<String, MutableList<SageApiEntry>>()
         val classLookup = linkedMapOf<String, MutableList<SageApiEntry>>()
@@ -42,7 +44,6 @@ class SageApiIndexQuery(val index: SageApiIndex) {
             // and aliases exported directly by a module.
             entry.ownerName?.let { owner ->
                 byOwner.getOrPut(owner) { mutableListOf() }.add(entry)
-                byModuleOwner.getOrPut(owner) { mutableListOf() }.add(entry)
             }
             if (entry.kind == SageApiSymbolKind.CLASS) {
                 addLookup(classLookup, entry.qualifiedName, entry)
@@ -57,11 +58,12 @@ class SageApiIndexQuery(val index: SageApiIndex) {
         }
 
         entriesByQualifiedName = freeze(byQualifiedName)
-        entriesByOwner = freeze(byOwner)
+        // Module export and member queries are both owner lookups. Keeping two
+        // complete maps duplicated every full-index entry and retained a large
+        // amount of heap for no semantic gain. A stable sorted owner map serves
+        // both use cases; member lookup continues to apply its own C3 ordering.
+        entriesByOwner = freezeSorted(byOwner)
         entriesByNamespace = freezeSorted(byNamespace)
-        moduleEntriesByOwner = byModuleOwner.mapValues { (_, values) ->
-            values.sortedWith(compareBy<SageApiEntry> { it.qualifiedName.substringAfterLast('.') }.thenBy { it.kind.name }).toList()
-        }
         aliasesToEntries = freeze(byAlias)
         entriesByShortName = freeze(byShortName)
         classesByLookup = freeze(classLookup)
@@ -102,7 +104,7 @@ class SageApiIndexQuery(val index: SageApiIndex) {
      * only its child entries are returned.
      */
     fun moduleEntries(moduleQualifiedName: String): List<SageApiEntry> =
-        moduleEntriesByOwner[moduleQualifiedName].orEmpty()
+        entriesByOwner[moduleQualifiedName].orEmpty()
 
     /** Direct namespace declarations, including ownerless implicit sage.all API symbols. */
     fun namespaceEntries(namespaceQualifiedName: String): List<SageApiEntry> =
@@ -147,9 +149,9 @@ class SageApiIndexQuery(val index: SageApiIndex) {
      * aliases and inconsistent/cyclic parent graphs stop at the known owner;
      * they never cause a parent member to be fabricated or selected randomly.
      */
-    private fun linearizedTypeNames(observedName: String): List<String> {
+    private fun linearizedTypeNames(observedName: String): List<String> = linearizationCache.getOrPut(observedName) {
         val resolved = classEntries(observedName).map { it.qualifiedName }.distinct()
-        if (resolved.size > 1) return listOf(observedName)
+        if (resolved.size > 1) return@getOrPut listOf(observedName)
         val start = resolved.singleOrNull() ?: observedName
         val memo = mutableMapOf<String, List<String>>()
         val active = mutableSetOf<String>()
@@ -195,7 +197,7 @@ class SageApiIndexQuery(val index: SageApiIndex) {
             return memo.getValue(canonical)
         }
 
-        return linearize(start)
+        linearize(start)
     }
 
     fun members(ownerQualifiedName: String, memberName: String): List<SageApiEntry> =
@@ -298,7 +300,7 @@ class SageApiIndexQuery(val index: SageApiIndex) {
     fun reachableTypeNames(observedName: String): Set<String> = reachableTypeRanks(observedName).keys
 
     private fun reachableTypeRanks(observedName: String): Map<String, Int> =
-        reachableCache.computeIfAbsent(observedName) {
+        reachableCache.getOrPut(observedName) {
             val ranks = linkedMapOf<String, Int>()
             val pending = ArrayDeque<Pair<String, Int>>()
             pending.add(observedName to 0)
@@ -333,6 +335,7 @@ class SageApiIndexQuery(val index: SageApiIndex) {
 
     private companion object {
         val MEMBER_KINDS = setOf(SageApiSymbolKind.METHOD, SageApiSymbolKind.PROPERTY, SageApiSymbolKind.CONSTANT)
+        const val MAX_CACHED_TYPE_GRAPHS = 1_024
 
         fun addLookup(target: MutableMap<String, MutableList<SageApiEntry>>, key: String, entry: SageApiEntry) {
             target.getOrPut(key) { mutableListOf() }.add(entry)
@@ -345,5 +348,20 @@ class SageApiIndexQuery(val index: SageApiIndex) {
             source.mapValues { (_, values) ->
                 values.sortedWith(compareBy<SageApiEntry> { it.qualifiedName.substringAfterLast('.') }.thenBy { it.kind.name })
             }
+    }
+}
+
+/** A small synchronized LRU for derived query results over an immutable index. */
+private class BoundedLruCache<K : Any, V : Any>(maximumEntries: Int) {
+    init {
+        require(maximumEntries > 0) { "LRU cache size must be positive" }
+    }
+
+    private val values = object : LinkedHashMap<K, V>(maximumEntries, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?): Boolean = size > maximumEntries
+    }
+
+    fun getOrPut(key: K, compute: () -> V): V = synchronized(values) {
+        values[key] ?: compute().also { values[key] = it }
     }
 }

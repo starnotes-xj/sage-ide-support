@@ -21,6 +21,10 @@ object SageApiIndexJsonReader {
         )
     }
 
+    /** Parses one documentation record from the lazy plugin documentation sidecar. */
+    fun readDocumentation(json: String): SageApiDocumentation =
+        parseDocumentation(JsonParser(json).parse(), "$.documentation")
+
     private fun parseEntry(value: Any?, path: String): SageApiEntry {
         val objectValue = value.asObject(path)
         return SageApiEntry(

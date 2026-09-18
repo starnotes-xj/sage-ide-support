@@ -124,8 +124,8 @@ class SageTypeProvider : PyTypeProviderBase() {
         // the generic qualified-reference guard: the root ``P`` in ``P.log``
         // is the global completion receiver, while the service itself rejects
         // a real attribute expression such as ``obj.P``.
-        SageLiveTypeSnapshotService.getInstance(referenceExpression.project)
-            .typeForReference(referenceExpression)
+        val liveTypes = SageLiveTypeSnapshotService.getInstance(referenceExpression.project)
+        liveTypes.typeForReference(referenceExpression)
             ?.let { return it }
         if (referenceExpression.isQualified) return null
 
@@ -164,6 +164,11 @@ class SageTypeProvider : PyTypeProviderBase() {
         val resolvedTarget = resolved as? PyTargetExpression
         if (resolvedTarget != null && SageFileUtils.isSageFile(resolvedTarget.containingFile)) {
             getReferenceType(resolvedTarget, context, referenceExpression)?.get()?.let { return it }
+            // Dynamic execution is the fallback, not the first answer. This
+            // path is reached only after the static assignment contracts could
+            // not establish a concrete type, and the service additionally
+            // limits it to an explicit `value.member` completion receiver.
+            return liveTypes.scheduleTypeForMemberReceiver(referenceExpression)
         }
 
         val name = referenceExpression.referencedName?.takeIf(String::isNotBlank) ?: return null

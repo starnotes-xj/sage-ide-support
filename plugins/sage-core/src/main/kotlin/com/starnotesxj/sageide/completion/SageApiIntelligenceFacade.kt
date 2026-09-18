@@ -90,7 +90,7 @@ class SageApiIntelligenceFacade(private val service: SageApiIndexService) {
         query()?.signatures(functionQualifiedName).orEmpty()
 
     fun documentation(name: String): SageApiDocumentation? =
-        query()?.documentation(name)
+        query()?.resolve(name)?.let { SageApiDocumentationService.getInstance().documentation(it) }
 
     fun uniqueKnownReturnType(functionQualifiedName: String): SageTypeRef? =
         query()?.uniqueKnownReturnType(functionQualifiedName)

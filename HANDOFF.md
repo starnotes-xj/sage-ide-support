@@ -174,3 +174,35 @@
 - `v1.8.1` 已指向 `3b804269`；GitHub Actions run `34684783261` 的 core 与 release job 均成功，包含 Linux 编译/模型与运行时测试、完整 Sage 10.9 索引下载/解压/原始 SHA 校验、最终 ZIP 构建、`com.starnotesxj.sageide` Marketplace 原位发布及 GitHub Release 附件上传。
 - GitHub Release：`https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.8.1`。从该 release 重新下载的 `sage-core-1.8.1.zip` 为 `15,707,868` bytes、SHA-256 `8eedd76343f498e75ca47549234509bcea09d52f515501e004b9468229cca4a0`；嵌套 descriptor 为 `1.8.1`，含中文资源包，嵌入完整索引仍为 `106,486,050` bytes、SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3`。
 - 仍未完成的仅是干净 PyCharm 的人工 UI smoke（确认运行控制台只显示简洁命令、设置页和右键动作随中文语言包切换）；发布 CI 与远端资产验证不能替代该交互检查。
+
+## 2026-09-16 增量（v170，1.8.2 候选：静态索引与文档内存优化）
+
+- 完整 Sage 10.9 索引原始 JSON 为 `106,486,050` bytes，其中 `57,425` 份 `documentation` 正文约占 `55 MB`。正式 bundle 现在保留所有 `86,339` 条类型、继承、签名和补全合同在主 `sage-api-index.json`，但在打包时无损拆出文档字段；主索引实测为 `47,641,036` bytes，不再含任何 `documentation` 字段。
+- 文档按键分入 `64` 个 `sage-api-docs/*.ndjson` 资源桶（最大未压缩桶 `1,084,094` bytes）。Quick Documentation 只读取当前符号的一个桶并有 `128` 条 LRU；补全、成员查询和类型推断不会加载文档正文。`SageApiIndexQuery` 同时移除重复 owner map，并将派生类图缓存限制为各 `1,024` 条；运行时 Sage worker 也已改为仅在实际 `value.member`/成员调用的动态兜底需要时启动、空闲 10 秒关闭。
+- 打包脚本初版的 Kotlin DSL `const` 作用域及 sidecar 解码类型错误均已最小修正；不能把它们当作产品失败。验证：`core:sage-api:test -PrunSageApiTests=true --rerun-tasks` 通过；`SageApiDocumentationProviderTest` 定向 Gradle 测试通过；使用 `G:\sage-build\release-assets\sage-api-index-10.9-v155.json` 的完整索引 `buildPlugin` 通过。
+- ZIP 内全量 round-trip 已核验：主合同索引和原索引去除文档字段后逐项相等，`57,425` 份 sidecar 文档逐项与原始 JSON 相等；`P.log` 的 `EllipticCurvePoint_finite_field.log` 也从实际包内 sidecar 成功还原。候选包为 `plugins/sage-core/build/distributions/sage-core-1.8.2.zip`，SHA-256 `9294b7bf7fa494ea6da2f0046e81c455b01bb1817d27fdbd8e58e78c2926ebe6`、大小 `19,141,264` bytes；尚未提交、推送或发布，且仍需干净 PyCharm UI smoke。
+
+## 2026-09-17 增量（v171，迁移期间的双 classloader 崩溃）
+
+- 用户 PyCharm 2026.2 日志已确认根因：旧开发插件 `com.starnotesxj.sagemath.ctf.sage-core@0.1.0-dev` 与新插件 `com.starnotesxj.sageide@1.8.2` 同时处于 active classloader，且两者都来自 `...\\plugins\\sage-core`。动态安装新 ID 时未卸载旧 ID，导致 `SageXor` inspection short name、`Sage`/`SageMathPostfix` language ID、`Sage.RunFile`/`Sage.DebugFile` action ID 重复注册；`SageRuntimeService cannot be cast to SageRuntimeService` 及 `SageFileElementType` 的 `ExceptionInInitializerError`/`NoClassDefFoundError` 都是同一冲突的后续症状，而不是 Sage 解析或索引逻辑故障。
+- 修复要求：下一包必须从 `1.8.3` 开始在 `idea-plugin` 设置 `require-restart="true"`，阻止拥有 Language、inspection、action、application service 的插件在迁移中热替换；并以 `<incompatible-with>com.starnotesxj.sagemath.ctf.sage-core</incompatible-with>` 阻止旧 ID 与新 ID 在干净启动时共同启用。当前已损坏的 IDE 必须完整退出后才可释放旧 classloader，不能用重新索引或单独关闭文件修复。
+- 已实施并验证：根版本已升至 `1.8.3`，正式 ZIP 描述符实测含 `require-restart="true"`、原 Marketplace ID 和旧开发 ID 的 incompatible-with 声明。全索引 `buildPlugin`、`verifyPluginStructure` 均成功；`verifyPluginProjectConfiguration` 只有既有 `since-build=261`/`until-build`/JVM 25 兼容性提示，不是本修复失败。候选 `sage-core-1.8.3.zip` SHA-256 为 `12bd28131326033760dd27c960e7b97956f58c44e73a7918631a470522a7d9dd`，仍未在已损坏进程中安装，必须用完全退出后的干净 PyCharm 做首次启动验收。
+
+## 2026-09-18 增量（v172，普通 Python 离线 Quick Documentation）
+
+- 用户实测普通 `.py` 的 Ctrl+Q 在 WSL SDK 下退化成 `docs.python.org` 外链；根因是 `SageApiDocumentationProvider` 以 Python 的 first provider 注册，却只在 `.sage`/Sage stub 上从本地 PSI 渲染，随后 Python 的远程 SDK provider 无法启动本地 formatter。`itertools.product.__new__` 还来自无 prose 的 typeshed stub，因此只剩外链。
+- 修复将本地 PSI docstring 渲染扩展至普通 Python 文件；对没有 docstring 的 CPython/typeshed 声明，新增懒加载的离线 Python 3.13 标准库 sidecar。它由 `tools/python-stdlib-docs/generate_python_docs.py` 在隔离的 Python 运行中读取标准库自身 docstrings，生成 `64` 个 `python-stdlib-docs/*.ndjson` 分桶；本轮 WSL Sage Python 3.13 产物包含 `606` 个模块、`17,615` 条记录、约 `5,499,495` 未压缩字节。编辑器启动、类型推断和补全不读取该 sidecar，Ctrl+Q 才读取目标桶（8 桶 LRU），绝不在编辑器内启动 WSL/Python 或执行用户代码。
+- 解析顺序为精确 owner docstring、再精确标准库键、再外层 class 键，因此 typeshed 的 `itertools.product.__new__` 能显示 `product` 的“Cartesian product...”正文及现有语义着色，而项目/第三方的本地 docstring 仍优先。定向 `SageApiDocumentationProviderTest` 5/5 通过，覆盖 Sage index、普通 `.py` 本地 docstring、无 docstring 的 `itertools.product.__new__`、builtin `len` 和代码块渲染；生成脚本 `py_compile`、`git diff --check`、全索引 `buildPlugin`/`verifyPluginStructure` 均通过。根版本已递增为 `1.8.4`，候选 ZIP 为 `plugins/sage-core/build/distributions/sage-core-1.8.4.zip`、SHA-256 `5CB7347862BC6D0DE833C85D358E94A43DC2B853503DC52EE52D53A5488110FF`；内含 64 个 Python 和 64 个 Sage 文档桶。真实 PyCharm UI smoke 仍待在完全重启后的干净进程中完成。
+
+## 2026-09-18 增量（v173，typeshed 构造器 owner 与外链抑制）
+
+- 用户安装 v172 候选后的真实 PyCharm 截图表明，`product()`/`zip()` 的 Ctrl+Q 仍显示继承的 `object.__new__` 文本“Create and return a new object”及 `docs.python.org` 链接；这证明实际 documentation target 可以是基类构造器，不能只用直接 owner 的 qualified name。该反馈比原先的 fixture 假设优先。
+- provider 现在从原始调用引用、其 resolved declaration、documentation target 和各自的包含类一起收集 qualified names；构造器 `__new__`/`__init__` 优先用调用目标类的离线标准库正文，再退回 PSI 文本。因此 `itertools.product.__new__` 与 `builtins.zip.__new__` 不会被 `object.__new__` 通用说明遮蔽。`getUrlFor` 对已由本 provider 接管的 Sage/Python 文档显式返回空列表，阻止 remote-SDK fallback 再附加浏览器链接。
+- 回归 fixture 现在故意给 `product.__new__` 加同样的通用 docstring，断言富正文仍为 “Cartesian product of input iterables”、不含通用文本、且 URL 列表为空；定向 `SageApiDocumentationProviderTest` 5/5 通过。根版本升为 `1.8.5`；完整索引 `buildPlugin`/`verifyPluginStructure` 成功，候选 `plugins/sage-core/build/distributions/sage-core-1.8.5.zip` SHA-256 为 `EA550521A9D0B9BFBCAD9444D3E21FBE7AE4EAB270CD3B93704DDFCEEFD7A519`，正式 descriptor 已复核 `1.8.5`、`require-restart=true`、含 64 个 Python 文档桶。仍需在 PyCharm 完全重启后对 `product()`/`zip()` 做此真实 smoke。
+
+## 2026-09-18 增量（v174，typeshed 路径与构造器泛化文本修复）
+
+- 用户对 v1.8.5 的新截图证明外链已被正确移除，但 `product()`/`zip()` 仍可能命中 CPython 的通用 `__new__` 文本；原因是实际 PSI qualified name 可能是临时的 `typeshed.stdlib...`，且离线 sidecar 中的 `*.product.__new__`/`builtins.zip.__new__` 记录本身也只有 `Create and return a new object`。
+- `SageApiDocumentationProvider` 现在从 typeshed 文件路径 `/typeshed/stdlib/<module>.pyi` 与嵌套 `PyClass`/`PyFunction` 还原稳定的标准库键；对 `__new__`/`__init__` 构造器先跳过构造器记录，直接查所属类文档，再沿父模块回退。普通函数、项目 docstring 和 Sage 索引顺序不变，外链继续返回空列表。
+- 新增 product 与 builtins.zip 两个真实 typeshed 路径回归：均断言显示 CPython 丰富正文、不含通用 object 文本、不产生 docs.python.org URL。定向 `SageApiDocumentationProviderTest` 已通过 `7/7`，包含原有 Sage/普通 Python/代码块测试。
+- 根版本升为 `1.8.6`；完整 v155 索引 `buildPlugin` 与 `verifyPluginStructure` 均成功。候选包 `plugins/sage-core/build/distributions/sage-core-1.8.6.zip` 大小 `21,050,849` bytes、SHA-256 `16F014078A902690D328D499949E983A45FBC3AE39DAFD6684C6BB24DB8B5DBB`；包内 descriptor 为 `com.starnotesxj.sageide`/`1.8.6`、`require-restart=true`，主 `sage-api-index.json` 为 `47,641,036` bytes，含 `64` 个 Python 和 `64` 个 Sage 文档桶，且 product/zip 文档记录均在包内。尚未提交、推送或发布；仍需完全退出并重启 PyCharm 后人工确认 `product()`、`zip()` 的 Ctrl+Q 正文与截图一致。

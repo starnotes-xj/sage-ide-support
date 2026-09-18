@@ -1008,6 +1008,41 @@ def separated(value: Literal["a,b"], /, *, option: int) -> None: ...
         assertTrue(error.message.orEmpty().contains("Unsupported Sage API schema version"))
     }
 
+    @Test
+    fun documentationSidecarKeepsContractsOutOfTheStartupIndex() {
+        val classEntry = SageApiEntry(
+            "sage.rings.Integer",
+            SageApiSymbolKind.CLASS,
+            documentation = SageApiDocumentation(
+                summary = "An integer.",
+                body = "正文 with ```sage\\nZZ(2)\\n```.",
+                examples = listOf("sage: ZZ(2)"),
+            ),
+        )
+        val methodEntry = SageApiEntry(
+            "sage.rings.Integer.log",
+            SageApiSymbolKind.METHOD,
+            documentation = SageApiDocumentation(summary = "A logarithm."),
+        )
+        val index = SageApiIndex("10.9", "3.13", listOf(classEntry, methodEntry))
+
+        val sidecar = SageApiDocumentationSidecar.write(index)
+        val buckets = SageApiDocumentationSidecar.writeBuckets(index)
+        val contracts = SageApiDocumentationSidecar.withoutDocumentation(index)
+
+        assertTrue(contracts.entries.all { it.documentation == null })
+        assertEquals(classEntry.documentation, SageApiDocumentationSidecar.find(sidecar.byteInputStream(), classEntry))
+        assertEquals(methodEntry.documentation, SageApiDocumentationSidecar.find(sidecar.byteInputStream(), methodEntry))
+        assertEquals(
+            classEntry.documentation,
+            SageApiDocumentationSidecar.find(
+                buckets.getValue(SageApiDocumentationSidecar.resourceName(classEntry)).byteInputStream(),
+                classEntry,
+            ),
+        )
+        assertEquals(null, SageApiDocumentationSidecar.find(sidecar.byteInputStream(), SageApiEntry("sage.rings.Integer.missing", SageApiSymbolKind.METHOD)))
+    }
+
     private companion object {
         val FIXTURE = """
             from sage.rings.ring import RingElement as RingElement
