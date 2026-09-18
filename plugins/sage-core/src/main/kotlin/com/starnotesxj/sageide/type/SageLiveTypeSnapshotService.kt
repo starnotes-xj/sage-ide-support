@@ -1,8 +1,6 @@
 package com.starnotesxj.sageide.type
 
-import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
@@ -19,6 +17,7 @@ import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.types.PyClassTypeImpl
 import com.jetbrains.python.psi.types.PyType
 import com.starnotesxj.sageide.run.SageRunSettings
+import com.starnotesxj.sageide.completion.SageApiIndexService
 import com.starnotesxj.sageide.run.SageRuntimeProbeHandle
 import com.starnotesxj.sageide.run.SageRuntimeService
 import com.starnotesxj.sageide.sugar.SageFileUtils
@@ -70,8 +69,17 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
 
     fun typeForReference(reference: PyReferenceExpression): PyType? {
         if (reference.qualifier != null || PsiTreeUtil.getParentOfType(reference, PyFunction::class.java) != null) return null
+        // Ordinary root references are visited for every daemon pass.  Do not
+        // even inspect the run-evidence map unless this reference is the
+        // receiver of a member expression; static Sage/index inference owns
+        // all other references.
+        if (!acceptsMemberProbe(reference)) return null
         val name = reference.referencedName ?: return null
         observedRunType(reference, name)?.let { return it }
+        // A snapshot lookup hashes/scans the source prefix, so only a receiver
+        // that is actually asking for members may consult that cache.  This
+        // keeps normal typing on the static/index path; member completion still
+        // gets the exact completed snapshot below.
         return typeFor(reference, name, includeContainingStatement = false, scheduleIfAbsent = false)
     }
 
@@ -85,17 +93,44 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         if (!acceptsMemberProbe(reference)) return null
         val name = reference.referencedName ?: return null
         observedRunType(reference, name)?.let { return it }
+        // Live probing executes Sage in a separate WSL/native process and is
+        // intentionally reserved for receivers with an indexed Sage contract.
+        // A .sage file also contains ordinary Python/CTF values (`io`, `cipher`,
+        // `response`, ...); scheduling a worker for every unresolved member on
+        // those values can freeze the editor during newline/delete daemon runs.
+        // Unknown dynamic Sage factories remain fail-closed until normal run
+        // evidence or an exact indexed owner is available.
+        if (!hasIndexedSageEvidence(reference)) return null
+        // The immutable Sage contract index can already prove the exact
+        // concrete owner even when a remote WSL skeleton has not produced a
+        // local `.pyi` PSI class.  Do not launch/import a Sage worker for that
+        // deterministic case on every `receiver.` completion keystroke; the
+        // index-only completion path consumes the owner directly.
+        val target = reference.reference.resolve() as? PyTargetExpression
+        if (target != null && SageIndexedTypeResolver.ownersForTarget(target).isNotEmpty()) return null
         return typeFor(reference, name, includeContainingStatement = false, scheduleIfAbsent = true)
+    }
+
+    private fun hasIndexedSageEvidence(reference: PyReferenceExpression): Boolean {
+        val query = SageApiIndexService.getInstance().query() ?: return false
+        if (SageIndexedTypeResolver.ownersForExpression(reference, query).isNotEmpty()) return true
+        val target = reference.reference.resolve() as? PyTargetExpression ?: return false
+        if (SageIndexedTypeResolver.ownersForTarget(target, query).isNotEmpty()) return true
+        val assigned = target.findAssignedValue() ?: return false
+        return SageIndexedTypeResolver.ownersForExpression(assigned, query).isNotEmpty()
     }
 
     fun typeForTarget(target: PyTargetExpression): PyType? {
         if (target.qualifier != null || PsiTreeUtil.getParentOfType(target, PyFunction::class.java) != null) return null
         val name = target.name ?: return null
         observedRunType(target, name)?.let { return it }
-        // Assignment targets are queried on every daemon pass. Static contracts
-        // remain the first answer; a later member completion can request a
-        // bounded live fallback if one is genuinely needed.
-        return typeFor(target, name, includeContainingStatement = true, scheduleIfAbsent = false)
+        // Assignment targets are queried on every daemon pass.  Do not build a
+        // full snapshot request (which hashes and walks the entire file) here;
+        // a member receiver performs the bounded request through
+        // scheduleTypeForMemberReceiver(), and completed evidence is consumed
+        // by typeForReference().  Normal target inference therefore remains
+        // entirely static and non-blocking.
+        return null
     }
 
     /**
@@ -121,7 +156,12 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
                 sourceText?.takeIf { it.toByteArray(StandardCharsets.UTF_8).size <= MAX_SOURCE_BYTES },
             ),
         )
-        restartDaemon(file)
+        // Do not restart the daemon from a runtime callback.  The callback can
+        // complete while the current highlighting pass is still running; an
+        // immediate restart then re-enters PSI/highlighting and can make the
+        // editor appear hung during delete/newline edits.  The next edit or an
+        // explicit completion request consumes this exact evidence without
+        // scheduling another WSL process.
     }
 
     /**
@@ -329,7 +369,6 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
                 inFlight.remove(request.key)
                 if (error == null && result?.status == RuntimeExecutionStatus.SUCCESS) {
                     evidence.recordSuccess(request.key, result.observedTypes)
-                    restartDaemon(request.file)
                 } else if (result?.status != RuntimeExecutionStatus.CANCELLED) {
                     // A deterministic source error or an unavailable runtime must
                     // not cause an endless daemon -> worker -> daemon loop.  The
@@ -350,12 +389,6 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
                 scheduled.remove(stale)?.cancel(false)
                 active.remove(stale)?.cancel()
             }
-    }
-
-    private fun restartDaemon(file: VirtualFile) {
-        ApplicationManager.getApplication().invokeLater {
-            if (!project.isDisposed) DaemonCodeAnalyzer.getInstance(project).restart(file)
-        }
     }
 
     /**

@@ -213,3 +213,66 @@
 - `SageApiDocumentationProvider` 现在对带接收者的原始成员表达式优先使用接收者实际 `PyClassType` 的成员声明；若接收者类型无法证明，则 fail-closed，不再把另一个同名 platform target（如 `Image.split`）作为候选。无接收者的普通函数、构造器和 Sage 索引路径不变。
 - 新增两个回归：`list[str]` 场景不会显示错误 `Image.split`；已证明的本地 `Text.split` 接收者会覆盖伪造的 `Image.split` target。`SageApiDocumentationProviderTest` 全部 `9/9` 通过。
 - 根版本升为 `1.8.7`；完整 v155 索引 `buildPlugin` 与 `verifyPluginStructure` 均成功。候选包 `plugins/sage-core/build/distributions/sage-core-1.8.7.zip` 大小 `21,051,643` bytes、SHA-256 `9E75C0F136A9888C8CF9D6DC56278C9AE6B77CA70586C04062A31675822656E9`；包内 descriptor 为 `com.starnotesxj.sageide`/`1.8.7`、`require-restart=true`，主索引 `47,641,036` bytes，含 `64` 个 Python 和 `64` 个 Sage 文档桶。定向 provider 测试 `9/9` 通过；待提交并推送 `sagemath-core-1.8.0` 分支。真实 PyCharm 中应确认 `intro[4].split` 显示 `str.split`，而不是 `Image.split`。
+## 2026-09-18 增量（v176，GF 工厂联合类型与有限域元素成员补全）
+
+- WSL Sage 10.9 实测：`F = GF(11)` 产生有限域父对象，`c = F(2)` 产生 `IntegerMod_int`，`c.multiplicative_order()` 返回 Sage `Integer`（值 `10`）。
+- 根因：`GF` 的多个不同参数形状合同同时可行时，旧的 lowering 直接丢弃全部返回类型；后续 `F(2)` 无法沿具体 `__call__` 合同传播，补全退化为全局 Sage 名称。
+- 通用修复：保留不同参数形状且每个分支均为具体类的精确联合返回类型；联合接收者的 `__call__` 和成员补全遍历每个具体类分支。相同参数形状的歧义仍保持 UNKNOWN，避免误报。
+- 验证：`compileKotlin`、目标 `SageTypeProviderTest.testFiniteFieldFactoryUnionKeepsElementMembersAvailable`、完整 `SageTypeProviderTest` 均通过；`git diff --check` 通过。尚未重新打 ZIP、安装插件或做本轮全新 PyCharm UI smoke。
+## 2026-09-18 增量（v177，GF 补全修复版正式安装包）
+
+- 使用脱敏后的完整 Sage 10.9/Python 3.13 索引 `G:\sage-build\release-assets\sage-api-index-10.9.json`（86,339 entries，SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3`）重新执行 `verifyReleaseFullIndex` 与 `buildPlugin`，均成功。
+- 可安装包：`G:\sage-build\release-assets\sage-core-1.8.7-gf-completion.zip`；大小 `21,055,659` bytes，SHA-256 `A4CD95479329DE91BFBCC6A514F34369B814965C072774B40B2E4875E06C8B22`。
+- ZIP 审计：插件 ID `com.starnotesxj.sageide`、名称 `SageMath Core`、版本 `1.8.7`；嵌入索引 `47,641,036` bytes、86,339 entries、64 个文档桶，未发现 `/home/conda/`、`G:/` 或 `C:/Users/` 主机路径。
+## 2026-09-18 增量（v178，安装包中 `.sage` 接收者补全仍退化）
+
+- 用户安装 `sage-core-1.8.7-gf-completion.zip` 后，在 `F = GF(11); c = F(2); c.` 处只看到普通 Python 的 `test.c`，没有 `multiplicative_order`。
+- 该现象说明完整索引和 lowering 合同已存在，但 `.sage` 文件的实际 completion contributor 没有获得 `c` 的 Sage 接收者类型，需检查文件类型/贡献者入口及安装包加载路径；不能再归因于 `GF` 索引缺失。
+## 2026-09-18 增量（v179，空成员名 `c.` 补全修复与 1.8.8 安装包）
+
+- 根因确认：在 `c.<caret>` 的瞬间，PyCharm PSI 只有接收者引用和 `.`，尚未生成完整的 qualified member reference；旧贡献者因此走了 Sage 根命名空间分支，截图中的 `test.c` 就是该回退结果。
+- `SageImplicitCompletionContributor` 现在从光标前的 `.` 恢复接收者，沿同一具体联合类型调用原生和索引成员补全；新增真实 fixture `c.<caret>` 回归，`SageTypeProviderTest` 完整套件通过。
+- 为避免用户已安装的 `1.8.7` 被同版本安装器拒绝，根版本升至 `1.8.8`。新包：`G:\sage-build\release-assets\sage-core-1.8.8-gf-completion.zip`，大小 `21,056,677` bytes，SHA-256 `167C63E3ED87FCE330B7868855128778D754CB042376FB537185B8B71958CD37`。
+- ZIP 审计：ID `com.starnotesxj.sageide`、名称 `SageMath Core`、版本 `1.8.8`；嵌入索引 `47,641,036` bytes、86,339 entries、64 个文档桶，无主机路径泄漏。尚未进行用户机器上的全新 PyCharm UI smoke。
+## 2026-09-18 增量（v180，1.8.8 安装后接收者仍显示 `test.c`）
+
+- 用户安装修复包后仍观察到 `c = F(2)` 上方显示普通 Python 的 `test.c`，`Ctrl+Space` 无效，`Ctrl+Shift+Space` 显示“无建议”，`c.mul` 仍有未解析提示。
+- 这说明问题可能发生在 `.sage` 文件类型/解析器或 Sage 类型提供器扩展未被当前 PyCharm 进程加载的更早阶段，不能继续假设只是 `c.` 空成员名处理；需要检查实际加载的插件版本、文件类型归属、扩展注册和日志。
+
+## 2026-09-18 增量（v181，当前日志确认插件已加载但类型边界仍依赖远程 stub PSI）
+
+- 用户当前 PyCharm 日志的最新启动记录明确为 `SageMath Core (1.8.8)`；同一进程没有新的 `SageFileElementType`、插件 classloader 或扩展注册异常。因此这次不能再归因于安装了旧包或双插件冲突。
+- 源码审计确认实际缺口：`SageTypeLowering.lowerName()`、`SageApiClassMembersProvider` 和成员补全路径都要求 `SageStubIndex.findClassByCanonicalName()` 返回当前项目可索引的 Sage `.pyi` PSI 类。WSL 远程 SDK 的 skeleton 生成日志存在失败项，完整外部索引虽有 `GF -> FiniteField_*`、`__call__ -> *Element` 合同，却不会在无本地 PSI 类时发布类型；于是 `c = F(2)` 的 Sage 类型返回 null，补全退回普通 Python 的 `test.c`。
+- 下一步改为通用的索引合同解析兜底：仅当活动 Sage stub 无法提供 PSI 类时，沿赋值右值/嵌套 Sage 工厂/父对象 `__call__` 合同解析**完整 canonical 具体类集合**，成员补全直接查询这些 owner 的索引成员；不生成公共基类、`Any` 或名称白名单。先加入无 Sage PSI stub 的回归，再重新打包并做 PyCharm 验收。
+
+## 2026-09-18 增量（v182，用户反馈输入延迟/字符堆积）
+
+- 用户安装插件后反馈编辑时字符输入明显变慢、像“输入的字符都满了”。这要求优先做主线程性能回归，不能只验证最终补全结果。
+- 重点风险是成员补全每次击键都重新扫描整个文件的引用/目标集合，以及索引兜底沿完整继承图反复查询；下一步需将路径限制为当前接收者、赋值前缀和有界 owner/member 查询，并确认实时 Sage worker 不在每次普通编辑分析中启动。
+
+## 2026-09-18 增量（v183，输入延迟与字符串误补全收敛）
+
+- `SageLiveTypeSnapshotService` 的普通根引用现在不读取运行时证据或快照缓存；赋值目标也不再在每轮 daemon 分析中构造整段文件快照。只有真正的顶层成员接收者才允许进入运行证据/动态探测路径；若完整索引已经证明具体 owner，则不启动 WSL Sage worker。
+- `SageImplicitCompletionContributor` 的隐式 `sage.all` 根命名空间改为单字符自动输入早退；自动输入达到两个字符后只用外部索引做前缀过滤，不再扫描 PSI 全量声明，完整 PSI 候选只在明确触发 BASIC/SMART 补全时加载。成员补全仍可自动工作。目标回退扫描限制为不超过 `64 KiB` 的文件，并新增字符串/注释上下文早退，避免在字符串中显示 Sage 候选。
+- SMART completion 复用同一精确 Sage provider，因此 `Ctrl+Shift+Space` 不需要重新走一套高成本根命名空间逻辑。生产代码中无 `SAGECOMP` 调试输出。
+- 验证：`compileKotlin` 成功；受影响的 `SageTypeProviderTest`、`SageApiDocumentationProviderTest`、`SageCompletionTest` Gradle 测试全绿；`git diff --check` 通过。未筛选的插件全量测试为 `134` 项，其中唯一失败是既有 `SagePythonSdkSemanticTest` 的 `AssumptionViolatedException`（环境假设未满足，不是本次断言失败）。
+- 已用完整脱敏 Sage 10.9 索引（`86,339` entries、原始 SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3`）构建 `1.8.9` 安装包：`G:\sage-build\release-assets\sage-core-1.8.9-performance.zip`，大小 `21,070,327` bytes，SHA-256 `F7A9588163DF8352F9099319E0DA7FA3D85200B2BC4E5176A6E84D00741BA3ED`；descriptor 为 `com.starnotesxj.sageide`/`SageMath Core`/`1.8.9`，`require-restart=true`，包内主合同索引 `47,641,036` bytes、Sage 文档桶 `64` 个。
+- 当前环境没有可控制的 PyCharm 窗口，尚未完成用户机器上的真实输入延迟 smoke。安装该包并完全重启 PyCharm 后，应重点测试：普通 Sage 字符输入、字符串内输入、`c.` 成员补全、`Ctrl+Space` 根补全、`Ctrl+Shift+Space` 智能补全；若仍卡顿，再依据新日志和 CPU/内存曲线定位。
+
+## 2026-09-18 增量（v184，候选图标与换行/成员补全性能）
+
+- 用户新截图显示索引兜底成员没有 Python 原生的彩色语义图标，且 `.sage` 中删除/插入/换行和候选弹出仍慢。索引-only `LookupElement` 现在按 `SageApiSymbolKind` 映射 `AllIcons.Nodes`：方法、函数、属性、常量、类、模块和别名恢复与 Python PSI 一致的图标颜色；根命名空间索引条目也使用同一映射。
+- `SageApiIndexQuery.members(owner)` 对不可变索引增加有界 `1024` 项 LRU；同一接收者在 `c.`、`c.m`、删除字符和再次弹出候选时不重复构造 C3 继承结果、去重表和排序列表。
+- `SageTypeProvider.getReferenceType` 现在先按右值形状早退：普通字符串、列表、字典等不进入 Sage 合同推断；调用表达式只有在 Sage 根合同、具体 Sage target 或 Sage receiver 有索引证据时才执行 `multiResolveCalleeFunction`/递归返回 lowering。数值字面量、`GF`/`EllipticCurve`/`gcd`/成员调用和二元 Sage 运算仍走精确合同。
+- 验证：`core:sage-api:test`、`SageTypeProviderTest`、`SageCompletionTest` 共用 Gradle 回归通过；Kotlin 编译通过。完整索引校验、`buildPlugin`、`verifyPluginStructure` 通过。`git diff --check` 待最终收尾命令再次确认。
+- 新安装包：`G:\sage-build\release-assets\sage-core-1.8.10-performance-icons.zip`，大小 `21,072,602` bytes，SHA-256 `F7E8FE6B270724184A819F0FB73E9A3ED5AD72E3B521E4A606872CA1002837FB`；descriptor `com.starnotesxj.sageide`/`1.8.10`，`require-restart=true`，主合同索引 `47,641,036` bytes，Sage 文档桶 `64` 个。
+- 仍需用户在完全重启的 PyCharm 中确认真实键入延迟和图标颜色；本环境没有可控 PyCharm UI，不能把自动化 Gradle 结果冒充人工 smoke。
+
+## 2026-09-18 增量（v185，删除/换行卡顿的高亮重启根因）
+
+- 用户最新截图中的“PyCharm 没有响应”已由回归测试复现并定位：`SageLiveTypeSnapshotService` 的 WSL/运行回调在高亮分析尚未结束时调用 `DaemonCodeAnalyzer.restart(file)`，触发 `PSI/document/model changes are not allowed during highlighting`，并会在编辑器删除、换行和候选分析期间反复重启 daemon。
+- 修复为不从实时 worker 回调主动重启 daemon。运行回传和隔离快照仍按精确文件/运行时键写入有界证据缓存；下一次用户编辑或显式补全请求直接消费证据，不再在后台强制重新进入 PSI/高亮。普通 Python/CTF 成员没有索引 Sage 合同时也不会启动 WSL worker。
+- 这次同时移除了该服务的无用 `DaemonCodeAnalyzer`/`ApplicationManager` 依赖并修正 Kotlin 无意义安全调用警告；插件版本升至 `1.8.11`。
+- 验证：`SageTypeProviderTest` 与 `SageCompletionTest` 共 `46` 项通过；`core:sage-api:test -PrunSageApiTests=true` 通过；完整 `verifyReleaseFullIndex`、`buildPlugin`、`verifyPluginStructure` 通过；`git diff --check` 待最终收尾命令确认。
+- 新安装包：`G:\sage-build\release-assets\sage-core-1.8.11-unresponsive-fix.zip`，大小 `21,072,619` bytes，SHA-256 `45C96AA7A92372C63C67A03A7FB820658146E2C79E5CD9B9BFD9BA99A49330C2`。包内 descriptor 为 `com.starnotesxj.sageide`/`SageMath Core`/`1.8.11`，`require-restart=true`；主合同索引 `47,641,036` bytes，Sage/Python 文档桶各 `64` 个，未发现主机路径泄漏。
+- 仍需用户完全退出并重启 PyCharm 后做人工 smoke：普通 Sage 输入、删除、换行、字符串内输入、`c.` 补全和 `Ctrl+Space`。本环境没有可控 PyCharm UI，不能把 Gradle 结果冒充真实 UI 延迟结论。

@@ -3,6 +3,9 @@ package com.starnotesxj.sageide.completion
 import com.starnotesxj.sageide.SagePluginTestBase
 import com.starnotesxj.sagemath.sageapi.SageApiIndexJsonReader
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
+import com.starnotesxj.sagemath.sageapi.SageApiEntry
+import com.starnotesxj.sagemath.sageapi.SageApiIndex
+import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
 
 class SageCompletionTest : SagePluginTestBase() {
 
@@ -29,6 +32,25 @@ class SageCompletionTest : SagePluginTestBase() {
 
             val lookup = myFixture.completeBasic()?.map { it.lookupString }.orEmpty()
             assertTrue("matrix type=$target inferred=$inferred completion=$lookup", "solve_right" in lookup)
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
+    fun testSageRootCandidatesAreNotInjectedInsideString() {
+        SageApiIndexService.getInstance().install(
+            SageApiIndexQuery(
+                SageApiIndex(
+                    "10.9",
+                    "3.13",
+                    listOf(SageApiEntry("sage.all.EllipticCurve", SageApiSymbolKind.CLASS)),
+                ),
+            ),
+        )
+        try {
+            myFixture.configureByText("string.sage", "message = 'Ell<caret>'\n")
+            val lookup = myFixture.completeBasic()?.map { it.lookupString }.orEmpty()
+            assertFalse("Sage root completion leaked into a string: $lookup", "EllipticCurve" in lookup)
         } finally {
             SageApiIndexService.getInstance().install(null)
         }

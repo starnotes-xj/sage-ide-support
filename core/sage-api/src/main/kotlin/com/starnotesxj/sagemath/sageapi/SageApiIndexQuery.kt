@@ -18,6 +18,10 @@ class SageApiIndexQuery(val index: SageApiIndex) {
     // sessions that visit many dynamically generated receiver types.
     private val reachableCache = BoundedLruCache<String, Map<String, Int>>(MAX_CACHED_TYPE_GRAPHS)
     private val linearizationCache = BoundedLruCache<String, List<String>>(MAX_CACHED_TYPE_GRAPHS)
+    // Completion asks for the same owner's inherited member list once per
+    // typed prefix. The index is immutable, so cache the sorted result instead
+    // of rebuilding the C3 walk and duplicate-resolution map on every keystroke.
+    private val membersCache = BoundedLruCache<String, List<SageApiEntry>>(MAX_CACHED_MEMBERS)
 
     init {
         val byQualifiedName = linkedMapOf<String, MutableList<SageApiEntry>>()
@@ -117,7 +121,7 @@ class SageApiIndexQuery(val index: SageApiIndex) {
             .singleOrNull()
 
     /** Returns methods/properties/constants declared by the owner or its indexed parents. */
-    fun members(ownerQualifiedName: String): List<SageApiEntry> {
+    fun members(ownerQualifiedName: String): List<SageApiEntry> = membersCache.getOrPut(ownerQualifiedName) {
         // Use an indexed C3 order rather than only breadth-first ranks.  A rank
         // is enough for reachability, but it cannot distinguish sibling bases in
         // a diamond.  Python resolves one attribute name to the nearest owner,
@@ -139,7 +143,7 @@ class SageApiIndexQuery(val index: SageApiIndex) {
                     }
                 }
         }
-        return selected.values
+        selected.values
             .flatten()
             .sortedWith(compareBy<SageApiEntry> { it.qualifiedName.substringAfterLast('.') }.thenBy { it.kind.name })
     }
@@ -336,6 +340,7 @@ class SageApiIndexQuery(val index: SageApiIndex) {
     private companion object {
         val MEMBER_KINDS = setOf(SageApiSymbolKind.METHOD, SageApiSymbolKind.PROPERTY, SageApiSymbolKind.CONSTANT)
         const val MAX_CACHED_TYPE_GRAPHS = 1_024
+        const val MAX_CACHED_MEMBERS = 1_024
 
         fun addLookup(target: MutableMap<String, MutableList<SageApiEntry>>, key: String, entry: SageApiEntry) {
             target.getOrPut(key) { mutableListOf() }.add(entry)

@@ -2,6 +2,8 @@ package com.starnotesxj.sageide.type
 
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.codeInsight.lookup.LookupElement
+import com.intellij.util.ProcessingContext
 import com.starnotesxj.sageide.SagePluginTestBase
 import com.jetbrains.python.psi.PyCallExpression
 import com.jetbrains.python.psi.PyFunction
@@ -219,6 +221,197 @@ class SageTypeProviderTest : SagePluginTestBase() {
             assertTrue(
                 highlights.none { it.description?.contains("Literal[") == true },
                 "Sage numeric assignment still reports a Python literal: ${highlights.mapNotNull { it.description }}",
+            )
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
+    fun testFiniteFieldFactoryUnionKeepsElementMembersAvailable() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "finite-field-union.pyi")
+        val givaroField = "sage.rings.finite_rings.finite_field_givaro.FiniteField_givaro"
+        val primeField = "sage.rings.finite_rings.finite_field_prime_modn.FiniteField_prime_modn"
+        val givaroElement = "sage.rings.finite_rings.element_givaro.FiniteField_givaroElement"
+        val primeElement = "sage.rings.finite_rings.integer_mod.IntegerMod_int"
+        val integer = "sage.rings.integer.Integer"
+        val index = SageApiIndexQuery(SageApiIndex("10.9", "3.13", listOf(
+            SageApiEntry(givaroField, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(primeField, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(givaroElement, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(primeElement, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(integer, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(
+                "sage.all.GF",
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(
+                    SageApiSignature(
+                        parameters = listOf(
+                            SageApiParameter("args", variadic = true),
+                            SageApiParameter(
+                                "implementation",
+                                SageTypeRef.known("typing.Literal[givaro]"),
+                                defaultValue = "'givaro'",
+                                keywordOnly = true,
+                            ),
+                            SageApiParameter("kwargs", keywordOnly = true, variadic = true),
+                        ),
+                        returnType = SageTypeRef.known(givaroField),
+                    ),
+                    SageApiSignature(
+                        parameters = listOf(
+                            SageApiParameter("args", variadic = true),
+                            SageApiParameter("kwargs", keywordOnly = true, variadic = true),
+                        ),
+                        returnType = SageTypeRef.known("$givaroField | $primeField"),
+                    ),
+                ),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$givaroField.__call__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(givaroElement))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$primeField.__call__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(primeElement))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$givaroElement.multiplicative_order",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(integer))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$primeElement.multiplicative_order",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(integer))),
+                sources = listOf(source),
+            ),
+        )))
+        SageApiIndexService.getInstance().install(index)
+        try {
+            myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/finite_rings/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/integer.pyi", "class Integer: ...\n")
+            myFixture.addFileToProject(
+                "site-packages/sage/all.pyi",
+                "from sage.rings.finite_rings.finite_field_givaro import FiniteField_givaro\n" +
+                    "def GF(*args, **kwargs) -> FiniteField_givaro: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/finite_rings/finite_field_givaro.pyi",
+                "class FiniteField_givaro:\n    def __call__(self, value): ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/finite_rings/finite_field_prime_modn.pyi",
+                "class FiniteField_prime_modn:\n    def __call__(self, value): ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/finite_rings/element_givaro.pyi",
+                "class FiniteField_givaroElement: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/finite_rings/integer_mod.pyi",
+                "class IntegerMod_int: ...\n",
+            )
+            myFixture.configureByText(
+                "finite-field-union.sage",
+                "F = GF(11)\nc = F(2)\nc.multiplicative_<caret>\n",
+            )
+            val context = defaultContext()
+            val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .single { it.name == "c" }
+            val cType = context.getType(target)
+            val cTypeName = cType?.name.orEmpty()
+            assertTrue(cTypeName.contains("FiniteField_givaroElement"), "c lost concrete finite-field element union: $cType")
+            assertTrue(cTypeName.contains("IntegerMod_int"), "c lost the prime-field element branch: $cType")
+            val directVariants = cType?.getCompletionVariants("multiplicative_", myFixture.file, ProcessingContext())
+                ?.filterIsInstance<LookupElement>()
+                ?.map { it.lookupString }
+                .orEmpty()
+            assertTrue("multiplicative_order" in directVariants, "finite-field element type=$cTypeName direct=$directVariants")
+
+            myFixture.configureByText(
+                "finite-field-union-empty-member.sage",
+                "F = GF(11)\nc = F(2)\nc.<caret>\n",
+            )
+            myFixture.doHighlighting()
+            val emptyMemberTarget = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .single { it.name == "c" }
+            val emptyMemberType = defaultContext().getType(emptyMemberTarget)
+            assertTrue(
+                emptyMemberType != null,
+                "empty member target type=${emptyMemberType} assigned=${emptyMemberTarget.findAssignedValue()?.text} " +
+                    "file=${myFixture.file.fileType.name}",
+            )
+            val emptyMemberLookup = myFixture.completeBasic()?.map { it.lookupString }.orEmpty()
+            val emptyMemberText = myFixture.file.text
+            assertTrue(
+                "multiplicative_order" in emptyMemberLookup || "multiplicative_order" in emptyMemberText,
+                "empty member completion=$emptyMemberLookup text=$emptyMemberText",
+            )
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
+    fun testIndexedOwnersKeepCompletionWorkingWithoutSagePsiStubs() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "finite-field-no-skeleton.pyi")
+        val field = "sage.rings.finite_rings.finite_field_givaro.FiniteField_givaro"
+        val element = "sage.rings.finite_rings.element_givaro.FiniteField_givaroElement"
+        val integer = "sage.rings.integer.Integer"
+        val index = SageApiIndexQuery(SageApiIndex("10.9", "3.13", listOf(
+            SageApiEntry(field, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(element, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(integer, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(
+                "sage.all.GF",
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(field))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$field.__call__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(element))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$element.multiplicative_order",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(integer))),
+                sources = listOf(source),
+            ),
+        )))
+        SageApiIndexService.getInstance().install(index)
+        try {
+            // Deliberately do not add any Sage `.pyi` files.  This is the
+            // remote-WSL skeleton failure mode: the immutable index still
+            // contains exact concrete owners and member contracts.
+            myFixture.configureByText(
+                "finite-field-no-skeleton.sage",
+                "F = GF(11)\nc = F(2)\nc.multiplicative_<caret>\n",
+            )
+            val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .single { it.name == "c" }
+            assertEquals(
+                setOf(element),
+                SageIndexedTypeResolver.ownersForTarget(target),
+                "index-only owner traversal must retain the concrete element class",
+            )
+            val lookup = myFixture.completeBasic()?.map { it.lookupString }.orEmpty()
+            assertTrue(
+                "multiplicative_order" in lookup || "multiplicative_order" in myFixture.file.text,
+                "index-only Sage completion omitted multiplicative_order: $lookup; " +
+                    "text=${myFixture.file.text}; " +
+                    "fileType=${myFixture.file.fileType.name}; refs=" +
+                    PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+                        .joinToString { "${it.javaClass.simpleName}:${it.text}:qualified=${it.isQualified}" },
             )
         } finally {
             SageApiIndexService.getInstance().install(null)

@@ -148,18 +148,51 @@ object SageTypeLowering {
         val viable = signatures.mapNotNull { signature ->
             signatureBindings(signature, arguments, callSite, context, query, callableQualifiedName, callable)?.let { signature to it }
         }
-        if (viable.size != 1) return null
-        val (signature, bindings) = viable.single()
-        val names = signature.typeParameters.map { it.name }.toSet()
-        val paramSpecNames = signature.typeParameters
-            .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
-            .map { it.name }
-            .toSet()
-        val expression = signature.returnType.expression?.let {
-            SageTypeRefExpressionParser.parse(it, names, paramSpecNames)
-        } ?: return null
-        return lower(expression, callSite, context, query, bindings)
+        if (viable.isEmpty()) return null
+
+        /**
+         * Several viable signatures are normally ambiguous.  Preserve that
+         * fail-closed behavior when their parameter shapes are identical.  If
+         * the contracts are distinct and every branch has a concrete indexed
+         * return, however, their exact finite union is safe to publish.  This
+         * is important for factories such as ``GF(11)`` whose generated
+         * contract exposes backend branches and a fallback union: selecting a
+         * public base would lose members such as ``multiplicative_order``.
+         */
+        val candidates = viable.mapNotNull { (signature, bindings) ->
+            val names = signature.typeParameters.map { it.name }.toSet()
+            val paramSpecNames = signature.typeParameters
+                .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                .map { it.name }
+                .toSet()
+            val expression = signature.returnType.expression?.let {
+                SageTypeRefExpressionParser.parse(it, names, paramSpecNames)
+            } ?: return@mapNotNull null
+            val lowered = lower(expression, callSite, context, query, bindings)
+                ?.takeUnless { it == PyAnyType.Any || it == PyAnyType.Unknown }
+                ?: return@mapNotNull null
+            signature to lowered
+        }
+        if (viable.size == 1) return candidates.singleOrNull()?.second
+        if (candidates.size != viable.size) return null
+        if (viable.map { signatureShape(it.first) }.distinct().size != viable.size) return null
+        return PyUnionType.union(candidates.map { it.second })
     }
+
+    /** Parameter shape used only to distinguish true overload ambiguity. */
+    private fun signatureShape(signature: SageApiSignature): String =
+        signature.parameters.joinToString("|") { parameter ->
+            listOf(
+                parameter.name,
+                parameter.type.state.name,
+                parameter.type.expression.orEmpty(),
+                parameter.defaultValue.orEmpty(),
+                parameter.optional,
+                parameter.keywordOnly,
+                parameter.variadic,
+                parameter.positionalOnly,
+            ).joinToString("#")
+        }
 
     private fun literalFallbackType(argument: PyExpression?): PyType? {
         return when (argument) {

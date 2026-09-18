@@ -9,17 +9,28 @@ import com.intellij.codeInsight.completion.InsertHandler
 import com.intellij.codeInsight.completion.InsertionContext
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbService
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.patterns.StandardPatterns
+import com.intellij.psi.PsiComment
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.psi.PsiFile
 import com.intellij.util.ProcessingContext
 import com.starnotesxj.sageide.completion.SageApiClassMembersProvider
 import com.starnotesxj.sageide.completion.SageApiIndexService
+import com.starnotesxj.sageide.type.SageIndexedTypeResolver
+import com.starnotesxj.sageide.type.SageTypeProvider
 import com.jetbrains.python.psi.PyImportStatementBase
+import com.jetbrains.python.psi.PyExpression
 import com.jetbrains.python.psi.PyReferenceExpression
+import com.jetbrains.python.psi.PyStringLiteralExpression
 import com.jetbrains.python.psi.PyTargetExpression
+import com.jetbrains.python.psi.types.PyClassType
+import com.jetbrains.python.psi.types.PyAnyType
+import com.jetbrains.python.psi.types.PyUnionType
+import javax.swing.Icon
 
 /**
  * Completes the runtime-injected `sage.all` namespace in `.sage` files that
@@ -73,10 +84,7 @@ import com.jetbrains.python.psi.PyTargetExpression
 class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
 
     init {
-        extend(
-            CompletionType.BASIC,
-            PlatformPatterns.psiElement(),
-            object : CompletionProvider<CompletionParameters>() {
+        val provider = object : CompletionProvider<CompletionParameters>() {
                 override fun addCompletions(
                     parameters: CompletionParameters,
                     context: ProcessingContext,
@@ -85,6 +93,12 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     val file = parameters.originalFile
                     if (!SageFileUtils.isSageFile(file)) return
                     val position = parameters.position
+                    // The implicit Sage namespace is not relevant inside a
+                    // string or comment. Returning before any PSI/index work
+                    // also prevents automatic completion from filling prose
+                    // and reduces needless daemon work while typing literals.
+                    if (PsiTreeUtil.getParentOfType(position, PyStringLiteralExpression::class.java) != null) return
+                    if (PsiTreeUtil.getParentOfType(position, PsiComment::class.java) != null) return
                     // At the end of an identifier PyCharm may expose the file/leaf
                     // at the caret rather than the reference itself. Probe the
                     // current and preceding offsets so qualified completion works
@@ -123,25 +137,60 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     if (completionReference != null && completionReference is PyTargetExpression) return
                     if (PsiTreeUtil.getParentOfType(position, PyImportStatementBase::class.java) != null) return
 
-                    if (completionReference?.isQualified == true) {
-                        val qualifier = completionReference.qualifier ?: return
+                    // With an empty member prefix (`c.<caret>`), Python PSI
+                    // frequently keeps only the receiver reference and the
+                    // dot token; there is no qualified PyReferenceExpression
+                    // yet. Recover that receiver explicitly so completion
+                    // does not fall through to the implicit sage.all root
+                    // namespace (which is why the popup previously showed
+                    // only entries such as `test.c`).
+                    val incompleteMemberQualifier = findIncompleteMemberQualifier(file, parameters.offset)
+                    val memberCompletion = completionReference?.isQualified == true ||
+                        incompleteMemberQualifier != null
+                    if (memberCompletion) {
+                        val qualifier = completionReference?.qualifier ?: incompleteMemberQualifier ?: return
+                        val memberLocation = completionReference ?: qualifier
                         val typeContext = com.jetbrains.python.psi.types.TypeEvalContext.codeCompletion(
                             position.project,
                             file,
                         )
-                        val qualifierType = (typeContext.getType(qualifier)
+                        val analysisContext = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(
+                            position.project,
+                            file,
+                        )
+                        val resolvedTarget = (qualifier.reference?.resolve() as? PyTargetExpression)
+                            ?: findPreviousTargetBounded(file, qualifier)
+                        val resolvedTargetType = resolvedTarget
+                            ?.let { target -> SageTypeProvider().getReferenceType(target, analysisContext, completionReference)?.get() }
+                        val qualifierType = sequenceOf(
+                            typeContext.getType(qualifier),
                             // Completion's lightweight context can omit a
                             // project-local type-provider answer for a target
                             // assigned from an unannotated parameter.  Retry in
                             // the normal analysis context before giving up; the
                             // returned class is still the same active .pyi PSI
                             // object checked by the type provider, not an
-                            // index-only or structural approximation.
-                            ?: com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(
-                                position.project,
-                                file,
-                            ).getType(qualifier))
-                            as? com.jetbrains.python.psi.types.PyClassType
+                            // index-only or structural approximation.  Treat
+                            // an explicit Any/Unknown result as omitted too:
+                            // union-valued Sage factories otherwise arrive as
+                            // Unknown in the lightweight completion context.
+                            analysisContext.getType(qualifier),
+                            // A completion PSI reference can be created before
+                            // Python's lightweight context has refreshed the
+                            // target.  Ask the Sage target provider directly as
+                            // a final, still exact, retry; this is especially
+                            // important for finite factory unions.
+                            resolvedTargetType,
+                        ).firstOrNull { it != null && it != PyAnyType.Any && it != PyAnyType.Unknown }
+                        val memberPrefix = if (completionReference?.isQualified == true) {
+                            val referenceRange = completionReference.reference.rangeInElement
+                            val offsetInElement =
+                                (parameters.offset - completionReference.textRange.startOffset)
+                                    .coerceIn(referenceRange.startOffset, referenceRange.endOffset)
+                            completionReference.text.substring(referenceRange.startOffset, offsetInElement)
+                        } else {
+                            ""
+                        }
                         if (qualifierType != null) {
                             // Delegate qualified member completion to the same
                             // Python type path used by PyQualifiedReference. It
@@ -154,17 +203,9 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                                 // prefix for that normal completion state;
                                 // passing null suppresses every native and
                                 // index-backed member variant.
-                                completionReference.referencedName.orEmpty(),
-                                completionReference,
+                                memberPrefix,
+                                memberLocation,
                                 ProcessingContext(),
-                            )
-                            val referenceRange = completionReference.reference.rangeInElement
-                            val offsetInElement =
-                                (parameters.offset - completionReference.textRange.startOffset)
-                                    .coerceIn(referenceRange.startOffset, referenceRange.endOffset)
-                            val memberPrefix = completionReference.text.substring(
-                                referenceRange.startOffset,
-                                offsetInElement,
                             )
                             val memberResult = result.withPrefixMatcher(memberPrefix)
                             val emittedNames = linkedSetOf<String>()
@@ -186,21 +227,85 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                                 position.project,
                                 file,
                             )
-                            for (method in qualifierType.pyClass.getMethodsInherited(memberContext)) {
-                                val methodName = method.name ?: continue
-                                if (!emittedNames.add(methodName)) continue
-                                var builder = LookupElementBuilder.createWithSmartPointer(methodName, method)
-                                method.getIcon(0)?.let { builder = builder.withIcon(it) }
-                                memberResult.addElement(builder)
+                            val classVariants: List<PyClassType> = when (qualifierType) {
+                                is PyClassType -> listOf(qualifierType)
+                                is PyUnionType -> qualifierType.members.orEmpty().filterIsInstance<PyClassType>()
+                                else -> emptyList()
                             }
-                            val owner = SageStubIndex.canonicalQualifiedName(qualifierType.pyClass).orEmpty()
-                            for (member in SageApiClassMembersProvider()
-                                .getMembers(qualifierType, completionReference, memberContext)) {
-                                if (!emittedNames.add(member.name)) continue
-                                var builder = LookupElementBuilder.create(member.name)
-                                member.icon?.let { builder = builder.withIcon(it) }
-                                if (owner.isNotBlank()) builder = builder.withTypeText(owner)
-                                memberResult.addElement(builder)
+                            for (classVariant in classVariants) {
+                                for (method in classVariant.pyClass.getMethodsInherited(memberContext)) {
+                                    val methodName = method.name ?: continue
+                                    if (!emittedNames.add(methodName)) continue
+                                    var builder = LookupElementBuilder.createWithSmartPointer(methodName, method)
+                                    method.getIcon(0)?.let { builder = builder.withIcon(it) }
+                                    memberResult.addElement(builder)
+                                }
+                                val owner = SageStubIndex.canonicalQualifiedName(classVariant.pyClass).orEmpty()
+                                for (member in SageApiClassMembersProvider()
+                                    .getMembers(classVariant, memberLocation, memberContext)) {
+                                    if (!emittedNames.add(member.name)) continue
+                                    var builder = LookupElementBuilder.create(member.name)
+                                    member.icon?.let { builder = builder.withIcon(it) }
+                                    if (owner.isNotBlank()) builder = builder.withTypeText(owner)
+                                    memberResult.addElement(builder)
+                                }
+                            }
+                        }
+
+                        // A remote WSL SDK can have a valid Sage runtime while
+                        // its skeleton generator has not materialized every
+                        // Sage `.pyi` class in local PSI.  In that case the
+                        // exact indexed return contracts still prove the
+                        // receiver owners.  Query those canonical owners
+                        // directly instead of falling through to Python's
+                        // unrelated `test.c` symbol completion.  This is a
+                        // union of concrete indexed classes, never a public
+                        // base-class or name whitelist fallback.
+                        // Native PSI types are already authoritative and avoid
+                        // any index traversal on every completion keystroke.
+                        // Run the index-only path solely for the missing-PSI
+                        // case that it exists to repair.
+                        val indexedOwners = if (qualifierType == null) linkedSetOf<String>().apply {
+                            resolvedTarget?.let { addAll(SageIndexedTypeResolver.ownersForTarget(it)) }
+                            if (isEmpty()) addAll(SageIndexedTypeResolver.ownersForExpression(qualifier))
+                        } else {
+                            emptySet()
+                        }
+                        if (indexedOwners.isNotEmpty()) {
+                            val query = SageApiIndexService.getInstance().query()
+                            if (query != null) {
+                                // Some PyCharm 2026 PSI completion boundaries
+                                // report the whole qualified text (`c.foo`)
+                                // rather than the member tail.  The index query
+                                // is already scoped to the receiver owner, so
+                                // only the final identifier can be a member
+                                // prefix.
+                                val indexedMemberPrefix = memberPrefix.substringAfterLast('.')
+                                val emittedNames = linkedSetOf<String>()
+                                indexedOwners
+                                    .asSequence()
+                                    .flatMap { owner -> query.members(owner).asSequence().map { owner to it } }
+                                    .filter { (_, entry) ->
+                                        entry.qualifiedName.substringAfterLast('.')
+                                            .let { indexedMemberPrefix.isEmpty() || it.startsWith(indexedMemberPrefix) }
+                                    }
+                                    .sortedWith(compareBy<Pair<String, com.starnotesxj.sagemath.sageapi.SageApiEntry>> { it.second.qualifiedName.substringAfterLast('.') }
+                                        .thenBy { it.first })
+                                    .forEach { (owner, entry) ->
+                                        val name = entry.qualifiedName.substringAfterLast('.')
+                                        if (!emittedNames.add(name)) return@forEach
+                                        var builder = LookupElementBuilder.create(name).withTypeText(owner)
+                                        indexedEntryIcon(entry.kind)?.let { builder = builder.withIcon(it) }
+                                        if (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD) {
+                                            builder = builder.withInsertHandler(SageParensInsertHandler)
+                                        }
+                                        // Use the contributor's original result
+                                        // so PyCharm keeps the completion session
+                                        // and its current prefix matcher.  The
+                                        // effective member prefix is applied by
+                                        // the explicit contract filter above.
+                                        result.addElement(builder)
+                                    }
                             }
                         }
                         return
@@ -212,6 +317,14 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     if (SageFileUtils.hasExplicitSageAllImport(file)) return
 
                     val prefix = result.prefixMatcher.prefix
+                    // The implicit sage.all namespace is large. PyCharm
+                    // invokes BASIC completion automatically while a user is
+                    // typing, so do not materialize root candidates for a
+                    // one-character prefix. For an automatic two-character
+                    // (or longer) prefix use only the immutable external
+                    // index below; the richer PSI scan remains explicit-only.
+                    val automaticRootCompletion = parameters.invocationCount == 0
+                    if (automaticRootCompletion && prefix.length < 2) return
                     if (prefix.isEmpty()) {
                         // With an empty prefix, let the platform decide whether
                         // to show the large namespace; a subsequent typed prefix
@@ -223,7 +336,7 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     // external namespace remains usable during that phase; skip
                     // only the optional PSI-backed candidates.
                     val emittedNames = linkedSetOf<String>()
-                    if (!DumbService.isDumb(position.project)) {
+                    if (!automaticRootCompletion && !DumbService.isDumb(position.project)) {
                         for ((name, element) in SageStubIndex.collectSageAllDeclarations(position.project)) {
                         if (!result.prefixMatcher.prefixMatches(name)) continue
                         emittedNames += name
@@ -267,6 +380,7 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         val name = entry.qualifiedName.substringAfterLast('.')
                         if (name in emittedNames || !result.prefixMatcher.prefixMatches(name)) continue
                         var builder = LookupElementBuilder.create(name).withTypeText("sage.all")
+                        indexedEntryIcon(entry.kind)?.let { builder = builder.withIcon(it) }
                         val callable = entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION ||
                             entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CLASS ||
                             (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.ALIAS &&
@@ -281,8 +395,50 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         result.addElement(builder)
                     }
                 }
-            },
-        )
+            }
+        extend(CompletionType.BASIC, PlatformPatterns.psiElement(), provider)
+        // Smart completion is an explicit user action. Reusing the same
+        // provider keeps Sage contracts available for Ctrl+Shift+Space without
+        // reintroducing automatic root-namespace work.
+        extend(CompletionType.SMART, PlatformPatterns.psiElement(), provider)
+    }
+
+    /**
+     * Resolve a previous assignment only when the normal PSI reference link
+     * is unavailable. The fallback is deliberately bounded: a malformed or
+     * very large file must not trigger a whole-file target scan on every
+     * completion keystroke.
+     */
+    private fun findPreviousTargetBounded(
+        file: PsiFile,
+        qualifier: PyExpression,
+    ): PyTargetExpression? {
+        if (file.textLength > MAX_TARGET_FALLBACK_BYTES) return null
+        val name = (qualifier as? PyReferenceExpression)?.referencedName ?: return null
+        return PsiTreeUtil.collectElementsOfType(file, PyTargetExpression::class.java)
+            .asSequence()
+            .filter { target ->
+                target.name == name && target.textRange.endOffset <= qualifier.textRange.startOffset
+            }
+            .maxByOrNull { it.textRange.startOffset }
+    }
+
+    private fun findIncompleteMemberQualifier(file: PsiFile, offset: Int): PyReferenceExpression? {
+        val dot = file.findElementAt((offset - 1).coerceAtLeast(0))
+        if (dot?.text != ".") return null
+        val receiverLeaf = PsiTreeUtil.prevVisibleLeaf(dot) ?: return null
+        return PsiTreeUtil.getParentOfType(receiverLeaf, PyReferenceExpression::class.java)
+    }
+
+    /** Keep index-only entries visually consistent with native Python PSI. */
+    private fun indexedEntryIcon(kind: com.starnotesxj.sagemath.sageapi.SageApiSymbolKind): Icon? = when (kind) {
+        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CLASS -> AllIcons.Nodes.Class
+        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION -> AllIcons.Nodes.Function
+        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD -> AllIcons.Nodes.Method
+        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.PROPERTY -> AllIcons.Nodes.Property
+        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CONSTANT -> AllIcons.Nodes.Constant
+        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.MODULE -> AllIcons.Nodes.Module
+        com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.ALIAS -> AllIcons.Nodes.Variable
     }
 
     /**
@@ -305,4 +461,6 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
             editor.caretModel.moveToOffset(offset + 1)
         }
     }
+
+    private val MAX_TARGET_FALLBACK_BYTES = 64 * 1024
 }

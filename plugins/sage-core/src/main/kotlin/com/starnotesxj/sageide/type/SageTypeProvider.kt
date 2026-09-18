@@ -26,6 +26,7 @@ import com.jetbrains.python.psi.types.PyClassTypeImpl
 import com.jetbrains.python.psi.types.PyTupleType
 import com.jetbrains.python.psi.types.PyType
 import com.jetbrains.python.psi.types.PyTypeProviderBase
+import com.jetbrains.python.psi.types.PyUnionType
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sageide.sugar.SageFileUtils
 import com.starnotesxj.sageide.completion.SageApiIndexService
@@ -490,13 +491,27 @@ class SageTypeProvider : PyTypeProviderBase() {
         }
 
         if (isSageFile && statement != null && !SageSugarAnalyzer.shapePredicate(statement)) {
-            val rhsCall = target.findAssignedValue() as? PyCallExpression
-            if (rhsCall != null) {
+            // Most assignments in a Sage file are ordinary Python values
+            // (strings, lists, dictionaries, comprehensions, ...).  The
+            // expensive Sage contract path is useful only for expressions
+            // whose syntax can carry a Sage return contract.  Avoid resolving
+            // every callable and recursively asking the type engine during
+            // each daemon pass for the common non-Sage case.
+            val assigned = target.findAssignedValue() ?: return null
+            if (assigned is PyNumericLiteralExpression) return literalAssignedType(target)
+            if (assigned !is PyCallExpression &&
+                assigned !is PyBinaryExpression &&
+                assigned !is PyReferenceExpression
+            ) return null
+
+            val rhsCall = assigned as? PyCallExpression
+            val query = SageApiIndexService.getInstance().query()
+            if (rhsCall != null && query != null && isPotentialSageCall(rhsCall, context, query)) {
                 directMemberAssignedType(target, rhsCall, context)?.let { return it }
+                genericFactoryAssignedType(target, context)?.let { return it }
             }
-            genericFactoryAssignedType(target, context)?.let { return it }
             indexedExpressionAssignedType(target, context)?.let { return it }
-            return literalAssignedType(target)
+            return null
         }
 
         if (isSageFile && statement != null) {
@@ -599,23 +614,28 @@ class SageTypeProvider : PyTypeProviderBase() {
                         ?: context.getType(qualifier)
                 }
                 if (receiverType != null) {
-                    val owner = sageClassOwner(receiverType) ?: return null
-                    val members = query.members(owner, "__call__")
-                        .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
-                    val candidates = members.filter { it.qualifiedName.substringBeforeLast('.') == owner }
-                        .ifEmpty { members }
-                    if (candidates.size == 1) {
-                        val member = candidates.single()
-                        SageTypeLowering.lowerCallReturnType(
-                            member.signatures,
-                            expression,
-                            context,
-                            query,
-                            member.qualifiedName,
-                            null,
-                        )?.let { return it }
-                        if (member.signatures.size == 1) {
-                            SageTypeLowering.lowerKnownReturn(member.signatures.single(), expression, context, query)?.let { return it }
+                    val owners = sageClassOwners(receiverType)
+                    if (owners.isNotEmpty()) {
+                        val branchReturns = owners.mapNotNull { owner ->
+                            val members = query.members(owner, "__call__")
+                                .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
+                            val candidates = members.filter { it.qualifiedName.substringBeforeLast('.') == owner }
+                                .ifEmpty { members }
+                            if (candidates.size != 1) return@mapNotNull null
+                            val member = candidates.single()
+                            SageTypeLowering.lowerCallReturnType(
+                                member.signatures,
+                                expression,
+                                context,
+                                query,
+                                member.qualifiedName,
+                                null,
+                            ) ?: if (member.signatures.size == 1) {
+                                SageTypeLowering.lowerKnownReturn(member.signatures.single(), expression, context, query)
+                            } else null
+                        }
+                        if (branchReturns.size == owners.size) {
+                            PyUnionType.union(branchReturns)?.let { return it }
                         }
                     }
                 }
@@ -642,6 +662,13 @@ class SageTypeProvider : PyTypeProviderBase() {
         ?.takeIf { it.isValid }
         ?.let(SageStubIndex::canonicalQualifiedName)
         ?.takeIf { it.startsWith("sage.") }
+
+    /** Preserve every concrete class in a finite return union for call dispatch. */
+    private fun sageClassOwners(type: PyType?): List<String> = when (type) {
+        is PyClassType -> listOfNotNull(sageClassOwner(type))
+        is PyUnionType -> type.members.orEmpty().flatMap(::sageClassOwners).distinct()
+        else -> emptyList()
+    }
 
     private fun reflectedOperator(operator: String): String? = when (operator) {
         "__add__" -> "__radd__"
@@ -772,6 +799,37 @@ class SageTypeProvider : PyTypeProviderBase() {
             ?.let { concreteSageReturnType(it, target, context, query) }
             ?: return null
         return Ref.create(lowered)
+    }
+
+    /**
+     * Cheap syntax/index gate for the heavyweight Sage call-contract path.
+     * Python builtins and ordinary project functions are deliberately rejected
+     * before `multiResolveCalleeFunction()` can walk their overload graph.
+     */
+    private fun isPotentialSageCall(
+        call: PyCallExpression,
+        context: TypeEvalContext,
+        query: SageApiIndexQuery,
+    ): Boolean {
+        val callee = call.callee as? PyReferenceExpression ?: return false
+        val qualifier = callee.qualifier
+        if (qualifier != null) {
+            val receiverType = context.getType(qualifier)
+            if (sageClassOwners(receiverType).isNotEmpty()) return true
+            if (SageIndexedTypeResolver.ownersForExpression(qualifier, query).isNotEmpty()) return true
+            return false
+        }
+
+        val resolved = callee.reference.resolve()
+        if (resolved == null) {
+            val name = callee.referencedName ?: return false
+            return query.namespaceEntry("sage.all", name) != null
+        }
+        if (resolved is PyTargetExpression &&
+            SageIndexedTypeResolver.ownersForTarget(resolved, query).isNotEmpty()
+        ) return true
+        val function = resolved as? PyFunction
+        return function?.let(::sageQualifiedName)?.startsWith("sage.") == true
     }
 
     private fun receiverSpecificMemberNames(
