@@ -15,6 +15,7 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.patterns.StandardPatterns
 import com.intellij.psi.PsiComment
+import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.PsiFile
 import com.intellij.util.ProcessingContext
@@ -116,20 +117,14 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         file.findElementAt(probeOffset)
                             ?.let { PsiTreeUtil.getParentOfType(it, PyReferenceExpression::class.java) },
                     ).filterNotNull().firstOrNull()
-                    // Completion may expose a file/error leaf at EOF. If the
-                    // direct PSI walk did not find the member reference, use the
-                    // nearest qualified reference that begins before the completion
-                    // offset; this mirrors the reference selected by Python's own
-                    // qualified completion path.
-                    val completionReference = reference ?: PsiTreeUtil
-                        .collectElementsOfType(file, PyReferenceExpression::class.java)
-                        .asSequence()
-                        .filter { candidate ->
-                            candidate.isQualified &&
-                                candidate.textRange.startOffset <= parameters.offset &&
-                                candidate.textRange.endOffset >= parameters.offset - 1
-                        }
-                        .maxByOrNull { it.textRange.startOffset }
+                    // Never recover a completion reference by enumerating every
+                    // reference in the file. BASIC completion runs on ordinary
+                    // editor edits, so that fallback turned a local caret query
+                    // into an O(file-size) PSI walk on every keystroke. The
+                    // direct probes above cover an in-progress qualified name;
+                    // the separate incomplete-member path below covers `c.`
+                    // before Python has created a qualified reference node.
+                    val completionReference = reference
                     // A caret in a newly typed bare identifier can have no
                     // reference PSI yet. The external index must still supply
                     // root candidates; only qualified/member cases require a
@@ -376,7 +371,8 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     // but it may expose only a subset of a configured full artifact.
                     // Add the remaining immutable `sage.all` namespace identities from
                     // the validated external index without fabricating PSI targets.
-                    for (entry in SageApiIndexService.getInstance().query()?.namespaceEntries("sage.all").orEmpty()) {
+                    val apiQuery = SageApiIndexService.getInstance().query()
+                    for (entry in apiQuery?.namespaceEntries("sage.all").orEmpty()) {
                         val name = entry.qualifiedName.substringAfterLast('.')
                         if (name in emittedNames || !result.prefixMatcher.prefixMatches(name)) continue
                         var builder = LookupElementBuilder.create(name).withTypeText("sage.all")
@@ -384,7 +380,7 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         val callable = entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION ||
                             entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CLASS ||
                             (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.ALIAS &&
-                                SageApiIndexService.getInstance().query()?.resolve(entry.aliases.firstOrNull().orEmpty())?.kind in
+                                apiQuery?.resolve(entry.aliases.firstOrNull().orEmpty())?.kind in
                                     setOf(
                                         com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.FUNCTION,
                                         com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.CLASS,
@@ -415,12 +411,22 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
     ): PyTargetExpression? {
         if (file.textLength > MAX_TARGET_FALLBACK_BYTES) return null
         val name = (qualifier as? PyReferenceExpression)?.referencedName ?: return null
-        return PsiTreeUtil.collectElementsOfType(file, PyTargetExpression::class.java)
-            .asSequence()
-            .filter { target ->
-                target.name == name && target.textRange.endOffset <= qualifier.textRange.startOffset
+        // Resolution normally handles this path.  When a freshly edited
+        // reference has not been linked yet, walk only a small number of
+        // preceding visible leaves instead of collecting every target in the
+        // file.  The old whole-file target collection was another O(file-size)
+        // operation in the automatic completion hot path.
+        var leaf: PsiElement = qualifier
+        repeat(MAX_TARGET_FALLBACK_LEAVES) {
+            leaf = PsiTreeUtil.prevVisibleLeaf(leaf) ?: return null
+            val target = PsiTreeUtil.getParentOfType(leaf, PyTargetExpression::class.java)
+            if (target != null && target.name == name &&
+                target.textRange.endOffset <= qualifier.textRange.startOffset
+            ) {
+                return target
             }
-            .maxByOrNull { it.textRange.startOffset }
+        }
+        return null
     }
 
     private fun findIncompleteMemberQualifier(file: PsiFile, offset: Int): PyReferenceExpression? {
@@ -463,4 +469,5 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
     }
 
     private val MAX_TARGET_FALLBACK_BYTES = 64 * 1024
+    private val MAX_TARGET_FALLBACK_LEAVES = 256
 }

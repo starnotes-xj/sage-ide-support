@@ -282,3 +282,17 @@
 - 提交 `b6d9d98` 已推送到远程 `sagemath-core-1.8.0`，标签 `v1.8.11` 已创建并推送；GitHub Actions run `35363359464` 的 `core` 与 `release` job 均成功。
 - GitHub Release 已发布：`https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.8.11`，正式附件 `sage-core-1.8.11.zip` 大小 `21,072,634` bytes；CI 使用远程配置的完整 Sage 10.9 索引重新构建并上传，不能用本地候选包替代该发布证据。
 - JetBrains Marketplace 插件 ID `com.starnotesxj.sageide` 的上传步骤已成功；Marketplace API 当前返回 `hasUnapprovedUpdate=true`，因此 `1.8.11` 处于 JetBrains 审核队列，待审核完成后才会显示为稳定版本。现有稳定版本接口仍可能暂时返回旧版本，这是平台审核状态，不是发布流水线失败。
+
+## 2026-09-19 增量（v187，输入卡顿日志与补全热点定位）
+
+- 当前 PyCharm `idea.log` 的 2026-09-19 10:41 会话确认只加载 `SageMath Core (1.8.11)`，没有新的 SageMath Core 异常、重复 classloader 或 `PSI/document/model changes are not allowed during highlighting`。同一会话在 10:48:23 起连续记录 `[Inline Completion] ... flcc_grpc_inference_service.cpp ... 'broken promise'`；上一会话还明确记录 `Plugin to blame: Full Line Code Completion`、`Last Action: EditorBackSpace`。这部分是 JetBrains Full Line Code Completion 的独立失败信号，不能当作 Sage 插件错误，但会直接放大字符串输入、删除和换行时的延迟。
+- Sage 补全源码仍有一个可复现的主线程热点：`SageImplicitCompletionContributor.addCompletions` 在每次 BASIC/SMART 请求（包括自动输入边界）都可能执行 `PsiTreeUtil.collectElementsOfType(file, PyReferenceExpression::class.java)`，对整份 `.sage` 文件枚举所有引用，再过滤当前光标范围。该路径没有 64 KiB 限制，长 CTF 文件中会把局部一次击键变成全文件 PSI 遍历；`c.<caret>` 已有局部 `findIncompleteMemberQualifier` 恢复路径，不需要这个全文件兜底。
+- 本阶段修复边界：移除自动补全中的全文件 `PyReferenceExpression` 兜底，只使用当前/前一可见叶子和当前插入边界的局部 PSI；保留已覆盖的 `c.` 成员恢复与显式补全行为，不重新引入 daemon restart、WSL worker 或全量根索引扫描。随后用现有 Sage completion/type 回归和插件构建验证；未连接可控 PyCharm UI，不能把 Gradle 结果冒充真实键入延迟 smoke。
+
+## 2026-09-19 增量（v188，编辑热路径去全量扫描与文件哈希缓存）
+
+- `SageImplicitCompletionContributor` 已移除整文件 `PyReferenceExpression` 兜底；当前只探测当前/前一可见叶子、插入边界和 `c.` 的局部接收者。未解析目标的回退也由整文件 `PyTargetExpression` 收集改为最多 `256` 个前向可见叶节点，并保留 `64 KiB` 文件上限。外部 Sage 索引查询在一次根补全请求内复用，避免 alias 判断重复查询。
+- `SageLiveTypeSnapshotService` 不再在每次 daemon 类型查询中构造完整前缀快照（读取全文、扫描错误/目标、SHA-256、潜在 WSL 调度）；静态合同/索引和正常运行回传仍提供类型，显式限定的 qualified-call snapshot 路径保留。保存文件的运行证据 SHA-256 按 VFS modification stamp+length 缓存，重复删除/换行/输入不会重复读取 WSL 文件。
+- qualified-call snapshot 现在还要求 `SageIndexedTypeResolver` 从不可变合同证明接收者的具体 Sage owner；`io.recv()`、`cipher.*` 等普通 Python/CTF 调用不会在 daemon 分析中触发全文快照或 WSL worker。动态结果仍可由正常运行回传提供。
+- 验证：`compileKotlin` 与 `SageCompletionTest` + `SageTypeProviderTest` 全部通过（Gradle `BUILD SUCCESSFUL`，21 actionable tasks）；使用完整 Sage 10.9 索引 `86,339` entries、SHA-256 `418a106063f83e965c066e3253cec43500ccc3d7e6ff45c4f1e89b1a098a4ea3` 的 `verifyReleaseFullIndex`、`buildPlugin`、`verifyPluginStructure` 全部通过。候选安装包 `G:\sage-build\release-assets\sage-core-1.8.12-performance-hotpath.zip`，大小 `21,073,151` bytes，SHA-256 `222239AB10F5DD1952C82CBE409305DBA602E131F1B461F40BE4A769CB4C01B4`，版本 `1.8.12`。
+- 仍需用户完全退出并重启 PyCharm 后做真实编辑延迟 smoke。当前日志同时存在 Full Line Code Completion 的 `broken promise`，且上一会话曾记录该插件对 `EditorBackSpace` 负责；若安装 1.8.12 后仍在字符串/删除/换行卡顿，应先临时停用 Full Line Code Completion 做 A/B，以区分平台插件延迟与 SageMath Core 延迟。当前环境没有可控 PyCharm UI，不能把本地 Gradle 结果冒充人工体验结论。

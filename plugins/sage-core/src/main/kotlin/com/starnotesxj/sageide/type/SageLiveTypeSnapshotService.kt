@@ -16,8 +16,8 @@ import com.jetbrains.python.psi.PyStatement
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.types.PyClassTypeImpl
 import com.jetbrains.python.psi.types.PyType
-import com.starnotesxj.sageide.run.SageRunSettings
 import com.starnotesxj.sageide.completion.SageApiIndexService
+import com.starnotesxj.sageide.run.SageRunSettings
 import com.starnotesxj.sageide.run.SageRuntimeProbeHandle
 import com.starnotesxj.sageide.run.SageRuntimeService
 import com.starnotesxj.sageide.sugar.SageFileUtils
@@ -59,6 +59,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     private val inFlight = ConcurrentHashMap.newKeySet<SnapshotKey>()
     private val scheduled = ConcurrentHashMap<SnapshotKey, ScheduledFuture<*>>()
     private val active = ConcurrentHashMap<SnapshotKey, SageRuntimeProbeHandle<*>>()
+    private val savedDocumentDigests = ConcurrentHashMap<String, SavedDocumentDigest>()
     private val workerLock = Any()
     private var workerRuntime: ConfiguredRuntime? = null
     private var worker: SageLiveTypeWorker? = null
@@ -76,11 +77,13 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         if (!acceptsMemberProbe(reference)) return null
         val name = reference.referencedName ?: return null
         observedRunType(reference, name)?.let { return it }
-        // A snapshot lookup hashes/scans the source prefix, so only a receiver
-        // that is actually asking for members may consult that cache.  This
-        // keeps normal typing on the static/index path; member completion still
-        // gets the exact completed snapshot below.
-        return typeFor(reference, name, includeContainingStatement = false, scheduleIfAbsent = false)
+        // Do not build a snapshot request here.  That request reads the full
+        // prefix, scans errors/targets, and computes SHA-256; this method is
+        // called during every daemon pass for a member receiver.  Exact static
+        // contracts are handled by SageTypeProvider and indexed completion,
+        // while dynamic values remain available through normal run evidence,
+        // which was checked above.
+        return null
     }
 
     /**
@@ -93,31 +96,12 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         if (!acceptsMemberProbe(reference)) return null
         val name = reference.referencedName ?: return null
         observedRunType(reference, name)?.let { return it }
-        // Live probing executes Sage in a separate WSL/native process and is
-        // intentionally reserved for receivers with an indexed Sage contract.
-        // A .sage file also contains ordinary Python/CTF values (`io`, `cipher`,
-        // `response`, ...); scheduling a worker for every unresolved member on
-        // those values can freeze the editor during newline/delete daemon runs.
-        // Unknown dynamic Sage factories remain fail-closed until normal run
-        // evidence or an exact indexed owner is available.
-        if (!hasIndexedSageEvidence(reference)) return null
-        // The immutable Sage contract index can already prove the exact
-        // concrete owner even when a remote WSL skeleton has not produced a
-        // local `.pyi` PSI class.  Do not launch/import a Sage worker for that
-        // deterministic case on every `receiver.` completion keystroke; the
-        // index-only completion path consumes the owner directly.
-        val target = reference.reference.resolve() as? PyTargetExpression
-        if (target != null && SageIndexedTypeResolver.ownersForTarget(target).isNotEmpty()) return null
-        return typeFor(reference, name, includeContainingStatement = false, scheduleIfAbsent = true)
-    }
-
-    private fun hasIndexedSageEvidence(reference: PyReferenceExpression): Boolean {
-        val query = SageApiIndexService.getInstance().query() ?: return false
-        if (SageIndexedTypeResolver.ownersForExpression(reference, query).isNotEmpty()) return true
-        val target = reference.reference.resolve() as? PyTargetExpression ?: return false
-        if (SageIndexedTypeResolver.ownersForTarget(target, query).isNotEmpty()) return true
-        val assigned = target.findAssignedValue() ?: return false
-        return SageIndexedTypeResolver.ownersForExpression(assigned, query).isNotEmpty()
+        // Live probing is intentionally not scheduled from a daemon type query.
+        // A `.sage` file also contains ordinary Python/CTF values (`io`,
+        // `cipher`, `response`, ...); even a debounced WSL process is too
+        // expensive on the edit path.  Dynamic values remain available through
+        // normal run feedback and the explicit qualified-call snapshot path.
+        return null
     }
 
     fun typeForTarget(target: PyTargetExpression): PyType? {
@@ -126,10 +110,8 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         observedRunType(target, name)?.let { return it }
         // Assignment targets are queried on every daemon pass.  Do not build a
         // full snapshot request (which hashes and walks the entire file) here;
-        // a member receiver performs the bounded request through
-        // scheduleTypeForMemberReceiver(), and completed evidence is consumed
-        // by typeForReference().  Normal target inference therefore remains
-        // entirely static and non-blocking.
+        // completed run evidence is consumed by typeForReference().  Normal
+        // target inference therefore remains entirely static and non-blocking.
         return null
     }
 
@@ -174,6 +156,15 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
      */
     fun typeForCall(call: PyCallExpression): PyType? {
         if (!acceptsDynamicCallProbe(call)) return null
+        // Qualified calls are visited during ordinary daemon analysis.  Only
+        // schedule the isolated Sage process when the immutable index proves
+        // the receiver is a concrete Sage owner; `io.recv()`, `cipher.*`, and
+        // other CTF/Python calls must never turn a keystroke into a source
+        // snapshot plus WSL startup.
+        val callee = call.callee as? PyReferenceExpression ?: return null
+        val qualifier = callee.qualifier ?: return null
+        val query = SageApiIndexService.getInstance().query() ?: return null
+        if (SageIndexedTypeResolver.ownersForExpression(qualifier, query).isEmpty()) return null
         val request = callSnapshotRequest(call) ?: return null
         val name = LIVE_RESULT_NAME
         val observed = evidence.completed(request.key)?.get(name)
@@ -233,11 +224,30 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
                 .maxByOrNull { (_, value) -> value.sourceText?.length ?: -1 }
                 ?.second
         } else {
-            val digest = runCatching { sha256(virtualFile.contentsToByteArray()) }.getOrNull() ?: return null
+            val digest = savedDocumentDigest(virtualFile) ?: return null
             runEvidence.completed(RunEvidenceKey(virtualFile.url, digest, runtime.key))
         } ?: return null
         val observed = evidence.observedTypes[name] ?: return null
         return SageObservedTypeResolver.resolve(project, observed)
+    }
+
+    /**
+     * A saved-file member/target query can run many times during one daemon
+     * pass.  Re-reading the entire WSL-backed file for SHA-256 on each query
+     * was needlessly expensive and showed up as edit latency even though the
+     * file had not changed.  The VFS stamp and length are sufficient to reuse
+     * the exact digest until the file is modified.
+     */
+    private fun savedDocumentDigest(file: VirtualFile): String? {
+        val key = file.url
+        val stamp = file.modificationStamp
+        val length = file.length
+        savedDocumentDigests[key]?.takeIf {
+            it.modificationStamp == stamp && it.length == length
+        }?.let { return it.digest }
+        val digest = runCatching { sha256(file.contentsToByteArray()) }.getOrNull() ?: return null
+        savedDocumentDigests[key] = SavedDocumentDigest(stamp, length, digest)
+        return digest
     }
 
     /**
@@ -434,6 +444,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         inFlight.clear()
         evidence.clear()
         runEvidence.clear()
+        savedDocumentDigests.clear()
         debounceExecutor.shutdownNow()
     }
 
@@ -442,6 +453,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     }
     private data class SnapshotKey(val fileUrl: String, val sourceDigest: String, val runtimeKey: String)
     private data class RunEvidenceKey(val fileUrl: String, val sourceDigest: String, val runtimeKey: String)
+    private data class SavedDocumentDigest(val modificationStamp: Long, val length: Long, val digest: String)
     private data class RunEvidence(val observedTypes: Map<String, SageObservedType>, val sourceText: String?)
     private data class SnapshotRequest(
         val key: SnapshotKey,
