@@ -276,3 +276,9 @@
 - 验证：`SageTypeProviderTest` 与 `SageCompletionTest` 共 `46` 项通过；`core:sage-api:test -PrunSageApiTests=true` 通过；完整 `verifyReleaseFullIndex`、`buildPlugin`、`verifyPluginStructure` 通过；`git diff --check` 待最终收尾命令确认。
 - 新安装包：`G:\sage-build\release-assets\sage-core-1.8.11-unresponsive-fix.zip`，大小 `21,072,619` bytes，SHA-256 `45C96AA7A92372C63C67A03A7FB820658146E2C79E5CD9B9BFD9BA99A49330C2`。包内 descriptor 为 `com.starnotesxj.sageide`/`SageMath Core`/`1.8.11`，`require-restart=true`；主合同索引 `47,641,036` bytes，Sage/Python 文档桶各 `64` 个，未发现主机路径泄漏。
 - 仍需用户完全退出并重启 PyCharm 后做人工 smoke：普通 Sage 输入、删除、换行、字符串内输入、`c.` 补全和 `Ctrl+Space`。本环境没有可控 PyCharm UI，不能把 Gradle 结果冒充真实 UI 延迟结论。
+
+## 2026-09-19 增量（v186，1.8.11 远程发布完成）
+
+- 提交 `b6d9d98` 已推送到远程 `sagemath-core-1.8.0`，标签 `v1.8.11` 已创建并推送；GitHub Actions run `35363359464` 的 `core` 与 `release` job 均成功。
+- GitHub Release 已发布：`https://github.com/starnotes-xj/sage-ide-support/releases/tag/v1.8.11`，正式附件 `sage-core-1.8.11.zip` 大小 `21,072,634` bytes；CI 使用远程配置的完整 Sage 10.9 索引重新构建并上传，不能用本地候选包替代该发布证据。
+- JetBrains Marketplace 插件 ID `com.starnotesxj.sageide` 的上传步骤已成功；Marketplace API 当前返回 `hasUnapprovedUpdate=true`，因此 `1.8.11` 处于 JetBrains 审核队列，待审核完成后才会显示为稳定版本。现有稳定版本接口仍可能暂时返回旧版本，这是平台审核状态，不是发布流水线失败。
