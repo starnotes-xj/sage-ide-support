@@ -115,6 +115,18 @@ class SageTypeRefExpressionTest {
     }
 
     @Test
+    fun normalizesQualifiedSelfToTheDeclaredSignatureVariable() {
+        assertEquals(
+            SageTypeExpression.TypeVariable("Self"),
+            SageTypeRefExpressionParser.parse("typing.Self", setOf("Self")),
+        )
+        assertEquals(
+            SageTypeExpression.TypeVariable("Self"),
+            SageTypeRefExpressionParser.parse("typing_extensions.Self", setOf("Self")),
+        )
+    }
+
+    @Test
     fun parsesParamSpecCallablesAndComponentsContextually() {
         val paramSpec = setOf("P")
         assertEquals(

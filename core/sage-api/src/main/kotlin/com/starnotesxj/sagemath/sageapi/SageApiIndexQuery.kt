@@ -183,14 +183,7 @@ class SageApiIndexQuery(val index: SageApiIndex) {
             if (!active.add(canonical)) return listOf(canonical)
             val entry = classEntries(canonical).singleOrNull { it.qualifiedName == canonical }
             val parents = entry?.parents.orEmpty()
-                .flatMap { parent ->
-                    val candidates = classEntries(parent).map { it.qualifiedName }.distinct()
-                    when {
-                        candidates.size == 1 -> candidates
-                        candidates.isEmpty() -> listOf(parent)
-                        else -> emptyList()
-                    }
-                }
+                .flatMap { parent -> resolveParentClassNames(canonical, parent) }
                 .filterNot { it in active }
                 .distinct()
             val sequences = parents.map(::linearize) + listOf(parents)
@@ -316,7 +309,10 @@ class SageApiIndexQuery(val index: SageApiIndex) {
                 classEntries(current).forEach { entry ->
                     pending.add(entry.qualifiedName to rank)
                     entry.aliases.forEach { pending.add(it to rank) }
-                    entry.parents.forEach { pending.add(it to rank + 1) }
+                    entry.parents.forEach { parent ->
+                        resolveParentClassNames(entry.qualifiedName, parent)
+                            .forEach { pending.add(it to rank + 1) }
+                    }
                 }
             }
             ranks
@@ -336,6 +332,32 @@ class SageApiIndexQuery(val index: SageApiIndex) {
     /** Canonical/alias class entries; short-name fallback is caller-specific. */
     private fun classEntries(name: String): List<SageApiEntry> =
         classesByLookup[name].orEmpty().distinctBy { it.qualifiedName to it.kind }
+
+    /**
+     * The generated stubs occasionally retain a sibling-module base as a
+     * relative dotted name (for example ``ell_field.EllipticCurve_field``).
+     * Resolve it only against the declaring class's immediate package and only
+     * when that lookup identifies exactly one indexed class.  This keeps the
+     * index fail-closed for aliases and unrelated short-name collisions while
+     * restoring ordinary inherited-member lookup from the actual stub graph.
+     */
+    private fun resolveParentClassNames(owner: String, parent: String): List<String> {
+        val direct = classEntries(parent).map { it.qualifiedName }.distinct()
+        when {
+            direct.size == 1 -> return direct
+            direct.size > 1 -> return emptyList()
+            parent.startsWith("sage.") -> return listOf(parent)
+        }
+        val ownerModule = owner.substringBeforeLast('.', missingDelimiterValue = "")
+        val ownerPackage = ownerModule.substringBeforeLast('.', missingDelimiterValue = "")
+        if (!ownerPackage.startsWith("sage.")) return listOf(parent)
+        val relative = classEntries("$ownerPackage.$parent").map { it.qualifiedName }.distinct()
+        return when {
+            relative.size == 1 -> relative
+            relative.size > 1 -> emptyList()
+            else -> listOf(parent)
+        }
+    }
 
     private companion object {
         val MEMBER_KINDS = setOf(SageApiSymbolKind.METHOD, SageApiSymbolKind.PROPERTY, SageApiSymbolKind.CONSTANT)

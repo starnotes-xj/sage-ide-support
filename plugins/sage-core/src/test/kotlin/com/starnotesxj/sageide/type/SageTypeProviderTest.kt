@@ -713,6 +713,176 @@ class SageTypeProviderTest : SagePluginTestBase() {
         }
     }
 
+    fun testCtfReflectedScalarActionKeepsConcreteEllipticPoint() {
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "element.pyi")
+        val element = "sage.structure.element.Element"
+        val moduleElement = "sage.structure.element.ModuleElement"
+        val integer = "sage.rings.integer.Integer"
+        val integerRing = "sage.rings.integer_ring.IntegerRing_class"
+        val finiteCurve = "sage.schemes.elliptic_curves.ell_finite_field.EllipticCurve_finite_field"
+        val finitePoint = "sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field"
+        val index = SageApiIndexQuery(SageApiIndex("10.9", "3.13", listOf(
+            SageApiEntry(element, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(moduleElement, SageApiSymbolKind.CLASS, parents = listOf(element), sources = listOf(source)),
+            SageApiEntry(integer, SageApiSymbolKind.CLASS, parents = listOf(element), sources = listOf(source)),
+            SageApiEntry(integerRing, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(finiteCurve, SageApiSymbolKind.CLASS, sources = listOf(source)),
+            SageApiEntry(finitePoint, SageApiSymbolKind.CLASS, parents = listOf(moduleElement), sources = listOf(source)),
+            SageApiEntry(
+                "$finiteCurve.order",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(integer))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$finiteCurve.random_point",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(finitePoint))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$integer.__floordiv__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(integer))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$integerRing.__call__",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(integer))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$moduleElement._rmul_",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(
+                    parameters = listOf(SageApiParameter("left", SageTypeRef.known(element))),
+                    returnType = SageTypeRef.known("Self"),
+                    typeParameters = listOf(SageApiTypeParameter("Self", SageApiTypeParameterKind.SELF)),
+                )),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$finitePoint.is_zero",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known("bool"))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "$finitePoint.order",
+                SageApiSymbolKind.METHOD,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(integer))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "sage.all.EllipticCurve",
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(finiteCurve))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "sage.all.Integer",
+                SageApiSymbolKind.FUNCTION,
+                signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(integer))),
+                sources = listOf(source),
+            ),
+            SageApiEntry(
+                "sage.all.ZZ",
+                SageApiSymbolKind.CONSTANT,
+                valueType = SageTypeRef.known(integerRing),
+                sources = listOf(source),
+            ),
+        )))
+        SageApiIndexService.getInstance().install(index)
+        try {
+            myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/structure/__init__.pyi", "")
+            myFixture.addFileToProject(
+                "site-packages/sage/structure/element.pyi",
+                "class Element:\n" +
+                    "    pass\n" +
+                    "class ModuleElement(Element):\n" +
+                    "    def _rmul_(self, left: Element) -> ModuleElement: ...\n",
+            )
+            myFixture.addFileToProject("site-packages/sage/rings/__init__.pyi", "")
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/integer_ring.pyi",
+                "from sage.rings.integer import Integer\n" +
+                    "class IntegerRing_class:\n" +
+                    "    def __call__(self, value = 0) -> Integer: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/integer.pyi",
+                "from sage.structure.element import Element\n" +
+                    "class Integer(Element):\n" +
+                    "    def __floordiv__(self, other) -> Integer: ...\n",
+            )
+            myFixture.addFileToProject("site-packages/sage/schemes/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/schemes/elliptic_curves/__init__.pyi", "")
+            myFixture.addFileToProject(
+                "site-packages/sage/schemes/elliptic_curves/ell_point.pyi",
+                "from sage.structure.element import ModuleElement\n" +
+                    "from sage.rings.integer import Integer\n" +
+                    "class EllipticCurvePoint_finite_field(ModuleElement):\n" +
+                    "    def is_zero(self) -> bool: ...\n" +
+                    "    def order(self) -> Integer: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/schemes/elliptic_curves/ell_finite_field.pyi",
+                "from sage.rings.integer import Integer\n" +
+                    "from sage.schemes.elliptic_curves.ell_point import EllipticCurvePoint_finite_field\n" +
+                    "class EllipticCurve_finite_field:\n" +
+                    "    def order(self) -> Integer: ...\n" +
+                    "    def random_point(self) -> EllipticCurvePoint_finite_field: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/all.pyi",
+                "from sage.rings.integer import Integer\n" +
+                    "from sage.rings.integer_ring import IntegerRing_class as _Type_ZZ\n" +
+                    "from sage.schemes.elliptic_curves.ell_finite_field import EllipticCurve_finite_field\n" +
+                    "ZZ: _Type_ZZ\n" +
+                    "def Integer(value) -> Integer: ...\n" +
+                    "def EllipticCurve(*args, **kwargs) -> EllipticCurve_finite_field: ...\n",
+            )
+            myFixture.configureByText(
+                "ctf-reflected-point.sage",
+                "bad_curve = EllipticCurve()\n" +
+                    "curve_order = bad_curve.order()\n" +
+                    "R = ZZ(1)\n" +
+                    "Q = (curve_order // R) * bad_curve.random_point()\n" +
+                    "Q.is_zero()\n" +
+                    "Q.order()\n",
+            )
+            myFixture.doHighlighting()
+            val targets = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .associateBy { it.name }
+            assertEquals(
+                setOf(integer),
+                SageIndexedTypeResolver.ownersForTarget(checkNotNull(targets["R"]), index),
+                "A typed callable Sage constant must follow its exact parent __call__ contract",
+            )
+            val qType = defaultContext().getType(checkNotNull(targets["Q"])) as? PyClassType
+            assertEquals(finitePoint, qType?.pyClass?.let(SageStubIndex::canonicalQualifiedName))
+            val qMemberReceiver = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+                .asSequence()
+                .filter { it.isQualified }
+                .mapNotNull { it.qualifier as? PyReferenceExpression }
+                .first { it.referencedName == "Q" }
+            assertEquals(
+                setOf(finitePoint),
+                SageIndexedTypeResolver.ownersForExpression(qMemberReceiver, index),
+                "The lightweight completion resolver must retain the same concrete reflected-scalar result",
+            )
+            val members = com.starnotesxj.sageide.completion.SageApiClassMembersProvider()
+                .getMembers(checkNotNull(qType), myFixture.file, defaultContext())
+                .map { it.name }
+            assertTrue("is_zero" in members, "Q members=$members")
+            assertTrue("order" in members, "Q members=$members")
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
     fun testCtfSolveRightOverloadNarrowsMatrixArgument() {
         val source = SageApiSourceRef(SageApiSourceKind.STUB, "matrix2.pyi")
         val matrix = "sage.matrix.matrix2.Matrix"

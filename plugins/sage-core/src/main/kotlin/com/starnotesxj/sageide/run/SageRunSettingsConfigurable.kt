@@ -2,10 +2,12 @@ package com.starnotesxj.sageide.run
 
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.components.JBCheckBox
 import com.starnotesxj.sageide.SageBundle
+import com.starnotesxj.sageide.inline.SageInlineNativeRuntime
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnostic
 import com.starnotesxj.sagemath.runtime.RuntimeDiagnosticCode
 import com.starnotesxj.sagemath.runtime.RuntimeOperationResult
@@ -46,6 +48,7 @@ class SageRunSettingsConfigurable : Configurable {
     private val dockerCommandField = JBTextField()
     private val sageParametersField = JBTextField()
     private val liveTypeProbingCheckBox = JBCheckBox(SageBundle.message("settings.live.type.evidence"))
+    private val nativeInlineScoringCheckBox = JBCheckBox(SageBundle.message("settings.native.inline.scoring"))
     private val sshCard = JPanel(GridBagLayout())
     private val sshHostField = JBTextField()
     private val sshUserField = JBTextField()
@@ -250,8 +253,10 @@ class SageRunSettingsConfigurable : Configurable {
         c.weighty = 0.0
         panel.add(liveTypeProbingCheckBox, c)
         c.gridy = 5
-        panel.add(detectButton, c)
+        panel.add(nativeInlineScoringCheckBox, c)
         c.gridy = 6
+        panel.add(detectButton, c)
+        c.gridy = 7
         panel.add(statusLabel, c)
         rootComponent = panel
         return panel
@@ -268,6 +273,7 @@ class SageRunSettingsConfigurable : Configurable {
             s.wslCondaEnvironment != wslCondaEnvironmentField.text ||
             s.wslCondaExecutable != wslCondaExecutableField.text ||
             s.liveTypeProbingEnabled != liveTypeProbingCheckBox.isSelected ||
+            s.nativeInlineScoringEnabled != nativeInlineScoringCheckBox.isSelected ||
             s.containerExecutable != containerExecutableField.text ||
             s.dockerImage != dockerImageField.text ||
             s.dockerContainerDir != dockerContainerDirField.text ||
@@ -300,6 +306,7 @@ class SageRunSettingsConfigurable : Configurable {
             wslCondaEnvironment = wslCondaEnvironmentField.text
             wslCondaExecutable = wslCondaExecutableField.text
             liveTypeProbingEnabled = liveTypeProbingCheckBox.isSelected
+            nativeInlineScoringEnabled = nativeInlineScoringCheckBox.isSelected
             containerExecutable = containerExecutableField.text
             dockerImage = dockerImageField.text
             dockerContainerDir = dockerContainerDirField.text
@@ -321,6 +328,9 @@ class SageRunSettingsConfigurable : Configurable {
             throw ConfigurationException(SageBundle.message("settings.error.native.required"))
         }
         SageRunSettings.getInstance().loadState(candidate)
+        ProjectManager.getInstance().openProjects.forEach { project ->
+            SageInlineNativeRuntime.getInstance(project).refreshEnabledState()
+        }
     }
 
     private fun parsePort(): Int = sshPortField.text.trim().toIntOrNull()?.takeIf { it in 1..65535 }
@@ -363,6 +373,7 @@ class SageRunSettingsConfigurable : Configurable {
         wslCondaEnvironmentField.text = s.wslCondaEnvironment
         wslCondaExecutableField.text = s.wslCondaExecutable
         liveTypeProbingCheckBox.isSelected = s.liveTypeProbingEnabled
+        nativeInlineScoringCheckBox.isSelected = s.nativeInlineScoringEnabled
         containerExecutableField.text = s.containerExecutable
         dockerImageField.text = s.dockerImage
         dockerContainerDirField.text = s.dockerContainerDir

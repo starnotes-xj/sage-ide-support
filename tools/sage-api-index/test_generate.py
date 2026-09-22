@@ -9,8 +9,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from generate import (
+    AstExtractor,
     RawSymbol,
     SourceRef,
+    SourceSpec,
     attach_trusted_return_evidence,
     normalize,
     parse_return_evidence_manifest,
@@ -26,6 +28,26 @@ ROOT = Path(__file__).resolve().parent
 GENERATOR = ROOT / "generate.py"
 
 class ManifestContractTest(unittest.TestCase):
+    def test_class_method_alias_copies_the_existing_contract(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stub = root / "sage" / "curves" / "finite.pyi"
+            stub.parent.mkdir(parents=True)
+            stub.write_text(
+                "class Curve:\n"
+                "    def cardinality(self, algorithm=None) -> Integer: ...\n"
+                "    order = cardinality\n",
+                encoding="utf-8",
+            )
+
+            symbols = AstExtractor(SourceSpec(root, "STUB", "fixture/10.9")).extract_path(stub)
+            cardinality = next(symbol for symbol in symbols if symbol.qualified_name == "sage.curves.finite.Curve.cardinality")
+            order = next(symbol for symbol in symbols if symbol.qualified_name == "sage.curves.finite.Curve.order")
+
+            self.assertEqual("METHOD", order.kind)
+            self.assertEqual(cardinality.signatures, order.signatures)
+            self.assertEqual([cardinality.qualified_name], order.aliases)
+
     def test_manifest_index_source_metadata_contract_rejects_locator_drift(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

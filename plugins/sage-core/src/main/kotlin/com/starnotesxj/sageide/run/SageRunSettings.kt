@@ -38,6 +38,9 @@ class SageRunSettings : PersistentStateComponent<SageRunSettings.State> {
         /** Enabled by default; older settings without the migration marker are upgraded once. */
         var liveTypeProbingEnabled: Boolean = true
         var liveTypeProbingConfigured: Boolean = true
+        /** Enabled by default; controls the optional local native inline scorer only. */
+        var nativeInlineScoringEnabled: Boolean = true
+        var nativeInlineScoringConfigured: Boolean = true
         var containerExecutable: String = "docker"
         var dockerImage: String = "sagemath/sagemath"
         var dockerContainerDir: String = "/mnt/sage"
@@ -68,6 +71,10 @@ class SageRunSettings : PersistentStateComponent<SageRunSettings.State> {
         if (!state.liveTypeProbingConfigured) {
             state.liveTypeProbingEnabled = true
             state.liveTypeProbingConfigured = true
+        }
+        if (!state.nativeInlineScoringConfigured) {
+            state.nativeInlineScoringEnabled = true
+            state.nativeInlineScoringConfigured = true
         }
         myState = state
     }

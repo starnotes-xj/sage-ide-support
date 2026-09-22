@@ -169,8 +169,31 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         val name = LIVE_RESULT_NAME
         val observed = evidence.completed(request.key)?.get(name)
         if (observed != null) return SageObservedTypeResolver.resolve(project, observed)
-        schedule(request)
+        // A PyTypeProvider is queried repeatedly by the daemon after every
+        // document change. Starting a WSL snapshot from this path turns an
+        // ordinary delete/newline into a source walk and a background Sage
+        // workload. Completion explicitly requests the same snapshot below;
+        // this method is deliberately cache-read-only.
         return null
+    }
+
+    /**
+     * Starts an isolated dynamic-call snapshot only in response to an actual
+     * member-completion request. This keeps the optional WSL backend useful
+     * for values the static index cannot prove, without coupling daemon type
+     * analysis to process scheduling while the user edits text.
+     */
+    fun requestTypeForMemberCompletion(reference: PyReferenceExpression) {
+        if (!SageRunSettings.getInstance().getState().liveTypeProbingEnabled) return
+        if (!acceptsMemberProbe(reference)) return
+        val target = reference.reference.resolve() as? PyTargetExpression ?: return
+        val call = target.findAssignedValue() as? PyCallExpression ?: return
+        if (!acceptsDynamicCallProbe(call)) return
+        val callee = call.callee as? PyReferenceExpression ?: return
+        val qualifier = callee.qualifier ?: return
+        val query = SageApiIndexService.getInstance().query() ?: return
+        if (SageIndexedTypeResolver.ownersForExpression(qualifier, query).isEmpty()) return
+        callSnapshotRequest(call)?.let(::schedule)
     }
 
     private fun typeFor(
@@ -300,7 +323,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         val file = call.containingFile as? PyFile ?: return null
         if (!SageFileUtils.isSageFile(file) || SageStubIndex.isSageStubFile(file)) return null
         if (!SageRunSettings.getInstance().getState().liveTypeProbingEnabled) return null
-        if (PsiTreeUtil.collectElementsOfType(call, PsiErrorElement::class.java).isNotEmpty()) return null
+        if (PsiTreeUtil.getParentOfType(call, PsiErrorElement::class.java) != null) return null
         val virtualFile = file.virtualFile ?: return null
         val statement = PsiTreeUtil.getParentOfType(call, PyStatement::class.java) ?: return null
         // A synthetic assignment cannot preserve whether a nested call was
@@ -311,8 +334,6 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         if (statement.parent !is PyFile) return null
         val cutoff = statement.textRange.startOffset
         if (cutoff <= 0 || cutoff > file.textLength) return null
-        if (PsiTreeUtil.collectElementsOfType(file, PsiErrorElement::class.java)
-                .any { it.textRange.startOffset < cutoff }) return null
         val prefix = file.text.substring(0, cutoff)
         val source = buildString {
             append(prefix)
@@ -324,7 +345,10 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         return SnapshotRequest(
             SnapshotKey(virtualFile.url, sha256(source), runtime.key),
             source,
-            collectSnapshotNames(file, cutoff) + LIVE_RESULT_NAME,
+            // The synthetic assignment is the only value requested from this
+            // completion-owned probe. Avoid walking every target in the file
+            // on the interactive completion path.
+            setOf(LIVE_RESULT_NAME),
             runtime,
             virtualFile.name,
             virtualFile,

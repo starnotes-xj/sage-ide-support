@@ -11,6 +11,13 @@
   <vendor email="starnotes@qq.com" url="https://github.com/starnotes-xj/sage-ide-support">starnotes-xj</vendor>
   <version>1.8.0</version>
   <incompatible-with>com.starnotesxj.sagemath.ctf.sage-core</incompatible-with>
+  <!--
+    Full Line sees Python PSI leaves inside a Python dialect and otherwise
+    starts its Python ML pipeline for .sage files.  Load the dialect resolver
+    only when that optional bundled plugin is present; it leaves regular .py
+    files and normal Sage popup completion untouched.
+  -->
+  <depends optional="true" config-file="full-line.xml">org.jetbrains.completion.full.line</depends>
 
   <change-notes><![CDATA[
   <ul>
@@ -245,6 +252,7 @@
     <runLineMarkerContributor language="Sage"
                               implementationClass="com.starnotesxj.sageide.run.SageRunLineMarkerContributor"/>
     <postStartupActivity implementation="com.starnotesxj.sageide.run.SageRuntimeDiscoveryStartupActivity"/>
+    <postStartupActivity implementation="com.starnotesxj.sageide.inline.SageInlineWarmupStartupActivity"/>
 
     <!-- Shared Sage execution settings (Settings | Tools | SageMath). -->
     <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRunSettings"/>
@@ -254,6 +262,8 @@
     <sdkType implementation="com.starnotesxj.sageide.runtime.SageRuntimeSdkType"/>
     <applicationService serviceImplementation="com.starnotesxj.sageide.completion.SageApiIndexService"/>
     <projectService serviceImplementation="com.starnotesxj.sageide.type.SageLiveTypeSnapshotService"/>
+    <projectService serviceImplementation="com.starnotesxj.sageide.inline.SageInlinePredictionService"/>
+    <projectService serviceImplementation="com.starnotesxj.sageide.inline.SageInlineNativeRuntime"/>
 
     <applicationConfigurable parentId="tools"
                              id="com.starnotesxj.sageide.run.SageRunSettingsConfigurable"
@@ -263,17 +273,24 @@
     <!-- Common Sage constructs as live templates (polynomial ring, number field, ...). -->
     <defaultLiveTemplates file="liveTemplates/Sage.xml"/>
 
-    <!-- Implicit sage.all namespace and qualified member completion for .sage files.
-         Sage is a dependent Python dialect, but completion dispatch in current
-         PyCharm selects the concrete Sage language rather than its Python base.
-         Keep both registrations for platform-version compatibility; the
-         contributor itself gates on the containing file being .sage. -->
+    <!-- BASIC completion has one Python-PSI endpoint. Smart completion has
+         Python and Sage compatibility endpoints because PyCharm dispatches
+         Ctrl+Shift+Space through different language paths by version. -->
     <completion.contributor language="Python"
                             order="first"
                             implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
     <completion.contributor language="Sage"
                             order="first"
-                            implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
+                            implementationClass="com.starnotesxj.sageide.sugar.SageSmartCompletionContributor"/>
+
+    <!-- Exact, low-cost inline continuation for .sage. This uses the public
+         platform debounce/cancellation provider rather than Full Line's
+         private ML implementation; ambiguous members remain in the native
+         popup completion list. -->
+    <inline.completion.provider
+        id="SageSemanticInlineCompletion"
+        implementation="com.starnotesxj.sageide.inline.SageInlineCompletionProvider"
+        order="first"/>
 
     <!-- Index-backed Quick Documentation owns Sage source files and installed
          Sage SDK stubs, so remote WSL Sage docs do not require a local Python SDK. -->

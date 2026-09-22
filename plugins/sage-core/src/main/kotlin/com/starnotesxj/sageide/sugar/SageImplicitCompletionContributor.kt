@@ -22,6 +22,7 @@ import com.intellij.util.ProcessingContext
 import com.starnotesxj.sageide.completion.SageApiClassMembersProvider
 import com.starnotesxj.sageide.completion.SageApiIndexService
 import com.starnotesxj.sageide.type.SageIndexedTypeResolver
+import com.starnotesxj.sageide.type.SageLiveTypeSnapshotService
 import com.starnotesxj.sageide.type.SageTypeProvider
 import com.jetbrains.python.psi.PyImportStatementBase
 import com.jetbrains.python.psi.PyExpression
@@ -75,14 +76,16 @@ import javax.swing.Icon
  * .sage file and would change the file's meaning for the plugin's
  * explicit-import gate.
  *
- * WHY language="Python": every Python PSI element type reports PythonLanguage
- * (PyElementType hardcodes PythonFileType's language), so completion
- * machinery consults contributors registered for Python even in .sage files,
- * while a contributor registered for the Sage dialect is never consulted
- * (v1.6.0 postfix-popup trap).  The provider gates on the containing file
- * being a .sage file, like every other language-keyed service in this plugin.
+ * BASIC completion uses only the Python PSI registration. Smart completion is
+ * registered through both Python PSI and the concrete Sage dialect: supported
+ * PyCharm versions dispatch the explicit action through different language
+ * paths.  Keeping BASIC separate prevents duplicate Ctrl+Space candidates.
  */
-class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
+open class SageImplicitCompletionContributor protected constructor(
+    private val completionTypes: Set<CompletionType>,
+) : CompletionContributor(), DumbAware {
+
+    constructor() : this(setOf(CompletionType.BASIC, CompletionType.SMART))
 
     init {
         val provider = object : CompletionProvider<CompletionParameters>() {
@@ -145,6 +148,15 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     if (memberCompletion) {
                         val qualifier = completionReference?.qualifier ?: incompleteMemberQualifier ?: return
                         val memberLocation = completionReference ?: qualifier
+                        // Dynamic Sage calls are sampled only because the user
+                        // has explicitly asked for this receiver's members.
+                        // Never start WSL work from the daemon's general type
+                        // pass: that path runs for each edit, including text
+                        // deletion and newline insertion.
+                        (qualifier as? PyReferenceExpression)?.let {
+                            SageLiveTypeSnapshotService.getInstance(position.project)
+                                .requestTypeForMemberCompletion(it)
+                        }
                         val typeContext = com.jetbrains.python.psi.types.TypeEvalContext.codeCompletion(
                             position.project,
                             file,
@@ -155,6 +167,48 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                         )
                         val resolvedTarget = (qualifier.reference?.resolve() as? PyTargetExpression)
                             ?: findPreviousTargetBounded(file, qualifier)
+                        // A concrete indexed owner is stronger than a
+                        // structural or stale Python type.  In particular,
+                        // PyCharm can temporarily represent a binary Sage
+                        // assignment as its local target symbol (`test2.Q`)
+                        // while the contract path has already proven the
+                        // exact concrete result.  Prefer the proof before
+                        // entering the generic Python variant machinery: it
+                        // both prevents that generic type from suppressing
+                        // Sage members and avoids extra type-engine work on
+                        // every typed member prefix.
+                        val indexedOwners = linkedSetOf<String>().apply {
+                            resolvedTarget?.let { addAll(SageIndexedTypeResolver.ownersForTarget(it)) }
+                            if (isEmpty()) addAll(SageIndexedTypeResolver.ownersForExpression(qualifier))
+                        }
+                        val memberPrefix = if (completionReference?.isQualified == true) {
+                            val referenceRange = completionReference.reference.rangeInElement
+                            val offsetInElement =
+                                (parameters.offset - completionReference.textRange.startOffset)
+                                    .coerceIn(referenceRange.startOffset, referenceRange.endOffset)
+                            completionReference.text.substring(referenceRange.startOffset, offsetInElement)
+                        } else {
+                            ""
+                        }
+                        if (indexedOwners.isNotEmpty()) {
+                            // Once a member prefix exists (`Q.ord`), Python's
+                            // PyClassMembersProvider can supply the real Sage
+                            // stub declaration, so suppress the duplicate
+                            // index-only presentation.  At a bare `Q.` the
+                            // PSI is intentionally incomplete: merely having
+                            // that class installed in the SDK does not mean
+                            // Python has produced a receiver type yet. Keep
+                            // the proven index fallback in that state, or an
+                            // explicit Ctrl+Space/Ctrl+Shift+Space would show
+                            // an empty popup.
+                            val delegatedMemberNames = if (memberPrefix.isNotEmpty()) {
+                                indexedMembersDelegatedToPython(indexedOwners, position.project)
+                            } else {
+                                emptySet()
+                            }
+                            addIndexedMemberCompletions(result, indexedOwners, memberPrefix, delegatedMemberNames)
+                            return
+                        }
                         val resolvedTargetType = resolvedTarget
                             ?.let { target -> SageTypeProvider().getReferenceType(target, analysisContext, completionReference)?.get() }
                         val qualifierType = sequenceOf(
@@ -177,15 +231,6 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                             // important for finite factory unions.
                             resolvedTargetType,
                         ).firstOrNull { it != null && it != PyAnyType.Any && it != PyAnyType.Unknown }
-                        val memberPrefix = if (completionReference?.isQualified == true) {
-                            val referenceRange = completionReference.reference.rangeInElement
-                            val offsetInElement =
-                                (parameters.offset - completionReference.textRange.startOffset)
-                                    .coerceIn(referenceRange.startOffset, referenceRange.endOffset)
-                            completionReference.text.substring(referenceRange.startOffset, offsetInElement)
-                        } else {
-                            ""
-                        }
                         if (qualifierType != null) {
                             // Delegate qualified member completion to the same
                             // Python type path used by PyQualifiedReference. It
@@ -247,69 +292,8 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                             }
                         }
 
-                        // A remote WSL SDK can have a valid Sage runtime while
-                        // its skeleton generator has not materialized every
-                        // Sage `.pyi` class in local PSI.  In that case the
-                        // exact indexed return contracts still prove the
-                        // receiver owners.  Query those canonical owners
-                        // directly instead of falling through to Python's
-                        // unrelated `test.c` symbol completion.  This is a
-                        // union of concrete indexed classes, never a public
-                        // base-class or name whitelist fallback.
-                        // Native PSI types are already authoritative and avoid
-                        // any index traversal on every completion keystroke.
-                        // Run the index-only path solely for the missing-PSI
-                        // case that it exists to repair.
-                        val indexedOwners = if (qualifierType == null) linkedSetOf<String>().apply {
-                            resolvedTarget?.let { addAll(SageIndexedTypeResolver.ownersForTarget(it)) }
-                            if (isEmpty()) addAll(SageIndexedTypeResolver.ownersForExpression(qualifier))
-                        } else {
-                            emptySet()
-                        }
-                        if (indexedOwners.isNotEmpty()) {
-                            val query = SageApiIndexService.getInstance().query()
-                            if (query != null) {
-                                // Some PyCharm 2026 PSI completion boundaries
-                                // report the whole qualified text (`c.foo`)
-                                // rather than the member tail.  The index query
-                                // is already scoped to the receiver owner, so
-                                // only the final identifier can be a member
-                                // prefix.
-                                val indexedMemberPrefix = memberPrefix.substringAfterLast('.')
-                                val emittedNames = linkedSetOf<String>()
-                                indexedOwners
-                                    .asSequence()
-                                    .flatMap { owner -> query.members(owner).asSequence().map { owner to it } }
-                                    .filter { (_, entry) ->
-                                        entry.qualifiedName.substringAfterLast('.')
-                                            .let { indexedMemberPrefix.isEmpty() || it.startsWith(indexedMemberPrefix) }
-                                    }
-                                    .sortedWith(compareBy<Pair<String, com.starnotesxj.sagemath.sageapi.SageApiEntry>> { it.second.qualifiedName.substringAfterLast('.') }
-                                        .thenBy { it.first })
-                                    .forEach { (owner, entry) ->
-                                        val name = entry.qualifiedName.substringAfterLast('.')
-                                        if (!emittedNames.add(name)) return@forEach
-                                        var builder = LookupElementBuilder.create(name).withTypeText(owner)
-                                        indexedEntryIcon(entry.kind)?.let { builder = builder.withIcon(it) }
-                                        if (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD) {
-                                            builder = builder.withInsertHandler(SageParensInsertHandler)
-                                        }
-                                        // Use the contributor's original result
-                                        // so PyCharm keeps the completion session
-                                        // and its current prefix matcher.  The
-                                        // effective member prefix is applied by
-                                        // the explicit contract filter above.
-                                        result.addElement(builder)
-                                    }
-                            }
-                        }
                         return
                     }
-
-                    // Explicit sage.all imports already participate in Python's
-                    // normal root completion. Keep this contributor additive there,
-                    // while qualified members above still use the Sage provider.
-                    if (SageFileUtils.hasExplicitSageAllImport(file)) return
 
                     val prefix = result.prefixMatcher.prefix
                     // The implicit sage.all namespace is large. PyCharm
@@ -320,6 +304,13 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     // index below; the richer PSI scan remains explicit-only.
                     val automaticRootCompletion = parameters.invocationCount == 0
                     if (automaticRootCompletion && prefix.length < 2) return
+                    // Explicit sage.all imports already participate in Python's
+                    // normal root completion. Keep their exact de-duplication
+                    // path for an explicit request, but never traverse the
+                    // file's imports for automatic typing completion. The
+                    // latter is additive and PyCharm de-duplicates equal
+                    // lookup strings with its native candidates.
+                    if (!automaticRootCompletion && SageFileUtils.hasExplicitSageAllImport(file)) return
                     if (prefix.isEmpty()) {
                         // With an empty prefix, let the platform decide whether
                         // to show the large namespace; a subsequent typed prefix
@@ -392,11 +383,67 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
                     }
                 }
             }
-        extend(CompletionType.BASIC, PlatformPatterns.psiElement(), provider)
-        // Smart completion is an explicit user action. Reusing the same
-        // provider keeps Sage contracts available for Ctrl+Shift+Space without
-        // reintroducing automatic root-namespace work.
-        extend(CompletionType.SMART, PlatformPatterns.psiElement(), provider)
+        for (completionType in completionTypes) {
+            extend(completionType, PlatformPatterns.psiElement(), provider)
+        }
+    }
+
+    private fun addIndexedMemberCompletions(
+        result: CompletionResultSet,
+        owners: Set<String>,
+        memberPrefix: String,
+        delegatedMemberNames: Set<String> = emptySet(),
+    ) {
+        val query = SageApiIndexService.getInstance().query() ?: return
+        // Some PyCharm 2026 PSI completion boundaries report the whole
+        // qualified text (`c.foo`) rather than the member tail. The index
+        // query is already receiver-scoped, so only the tail filters members.
+        val indexedMemberPrefix = memberPrefix.substringAfterLast('.')
+        val emittedNames = linkedSetOf<String>()
+        owners
+            .asSequence()
+            .flatMap { owner -> query.members(owner).asSequence().map { owner to it } }
+            .filter { (_, entry) ->
+                entry.qualifiedName.substringAfterLast('.')
+                    .let { indexedMemberPrefix.isEmpty() || it.startsWith(indexedMemberPrefix) }
+            }
+            .sortedWith(compareBy<Pair<String, com.starnotesxj.sagemath.sageapi.SageApiEntry>> { it.second.qualifiedName.substringAfterLast('.') }
+                .thenBy { it.first })
+            .forEach { (owner, entry) ->
+                val name = entry.qualifiedName.substringAfterLast('.')
+                if (name in delegatedMemberNames) return@forEach
+                if (!emittedNames.add(name)) return@forEach
+                var builder = LookupElementBuilder.create(name).withTypeText(owner)
+                indexedEntryIcon(entry.kind)?.let { builder = builder.withIcon(it) }
+                if (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD) {
+                    builder = builder.withInsertHandler(SageParensInsertHandler)
+                }
+                result.addElement(builder)
+            }
+    }
+
+    /**
+     * Names that the ordinary Python member-completion pipeline will provide
+     * from a concrete, active Sage stub class.  It intentionally follows the
+     * same indexed-member source as [SageApiClassMembersProvider] rather than
+     * guessing from a member-name list.  If the class is not actually present
+     * in the project SDK, this returns no names and the direct index fallback
+     * above remains authoritative.
+     */
+    private fun indexedMembersDelegatedToPython(
+        owners: Set<String>,
+        project: com.intellij.openapi.project.Project,
+    ): Set<String> {
+        val query = SageApiIndexService.getInstance().query() ?: return emptySet()
+        return owners.asSequence()
+            .filter { owner ->
+                (SageStubIndex.findClassByCanonicalName(project, owner)
+                    ?.takeIf { it.isValid && SageStubIndex.isSageStubFile(it.containingFile) }
+                    != null)
+            }
+            .flatMap { owner -> query.members(owner).asSequence() }
+            .map { entry -> entry.qualifiedName.substringAfterLast('.') }
+            .toSet()
     }
 
     /**
@@ -471,3 +518,10 @@ class SageImplicitCompletionContributor : CompletionContributor(), DumbAware {
     private val MAX_TARGET_FALLBACK_BYTES = 64 * 1024
     private val MAX_TARGET_FALLBACK_LEAVES = 256
 }
+
+/**
+ * Sage-dialect compatibility endpoint for Ctrl+Shift+Space. It shares the
+ * exact receiver/type pipeline as [SageImplicitCompletionContributor], but
+ * only registers SMART so it cannot duplicate ordinary Ctrl+Space candidates.
+ */
+class SageSmartCompletionContributor : SageImplicitCompletionContributor(setOf(CompletionType.SMART))

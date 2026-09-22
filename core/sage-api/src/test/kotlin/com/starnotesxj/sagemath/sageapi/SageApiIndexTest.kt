@@ -651,6 +651,27 @@ def separated(value: Literal["a,b"], /, *, option: int) -> None: ...
     }
 
     @Test
+    fun memberLookupResolvesAUniqueSiblingModuleParent() {
+        val parent = SageApiEntry("sage.curves.ell_field.EllipticCurve_field", SageApiSymbolKind.CLASS)
+        val child = SageApiEntry(
+            "sage.curves.ell_finite_field.EllipticCurve_finite_field",
+            SageApiSymbolKind.CLASS,
+            parents = listOf("ell_field.EllipticCurve_field"),
+        )
+        val inherited = SageApiEntry(
+            "sage.curves.ell_field.EllipticCurve_field.order",
+            SageApiSymbolKind.METHOD,
+        )
+        val query = SageApiIndexQuery(SageApiIndex("10.9", "3.13", listOf(child, parent, inherited)))
+
+        assertEquals(
+            listOf(inherited.qualifiedName),
+            query.members(child.qualifiedName, "order").map { it.qualifiedName },
+        )
+        assertTrue(parent.qualifiedName in query.reachableTypeNames(child.qualifiedName))
+    }
+
+    @Test
     fun matrixFactoryAndGenericClassMembersAreQueryableWithoutMethodSpecialCases() {
         val matrix = SageApiEntry(
             qualifiedName = "sage.matrix.matrix",

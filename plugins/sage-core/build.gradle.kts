@@ -17,6 +17,26 @@ val onCi = System.getenv("CI") == "true"
 val fullIndexPath = providers.gradleProperty("sage.bundle.fullIndex").orNull
 val releaseFullIndexSha256 = providers.gradleProperty("sage.release.fullIndex.sha256").orNull
 val releaseTag = providers.environmentVariable("GITHUB_REF_NAME").orNull
+val bundleNativeInlineScorer = providers.gradleProperty("sage.bundle.nativeInlineScorer")
+    .map(String::toBoolean)
+    .orElse(false)
+val nativeInlineToolDirectory = rootProject.file("tools/sage-inline-native")
+val hostNativeInlineTarget = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+    "win-x64"
+} else {
+    "linux-x64"
+}
+val nativeInlineTarget = providers.gradleProperty("sage.bundle.nativeInlineScorerTarget")
+    .orElse(hostNativeInlineTarget)
+    .get()
+val nativeInlineBinaryName = when (nativeInlineTarget) {
+    "win-x64" -> "sage-inline-native.exe"
+    "linux-x64" -> "sage-inline-native"
+    else -> error("Unsupported sage.bundle.nativeInlineScorerTarget: $nativeInlineTarget")
+}
+val nativeInlineResourceDirectory = "native/$nativeInlineTarget"
+val nativeInlinePrebuilt = providers.gradleProperty("sage.bundle.nativeInlineScorerPrebuilt").orNull?.let(::file)
+val nativeInlineBinary = nativeInlinePrebuilt ?: nativeInlineToolDirectory.resolve("target/release/$nativeInlineBinaryName")
 
 repositories {
     mavenCentral()
@@ -40,6 +60,10 @@ dependencies {
             local(providers.gradleProperty("sage.ide.localSdk").orElse("D:/JetBrains/PyCharm").get())
         }
         bundledPlugin("PythonCore")
+        // Compile the optional Full Line compatibility fragment against the
+        // locally bundled API.  The plugin descriptor keeps it optional, so
+        // SageMath Core remains loadable in IDEs without Full Line installed.
+        bundledPlugin("org.jetbrains.completion.full.line")
         testFramework(TestFrameworkType.Platform)
     }
 }
@@ -195,6 +219,23 @@ val verifyReleaseVersion = tasks.register("verifyReleaseVersion") {
     }
 }
 
+val buildNativeInlineScorer = tasks.register<Exec>("buildNativeInlineScorer") {
+    group = "build"
+    description = "Builds the optional local Sage inline scorer for the current host platform."
+    workingDir(nativeInlineToolDirectory)
+    commandLine("cargo", "build", "--release")
+    inputs.file(nativeInlineToolDirectory.resolve("Cargo.toml"))
+    inputs.dir(nativeInlineToolDirectory.resolve("src"))
+    outputs.file(nativeInlineToolDirectory.resolve("target/release/$nativeInlineBinaryName"))
+    onlyIf { bundleNativeInlineScorer.get() && nativeInlinePrebuilt == null }
+    doFirst {
+        check(nativeInlineTarget == hostNativeInlineTarget) {
+            "Building $nativeInlineTarget on $hostNativeInlineTarget requires " +
+                "-Psage.bundle.nativeInlineScorerPrebuilt=<verified executable>"
+        }
+    }
+}
+
 tasks.matching { it.name == "publishPlugin" }.configureEach {
     dependsOn(verifyReleaseFullIndex)
     dependsOn(verifyReleaseVersion)
@@ -217,6 +258,12 @@ tasks.named<ProcessResources>("processResources") {
         doLast {
             require(source.isFile) { "sage.bundle.fullIndex must point to a regular file: $source" }
             splitSageIndexDocumentation(source, destinationDir)
+        }
+    }
+    if (bundleNativeInlineScorer.get()) {
+        dependsOn(buildNativeInlineScorer)
+        from(nativeInlineBinary) {
+            into(nativeInlineResourceDirectory)
         }
     }
 }

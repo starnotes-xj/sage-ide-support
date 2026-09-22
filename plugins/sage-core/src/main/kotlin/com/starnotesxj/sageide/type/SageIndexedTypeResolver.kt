@@ -2,8 +2,10 @@ package com.starnotesxj.sageide.type
 
 import com.intellij.psi.PsiElement
 import com.jetbrains.python.psi.PyCallExpression
+import com.jetbrains.python.psi.PyBinaryExpression
 import com.jetbrains.python.psi.PyExpression
 import com.jetbrains.python.psi.PyNumericLiteralExpression
+import com.jetbrains.python.psi.PyParenthesizedExpression
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.jetbrains.python.psi.PyTargetExpression
 import com.starnotesxj.sageide.completion.SageApiIndexService
@@ -56,6 +58,8 @@ object SageIndexedTypeResolver {
             return try {
                 when (expression) {
                     is PyNumericLiteralExpression -> numericOwners(expression)
+                    is PyParenthesizedExpression -> expression.containedExpression?.let(::ownersForExpression).orEmpty()
+                    is PyBinaryExpression -> ownersForBinary(expression)
                     is PyCallExpression -> ownersForCall(expression)
                     is PyReferenceExpression -> ownersForReference(expression)
                     else -> emptySet()
@@ -72,7 +76,7 @@ object SageIndexedTypeResolver {
 
             val name = reference.referencedName ?: return emptySet()
             val namespaceEntry = query.namespaceEntry("sage.all", name)
-            return namespaceEntry?.let(::ownersForCallableEntry).orEmpty()
+            return namespaceEntry?.let(::ownersForValueEntry).orEmpty()
         }
 
         private fun ownersForCall(call: PyCallExpression): Set<String> {
@@ -91,6 +95,68 @@ object SageIndexedTypeResolver {
                 ?: query.resolve(name)
                 ?: return emptySet()
             return ownersForCallableEntry(entry)
+        }
+
+        /**
+         * Resolve an operator expression from its concrete Sage protocols.
+         *
+         * A generic scalar slot such as ``Integer.__mul__(other: DYNAMIC) ->
+         * Integer`` is not proof that it handles an arbitrary Sage element:
+         * Python may instead dispatch to the right operand's reflected slot.
+         * We therefore use a direct contract only when its parameters are
+         * fully statically described, then fall through to the reflected and
+         * Cython-private spelling when needed.  ``Self`` is bound to the
+         * proven right-hand concrete owner, never to a common base class.
+         */
+        private fun ownersForBinary(expression: PyBinaryExpression): Set<String> {
+            val operator = expression.referencedName ?: return emptySet()
+            val left = expression.leftExpression ?: return emptySet()
+            val right = expression.rightExpression ?: return emptySet()
+            val leftOwners = ownersForExpression(left)
+            val rightOwners = ownersForExpression(right)
+
+            operatorResultOwners(leftOwners, operator).takeIf { it.isNotEmpty() }?.let { return it }
+
+            val reflected = reflectedOperator(operator) ?: return emptySet()
+            operatorResultOwners(rightOwners, reflected).takeIf { it.isNotEmpty() }?.let { return it }
+            cythonReflectedOperatorImplementation(reflected)?.let { cythonName ->
+                operatorResultOwners(rightOwners, cythonName).takeIf { it.isNotEmpty() }?.let { return it }
+            }
+            return emptySet()
+        }
+
+        private fun operatorResultOwners(owners: Set<String>, memberName: String): Set<String> =
+            owners.flatMapTo(linkedSetOf()) { owner ->
+                val members = query.members(owner, memberName)
+                    .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
+                val owned = members.filter { it.qualifiedName.substringBeforeLast('.') == owner }
+                val candidate = (owned.ifEmpty { members }).singleOrNull() ?: return@flatMapTo emptySet()
+                candidate.signatures
+                    .asSequence()
+                    .filter(::hasFullyKnownOperatorParameters)
+                    .flatMap { signature -> concreteOwners(signature, owner).asSequence() }
+                    .toCollection(linkedSetOf())
+            }
+
+        private fun hasFullyKnownOperatorParameters(signature: SageApiSignature): Boolean =
+            signature.parameters.all { it.type.state.name == "KNOWN" }
+
+        private fun reflectedOperator(operator: String): String? = when (operator) {
+            "__add__" -> "__radd__"
+            "__sub__" -> "__rsub__"
+            "__mul__" -> "__rmul__"
+            "__matmul__" -> "__rmatmul__"
+            "__truediv__" -> "__rtruediv__"
+            "__floordiv__" -> "__rfloordiv__"
+            "__mod__" -> "__rmod__"
+            "__pow__" -> "__rpow__"
+            else -> null
+        }
+
+        private fun cythonReflectedOperatorImplementation(operator: String): String? {
+            if (!operator.startsWith("__r") || !operator.endsWith("__")) return null
+            val slot = operator.removePrefix("__").removeSuffix("__")
+            return slot.takeIf { it.length > 1 }?.let { "_${it}_" }
         }
 
         private fun ownersForQualifiedMember(reference: PyReferenceExpression): Set<String> {
@@ -117,8 +183,21 @@ object SageIndexedTypeResolver {
             entry.signatures
                 .asSequence()
                 .flatMapTo(linkedSetOf(), ::concreteOwners)
+                .ifEmpty {
+                    // Sage exposes ring/field/parent singletons such as ZZ,
+                    // QQ and RR as constants.  Their valueType is the exact
+                    // parent class from the stub, whose __call__ contract is
+                    // the only authoritative result for `ZZ(value)`.
+                    // This is data-driven for every typed callable constant;
+                    // an ordinary constant without a proven __call__ simply
+                    // remains unresolved.
+                    ownersForCallableParents(ownersForValueEntry(entry))
+                }
 
-        private fun concreteOwners(signature: SageApiSignature): Set<String> {
+        private fun ownersForValueEntry(entry: com.starnotesxj.sagemath.sageapi.SageApiEntry): Set<String> =
+            entry.valueType?.let(::concreteOwners).orEmpty()
+
+        private fun concreteOwners(signature: SageApiSignature, selfOwner: String? = null): Set<String> {
             val returnType = signature.returnType
             if (returnType.state.name != "KNOWN" || returnType.expression.isNullOrBlank()) return emptySet()
             val expression = SageTypeRefExpressionParser.parse(
@@ -126,16 +205,30 @@ object SageIndexedTypeResolver {
                 signature.typeParameters.map { it.name }.toSet(),
                 signature.typeParameters.filter { it.kind.name == "PARAM_SPEC" }.map { it.name }.toSet(),
             ) ?: return emptySet()
-            return concreteOwners(expression)
+            return concreteOwners(expression, selfOwner)
         }
 
-        private fun concreteOwners(expression: SageTypeExpression): Set<String> = when (expression) {
+        private fun concreteOwners(
+            returnType: com.starnotesxj.sagemath.sageapi.SageTypeRef,
+            selfOwner: String? = null,
+        ): Set<String> {
+            if (returnType.state.name != "KNOWN" || returnType.expression.isNullOrBlank()) return emptySet()
+            val expression = SageTypeRefExpressionParser.parse(
+                returnType.expression!!,
+                emptySet(),
+                emptySet(),
+            ) ?: return emptySet()
+            return concreteOwners(expression, selfOwner)
+        }
+
+        private fun concreteOwners(expression: SageTypeExpression, selfOwner: String? = null): Set<String> = when (expression) {
+            is SageTypeExpression.TypeVariable ->
+                selfOwner.takeIf { expression.name == "Self" || expression.name == "typing.Self" }?.let(::setOf).orEmpty()
             is SageTypeExpression.Name -> canonicalClass(expression.qualifiedName)
             is SageTypeExpression.Generic -> canonicalClass(expression.base.qualifiedName)
-            is SageTypeExpression.Union -> expression.members.flatMapTo(linkedSetOf(), ::concreteOwners)
-            is SageTypeExpression.Optional -> concreteOwners(expression.element)
+            is SageTypeExpression.Union -> expression.members.flatMapTo(linkedSetOf()) { concreteOwners(it, selfOwner) }
+            is SageTypeExpression.Optional -> concreteOwners(expression.element, selfOwner)
             is SageTypeExpression.Callable -> emptySet()
-            is SageTypeExpression.TypeVariable,
             is SageTypeExpression.ParamSpecAccess,
             SageTypeExpression.NoneType,
             SageTypeExpression.EllipsisType,

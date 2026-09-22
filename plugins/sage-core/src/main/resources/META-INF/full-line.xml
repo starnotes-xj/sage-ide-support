@@ -1,0 +1,13 @@
+<idea-plugin>
+  <!--
+    Full Line's Python provider selects its language from the PSI leaf at the
+    caret.  Python-dialect leaves report Python even in a .sage file, so map
+    the editor document back to Sage before the ML provider decides whether to
+    allocate a request.  Full Line has no Sage language kit, which makes its
+    normal language-enabled check reject the request before model work starts.
+  -->
+  <extensions defaultExtensionNs="com.intellij.ml.inline.completion">
+    <editorLanguageResolver
+        implementation="com.starnotesxj.sageide.sugar.SageFullLineLanguageResolver"/>
+  </extensions>
+</idea-plugin>

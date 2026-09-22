@@ -582,27 +582,42 @@ class SageTypeProvider : PyTypeProviderBase() {
                 val rightExpression = expression.rightExpression ?: return null
                 val leftType = indexedExpressionType(leftExpression, context, query)
                 val rightType = indexedExpressionType(rightExpression, context, query)
-                val candidateNames = buildList {
-                    sageClassOwner(leftType)?.let { owner -> add(owner to operator) }
-                    reflectedOperator(operator)?.let { reflected -> sageClassOwner(rightType)?.let { owner -> add(owner to reflected) } }
+                val candidateNames = buildList<Triple<String, String, PyType>>() {
+                    if (leftType != null) {
+                        sageClassOwner(leftType)?.let { owner -> add(Triple(owner, operator, leftType)) }
+                    }
+                    if (rightType != null) {
+                        reflectedOperator(operator)?.let { reflected ->
+                            sageClassOwner(rightType)?.let { owner -> add(Triple(owner, reflected, rightType)) }
+                        }
+                    }
                 }
-                for ((owner, memberName) in candidateNames.distinct()) {
-                    val members = query.members(owner, memberName)
-                        .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
-                    val owned = members.filter { it.qualifiedName.substringBeforeLast('.') == owner }
-                    val candidates = if (owned.isNotEmpty()) owned else members
-                    if (candidates.size != 1) continue
-                    val signatures = candidates.single().signatures
-                    SageTypeLowering.lowerCallReturnType(
-                        signatures,
-                        expression,
-                        context,
-                        query,
-                        candidates.single().qualifiedName,
-                        null,
-                    )?.let { return it }
-                    if (signatures.size == 1) {
-                        SageTypeLowering.lowerKnownReturn(signatures.single(), expression, context, query)?.let { return it }
+                for ((owner, memberName, receiverType) in candidateNames.distinctBy { it.first to it.second }) {
+                    // Cython's Element protocol exposes some reflected Python
+                    // slots as private ``_rname_`` implementations.  Do not
+                    // manufacture a result: the fallback is considered only
+                    // when that inherited implementation is present in the
+                    // index and its own signature proves a return contract.
+                    for (effectiveName in listOfNotNull(memberName, cythonReflectedOperatorImplementation(memberName)).distinct()) {
+                        val members = query.members(owner, effectiveName)
+                            .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
+                        val owned = members.filter { it.qualifiedName.substringBeforeLast('.') == owner }
+                        val candidates = if (owned.isNotEmpty()) owned else members
+                        if (candidates.size != 1) continue
+                        val member = candidates.single()
+                        val signatures = member.signatures
+                        SageTypeLowering.lowerCallReturnType(
+                            signatures,
+                            expression,
+                            context,
+                            query,
+                            member.qualifiedName,
+                            null,
+                            receiverType,
+                        )?.let { return it }
+                        if (signatures.size == 1) {
+                            SageTypeLowering.lowerKnownReturn(signatures.single(), expression, context, query)?.let { return it }
+                        }
                     }
                 }
                 return null
@@ -680,6 +695,18 @@ class SageTypeProvider : PyTypeProviderBase() {
         "__mod__" -> "__rmod__"
         "__pow__" -> "__rpow__"
         else -> null
+    }
+
+    /**
+     * Sage's Cython Element protocol may implement a reflected Python slot as
+     * an inherited private slot (for example ``__rmul__`` via ``_rmul_``).
+     * This is a spelling transform, not a class or method allow-list; callers
+     * still need an exact indexed signature before a type is returned.
+     */
+    private fun cythonReflectedOperatorImplementation(operator: String): String? {
+        if (!operator.startsWith("__r") || !operator.endsWith("__")) return null
+        val slot = operator.removePrefix("__").removeSuffix("__")
+        return slot.takeIf { it.length > 1 }?.let { "_${it}_" }
     }
 
     /** Resolve an explicitly resolved Sage call from the versioned API return type. */

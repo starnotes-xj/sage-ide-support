@@ -6,6 +6,7 @@ build/
 **/build/
 .intellijPlatform/
 **/.intellijPlatform/
+tools/sage-inline-native/target/
 
 # IDE metadata
 .idea/

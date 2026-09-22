@@ -14,15 +14,33 @@ class SageRunSettingsConfigurableTest {
     @Test
     fun `live Sage type evidence defaults on and upgrades legacy settings once`() {
         assertTrue(SageRunSettings.State().liveTypeProbingEnabled)
+        assertTrue(SageRunSettings.State().nativeInlineScoringEnabled)
 
         val legacy = SageRunSettings.State().apply {
             liveTypeProbingEnabled = false
             liveTypeProbingConfigured = false
+            nativeInlineScoringEnabled = false
+            nativeInlineScoringConfigured = false
         }
         SageRunSettings().loadState(legacy)
 
         assertTrue(legacy.liveTypeProbingEnabled)
         assertTrue(legacy.liveTypeProbingConfigured)
+        assertTrue(legacy.nativeInlineScoringEnabled)
+        assertTrue(legacy.nativeInlineScoringConfigured)
+    }
+
+    @Test
+    fun `native inline scorer setting persists independently`() {
+        val state = SageRunSettings.State().apply {
+            nativeInlineScoringEnabled = false
+            nativeInlineScoringConfigured = true
+        }
+
+        SageRunSettings().loadState(state)
+
+        assertFalse(state.nativeInlineScoringEnabled)
+        assertTrue(state.nativeInlineScoringConfigured)
     }
 
     @Test
@@ -31,6 +49,7 @@ class SageRunSettingsConfigurableTest {
 
         assertEquals("运行 Sage 脚本", messages.getString("run.action.run"))
         assertEquals("启用 Sage 实时类型证据（隔离快照与正常运行回传）", messages.getString("settings.live.type.evidence"))
+        assertEquals("启用本地 Sage 内联预测（原生上下文排序器）", messages.getString("settings.native.inline.scoring"))
     }
 
     @Test

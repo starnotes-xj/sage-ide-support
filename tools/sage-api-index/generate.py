@@ -154,12 +154,43 @@ class AstExtractor:
         qualified = f"{module}.{node.name}"
         result = [RawSymbol(qualified, "CLASS", source_at(source, node.lineno), parents=[annotation_text(base, imports) for base in node.bases if annotation_text(base, imports)], documentation=doc(node), confidence="HIGH")]
         roles = declaration_roles(node.body, imports)
+        declared_members = {
+            member.name: self.function_symbol(
+                member,
+                module,
+                node.name,
+                imports,
+                source,
+                "PROPERTY" if any(isinstance(item, ast.Name) and item.id == "property" for item in member.decorator_list) else "METHOD",
+                roles.get(id(member)),
+                type_parameters or {},
+            )
+            for member in node.body
+            if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
         for member in node.body:
             if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                kind = "PROPERTY" if any(isinstance(item, ast.Name) and item.id == "property" for item in member.decorator_list) else "METHOD"
-                result.append(self.function_symbol(member, module, node.name, imports, source, kind, roles.get(id(member)), type_parameters or {}))
+                result.append(declared_members[member.name])
             elif isinstance(member, ast.AnnAssign) and isinstance(member.target, ast.Name):
                 result.append(RawSymbol(f"{qualified}.{member.target.id}", "PROPERTY", source_at(source, member.lineno), value_type=type_ref(member.annotation, imports), documentation=doc(member), confidence="MEDIUM"))
+            elif isinstance(member, ast.Assign) and isinstance(member.value, ast.Name):
+                target = declared_members.get(member.value.id)
+                if target is None:
+                    continue
+                for assigned in member.targets:
+                    if not isinstance(assigned, ast.Name):
+                        continue
+                    result.append(RawSymbol(
+                        f"{qualified}.{assigned.id}",
+                        target.kind,
+                        source_at(source, member.lineno),
+                        signatures=target.signatures,
+                        declaration_role=target.declaration_role,
+                        aliases=[target.qualified_name],
+                        documentation=target.documentation,
+                        dynamicity=target.dynamicity,
+                        confidence=target.confidence,
+                    ))
         return result
 
     def function_symbol(self, node: ast.FunctionDef | ast.AsyncFunctionDef, module: str, owner: str | None, imports: dict[str, str], source: SourceRef, kind: str, role: str | None = None, type_parameters: dict[str, dict[str, Any]] | None = None) -> RawSymbol:

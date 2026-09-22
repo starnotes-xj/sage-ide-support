@@ -1,7 +1,12 @@
 package com.starnotesxj.sageide.sugar
 
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
+import com.intellij.psi.util.CachedValue
+import com.intellij.psi.util.CachedValueProvider
+import com.intellij.psi.util.CachedValuesManager
+import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyFromImportStatement
 
@@ -25,9 +30,22 @@ object SageFileUtils {
      * perfectly (v1.7.2 regression).  Used by both the implicit-namespace
      * resolver and the implicit-namespace completion: with an explicit import
      * present, ordinary Python resolution/completion handles the names.
-     */
+    */
     @JvmStatic
     fun hasExplicitSageAllImport(file: PsiFile): Boolean =
-        PsiTreeUtil.collectElementsOfType(file, PyFromImportStatement::class.java)
-            .any { it.importSource?.asQualifiedName()?.toString() == "sage.all" }
+        CachedValuesManager.getManager(file.project).getCachedValue(
+            file,
+            EXPLICIT_SAGE_ALL_IMPORT_KEY,
+            CachedValueProvider {
+                CachedValueProvider.Result.create(
+                    PsiTreeUtil.collectElementsOfType(file, PyFromImportStatement::class.java)
+                        .any { it.importSource?.asQualifiedName()?.toString() == "sage.all" },
+                    PsiModificationTracker.getInstance(file.project),
+                )
+            },
+            false,
+        )
+
+    private val EXPLICIT_SAGE_ALL_IMPORT_KEY =
+        Key.create<CachedValue<Boolean>>("sageide.explicitSageAllImport")
 }

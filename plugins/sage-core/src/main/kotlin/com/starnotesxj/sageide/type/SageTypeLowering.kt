@@ -143,10 +143,20 @@ object SageTypeLowering {
         query: SageApiIndexQuery,
         callableQualifiedName: String? = null,
         callable: com.jetbrains.python.psi.PyFunction? = null,
+        receiverOverride: PyType? = null,
     ): PyType? {
         val arguments = callSite.getArguments(null)
         val viable = signatures.mapNotNull { signature ->
-            signatureBindings(signature, arguments, callSite, context, query, callableQualifiedName, callable)?.let { signature to it }
+            signatureBindings(
+                signature,
+                arguments,
+                callSite,
+                context,
+                query,
+                callableQualifiedName,
+                callable,
+                receiverOverride,
+            )?.let { signature to it }
         }
         if (viable.isEmpty()) return null
 
@@ -408,6 +418,7 @@ object SageTypeLowering {
         query: SageApiIndexQuery,
         callableQualifiedName: String?,
         callable: com.jetbrains.python.psi.PyFunction?,
+        receiverOverride: PyType? = null,
     ): Map<String, PyType>? {
         val typeParameters = signature.typeParameters.associateBy { it.name }
         if (typeParameters.values.any { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }) return null
@@ -422,7 +433,9 @@ object SageTypeLowering {
             )
         ) return null
         if (typeParameters.values.any { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.SELF }) {
-            val selfType = resolveSelfReceiver(callSite, context, query, callableQualifiedName, callable) ?: return null
+            val selfType = receiverOverride
+                ?: resolveSelfReceiver(callSite, context, query, callableQualifiedName, callable)
+                ?: return null
             bindings["Self"] = selfType
         }
         val parameters = signature.parameters

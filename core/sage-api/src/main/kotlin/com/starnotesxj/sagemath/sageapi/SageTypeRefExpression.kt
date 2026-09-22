@@ -110,8 +110,17 @@ object SageTypeRefExpressionParser {
             }
             skipWhitespace()
             if (!consume('[')) {
-                return if (name in typeParameterNames || name in paramSpecNames) SageTypeExpression.TypeVariable(name)
-                else SageTypeExpression.Name(name)
+                val declaredVariable = when {
+                    name in typeParameterNames || name in paramSpecNames -> name
+                    // Stub generators may preserve the qualified spelling in
+                    // a return annotation while recording the PEP 673
+                    // declaration canonically as ``Self``. Both are the same
+                    // lexical type variable inside that signature.
+                    name in SELF_SPELLINGS && "Self" in typeParameterNames -> "Self"
+                    else -> null
+                }
+                return declaredVariable?.let(SageTypeExpression::TypeVariable)
+                    ?: SageTypeExpression.Name(name)
             }
             return when (name) {
                 "Optional", "typing.Optional" -> {
@@ -263,4 +272,6 @@ object SageTypeRefExpressionParser {
             while (peek()?.isWhitespace() == true) position++
         }
     }
+
+    private val SELF_SPELLINGS = setOf("Self", "typing.Self", "typing_extensions.Self")
 }

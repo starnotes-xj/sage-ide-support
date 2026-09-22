@@ -21,7 +21,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
+      - uses: dtolnay/rust-toolchain@stable
       - uses: gradle/actions/setup-gradle@v4
+      - name: Test the native Sage inline scorer
+        run: cargo test --manifest-path tools/sage-inline-native/Cargo.toml
       - name: Compile model, runtime, and Sage core
         run: ./gradlew :core:model:compileKotlin :core:runtime:compileKotlin :core:runtime:compileTestKotlin :plugins:sage-core:compileKotlin --no-daemon
       - name: Run model and runtime tests
@@ -34,9 +37,26 @@ jobs:
           path: plugins/sage-core/build/distributions/*.zip
           if-no-files-found: error
 
+  native-windows:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test and build the Windows x64 native scorer
+        shell: pwsh
+        run: |
+          cargo test --manifest-path tools/sage-inline-native/Cargo.toml
+          cargo build --release --manifest-path tools/sage-inline-native/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sage-inline-native-win-x64
+          path: tools/sage-inline-native/target/release/sage-inline-native.exe
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: core
+    needs: [core, native-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -53,6 +73,10 @@ jobs:
           distribution: temurin
           java-version: "25"
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: sage-inline-native-win-x64
+          path: ${{ runner.temp }}/sage-inline-native
       - name: Require release secrets and a pinned full-index artifact
         shell: bash
         run: |
@@ -73,6 +97,9 @@ jobs:
           ./gradlew :plugins:sage-core:verifyReleaseVersion :plugins:sage-core:verifyReleaseFullIndex :plugins:sage-core:buildPlugin \
             "-Psage.bundle.fullIndex=$RUNNER_TEMP/sage-api-index.json" \
             "-Psage.release.fullIndex.sha256=$SAGE_RELEASE_INDEX_SHA256" \
+            "-Psage.bundle.nativeInlineScorer=true" \
+            "-Psage.bundle.nativeInlineScorerTarget=win-x64" \
+            "-Psage.bundle.nativeInlineScorerPrebuilt=$RUNNER_TEMP/sage-inline-native/sage-inline-native.exe" \
             --no-daemon
       - name: Publish the in-place SageMath Core upgrade
         shell: bash
@@ -80,6 +107,9 @@ jobs:
           ./gradlew :plugins:sage-core:publishPlugin \
             "-Psage.bundle.fullIndex=$RUNNER_TEMP/sage-api-index.json" \
             "-Psage.release.fullIndex.sha256=$SAGE_RELEASE_INDEX_SHA256" \
+            "-Psage.bundle.nativeInlineScorer=true" \
+            "-Psage.bundle.nativeInlineScorerTarget=win-x64" \
+            "-Psage.bundle.nativeInlineScorerPrebuilt=$RUNNER_TEMP/sage-inline-native/sage-inline-native.exe" \
             --no-daemon
       - uses: actions/upload-artifact@v4
         with:
