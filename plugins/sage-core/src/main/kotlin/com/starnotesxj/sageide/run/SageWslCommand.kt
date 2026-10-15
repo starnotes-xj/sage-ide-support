@@ -19,7 +19,7 @@ internal fun wslCondaPrelude(environment: String, condaExecutable: String? = nul
     if (configuredConda != null) {
         appendLine("conda_executable=${shellQuote(configuredConda)}")
         appendLine("if [ ! -x \"${'$'}conda_executable\" ]; then echo \"Sage IDE Support: configured conda executable was not found in WSL\" >&2; exit 127; fi")
-        appendLine("eval \"${'$'}(\"${'$'}conda_executable\" shell.bash hook)\"")
+        appendLine("eval \"$(\"${'$'}conda_executable\" shell.bash hook)\"")
     }
     else {
         appendLine("for conda_sh in \\")
@@ -67,29 +67,28 @@ internal fun configuredWslSageExecutable(settings: SageRunSettings.State): Strin
     settings.wslSageExecutable.trim().takeIf { it.isNotEmpty() }
         ?: settings.sageExecutable.trim().takeIf { it.startsWith("/") }
 
-/** Debug wrapper for settings-backed WSL Sage with an already discovered Python path. */
-internal fun wslConfiguredDebugScript(pythonExecutable: String): String = """
+/** Debug wrapper for settings-backed WSL Sage with its Conda environment activated. */
+internal fun wslConfiguredDebugScript(
+    pythonExecutable: String,
+    environment: String,
+    condaExecutable: String? = null,
+): String = """
+    ${wslCondaPrelude(environment, condaExecutable)}
     map_arg() {
         case "${'$'}1" in
             [A-Za-z]:[\\/]* )
-                local drive="${'$'}{1:0:1}"
-                local rest="${'$'}{1:2}"
-                rest="${'$'}{rest//\\\\//}"
-                printf '/mnt/%s/%s' "${'$'}{drive,,}" "${'$'}rest"
+              local drive="${'$'}{1:0:1}"
+              local rest="${'$'}{1:2}"
+              rest="${'$'}{rest//\\//}"
+              rest="${'$'}{rest#/}"
+              printf '/mnt/%s/%s' "${'$'}{drive,,}" "${'$'}rest"
                 ;;
             * ) printf '%s' "${'$'}1" ;;
         esac
     }
-    host_ip="${'$'}(awk '/^nameserver / { print ${'$'}2; exit }' /etc/resolv.conf)"
     args=()
-    previous=""
     for raw_arg in "${'$'}@"; do
-        arg="${'$'}(map_arg "${'$'}raw_arg")"
-        if [ "${'$'}previous" = "--client" ] && [ "${'$'}arg" = "127.0.0.1" ] && [ -n "${'$'}host_ip" ]; then
-            arg="${'$'}host_ip"
-        fi
-        args+=("${'$'}arg")
-        previous="${'$'}arg"
+        args+=("${'$'}(map_arg "${'$'}raw_arg")")
     done
     python_executable=${shellQuote(pythonExecutable.trim().takeIf { it.isNotEmpty() } ?: error("A discovered WSL Python path is required for debugging"))}
     [ -x "${'$'}python_executable" ] || { echo "Sage IDE Support: discovered Python was not found in WSL" >&2; exit 127; }
@@ -106,26 +105,18 @@ internal fun wslDebugScript(
     map_arg() {
         case "$1" in
             [A-Za-z]:[\\/]* )
-                local drive="${'$'}{1:0:1}"
-                local rest="${'$'}{1:2}"
-                rest="${'$'}{rest//\\\\//}"
-                printf '/mnt/%s/%s' "${'$'}{drive,,}" "${'$'}rest"
+              local drive="${'$'}{1:0:1}"
+              local rest="${'$'}{1:2}"
+              rest="${'$'}{rest//\\//}"
+              rest="${'$'}{rest#/}"
+              printf '/mnt/%s/%s' "${'$'}{drive,,}" "${'$'}rest"
                 ;;
             * ) printf '%s' "$1" ;;
         esac
     }
-    # In WSL2, 127.0.0.1 is the Linux VM.  The IDE's debug server is on the
-    # Windows host, whose gateway address is exposed as the resolv.conf DNS.
-    host_ip="${'$'}(awk '/^nameserver / { print ${'$'}2; exit }' /etc/resolv.conf)"
     args=()
-    previous=""
     for raw_arg in "${'$'}@"; do
-        arg="${'$'}(map_arg "${'$'}raw_arg")"
-        if [ "${'$'}previous" = "--client" ] && [ "${'$'}arg" = "127.0.0.1" ] && [ -n "${'$'}host_ip" ]; then
-            arg="${'$'}host_ip"
-        fi
-        args+=("${'$'}arg")
-        previous="${'$'}arg"
+        args+=("${'$'}(map_arg "${'$'}raw_arg")")
     done
     python_executable=${shellQuote(pythonExecutable ?: error("A verified bundled SageMath Python path is required for debugging"))}
     exec "${'$'}python_executable" "${'$'}{args[@]}"

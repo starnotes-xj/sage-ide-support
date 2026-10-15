@@ -1,14 +1,15 @@
 package com.starnotesxj.sageide.completion
 
 import com.intellij.lang.documentation.DocumentationMarkup
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.types.PyClassType
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sageide.SagePluginTestBase
-import com.starnotesxj.sageide.type.SageTypeProvider
 import com.starnotesxj.sageide.sugar.SageStubIndex
+import com.starnotesxj.sageide.type.SageTypeProvider
 import com.starnotesxj.sagemath.sageapi.SageApiIndexJsonReader
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
 import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
@@ -20,7 +21,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-private fun String.stripDocumentationHtml(): String = replace(Regex("<[^>]+>"), "")
+private fun String.stripDocumentationHtml(): String = StringUtil.unescapeXmlEntities(replace(Regex("<[^>]+>"), ""))
 
 /**
  * Lightweight Sage intelligence harness.

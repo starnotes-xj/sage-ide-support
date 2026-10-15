@@ -2,19 +2,13 @@ package com.starnotesxj.sageide.runtime
 
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.projectRoots.AdditionalDataConfigurable
-import com.intellij.openapi.projectRoots.Sdk
-import com.intellij.openapi.projectRoots.SdkAdditionalData
-import com.intellij.openapi.projectRoots.SdkModel
-import com.intellij.openapi.projectRoots.SdkModificator
-import com.intellij.openapi.projectRoots.SdkType
+import com.intellij.openapi.projectRoots.*
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
 import com.starnotesxj.sageide.SageBundle
 import com.starnotesxj.sageide.sugar.SageIcons
-import com.starnotesxj.sagemath.runtime.InstalledRuntime
 import com.starnotesxj.sagemath.runtime.RuntimeTarget
 import org.jdom.Element
 import java.awt.GridBagConstraints
@@ -48,7 +42,7 @@ class SageRuntimeSdkType private constructor() : SdkType(NAME) {
     override fun createAdditionalDataConfigurable(
         sdkModel: SdkModel,
         sdkModificator: SdkModificator,
-    ): AdditionalDataConfigurable? = SageRuntimeSdkAdditionalDataConfigurable(sdkModificator)
+    ): AdditionalDataConfigurable = SageRuntimeSdkAdditionalDataConfigurable(sdkModificator)
 
     override fun saveAdditionalData(additionalData: SdkAdditionalData, additional: Element) {
         (additionalData as? SageRuntimeSdkAdditionalData)?.save(additional)
@@ -90,12 +84,12 @@ class SageRuntimeSdkType private constructor() : SdkType(NAME) {
             return
         }
         val labels = runtimes.map { SageRuntimeSdkDisplay.runtimeLabel(it.id) }.toTypedArray()
-        @Suppress("DEPRECATION")
-        val selected = Messages.showChooseDialog(
+        val selected = Messages.showDialog(
+            parentComponent,
             SageBundle.message("runtime.sdk.choose"),
             SageBundle.message("runtime.sdk.presentable.name"),
             labels,
-            labels.first(),
+            0,
             SageIcons.SAGE,
         )
         if (selected < 0) return

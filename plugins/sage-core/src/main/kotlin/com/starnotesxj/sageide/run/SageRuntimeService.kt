@@ -79,21 +79,6 @@ class SageRuntimeService : Disposable {
         settings.loadState(state)
     }
 
-    fun probeAsync(
-        executable: Path,
-        deadline: Duration = DEFAULT_PROBE_DEADLINE,
-        maxOutputBytes: Int = DEFAULT_PROBE_OUTPUT_BYTES,
-    ): SageRuntimeProbeHandle<RuntimeProbeResult> {
-        require(!deadline.isNegative && !deadline.isZero) { "Runtime probe deadline must be positive" }
-        require(maxOutputBytes > 0) { "Runtime probe output limit must be positive" }
-        val cancellation = MutableRuntimeCancellation()
-        val control = RuntimeControl(RuntimeDeadline.after(deadline), cancellation)
-        val future = CompletableFuture.supplyAsync({
-            probe.probe(RuntimeProbeRequest(executable, control = control, maxOutputBytes = maxOutputBytes))
-        }, executor)
-        return SageRuntimeProbeHandle(future, cancellation)
-    }
-
     /** Resolves a configured native executable, falling back to PATH discovery. */
     fun resolveNativeExecutable(configuredExecutable: String): String? {
         return configuredExecutable.trim().takeIf { it.isNotEmpty() } ?: SageAutoDetect.detectNativeSage()
@@ -319,14 +304,6 @@ class SageRuntimeService : Disposable {
                 target = RuntimeTarget.Wsl(runtime.distribution),
             ),
         )
-    }
-
-    fun probeConfiguredNativeAsync(
-        configuredExecutable: String,
-        deadline: Duration = DEFAULT_PROBE_DEADLINE,
-    ): SageRuntimeProbeHandle<RuntimeProbeResult>? {
-        val executable = resolveNativeExecutable(configuredExecutable) ?: return null
-        return probeAsync(Path.of(executable), deadline)
     }
 
     override fun dispose() {

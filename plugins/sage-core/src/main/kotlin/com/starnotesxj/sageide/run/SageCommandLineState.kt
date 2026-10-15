@@ -35,7 +35,7 @@ class SageCommandLineState(
 
     override fun startProcess(): ProcessHandler {
         val s = SageRunSettings.getInstance().getState()
-        val scriptArguments = tokenizeArguments(configuration.scriptParameters)
+        val scriptArguments = tokenizeArguments(configuration.sageScriptParameters)
         val sageArguments = tokenizeArguments(s.sageParameters)
         val usesConfiguredWsl = configuration.usesConfiguredWslRuntime(s)
         val resolved = if (usesConfiguredWsl) null else configuration.resolveSageExecutables()
@@ -47,10 +47,10 @@ class SageCommandLineState(
             ExecutionMode.WSL
         } else {
             when (executables!!.target) {
-                com.starnotesxj.sagemath.runtime.RuntimeTarget.Native -> ExecutionMode.NATIVE
-                is com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl -> ExecutionMode.WSL
+                RuntimeTarget.Native -> ExecutionMode.NATIVE
+                is RuntimeTarget.Wsl -> ExecutionMode.WSL
                 is RuntimeTarget.Docker -> ExecutionMode.DOCKER
-                is com.starnotesxj.sagemath.runtime.RuntimeTarget.RemoteSsh -> ExecutionMode.SSH
+                is RuntimeTarget.RemoteSsh -> ExecutionMode.SSH
             }
         }
         var runFeedback: SageRunTypeFeedbackSession? = null
@@ -71,7 +71,7 @@ class SageCommandLineState(
                 val distribution = if (usesConfiguredWsl) {
                     s.wslDistribution
                 } else {
-                    (executables!!.target as com.starnotesxj.sagemath.runtime.RuntimeTarget.Wsl).distribution
+                    (executables!!.target as RuntimeTarget.Wsl).distribution
                 }
                 val arguments = sageArguments + toWslPath(configuration.scriptPath) + scriptArguments
                 // The executable is populated by the post-startup discovery.

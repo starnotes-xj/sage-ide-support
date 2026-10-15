@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiInvalidElementAccessException
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.search.GlobalSearchScope
 import com.jetbrains.python.psi.PyClass
 import com.jetbrains.python.psi.PyFile
@@ -13,6 +14,7 @@ import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyImportElement
 import com.jetbrains.python.psi.PyListLiteralExpression
 import com.jetbrains.python.psi.PyStringLiteralExpression
+import com.jetbrains.python.psi.StringLiteralExpression
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.resolve.QualifiedNameFinder
 import com.jetbrains.python.psi.stubs.PyClassNameIndex
@@ -45,6 +47,17 @@ import com.jetbrains.python.psi.types.TypeEvalContext
  * re-validated on every hit.
  */
 object SageStubIndex {
+
+    /**
+     * A `from module import name [as alias]` element imports one identifier,
+     * so its PSI text is the imported name and an optional target PSI element
+     * is the visible alias. Avoids Python AST-only `visibleName`/`importedQName`
+     * accessors while keeping the same syntax-level result.
+     */
+    fun visibleImportName(element: PyImportElement): String? =
+        (element.asNameElement as? PsiNamedElement)?.name ?: element.importReferenceExpression?.text
+
+    fun importedName(element: PyImportElement): String? = element.importReferenceExpression?.text
 
     private val positiveCache = java.util.concurrent.ConcurrentHashMap<String, PsiElement>()
 
@@ -115,7 +128,7 @@ object SageStubIndex {
         }
         for (fromImport in allFile.fromImports) {
             for (importElement in fromImport.importElements) {
-                if (importElement.visibleName == name) {
+                if (visibleImportName(importElement) == name) {
                     if (!importElement.isValid) return null
                     // Follow the alias to the REAL declaration.  The import
                     // element itself is invisible to PyCharm's type engine:
@@ -126,7 +139,7 @@ object SageStubIndex {
                     // downstream member completion (`ecm.factor` etc.) —
                     // v1.7.6 bug.  See [followImportAlias] for why the
                     // import element's own reference is not used.
-                    val importedName = importElement.importedQName?.lastComponent ?: name
+                    val importedName = importedName(importElement) ?: name
                     val moduleQName = fromImport.importSource?.asQualifiedName()?.toString()
                     val target = followImportAlias(project, moduleQName, importedName)
                     if (target != null && target.isValid) {
@@ -209,7 +222,7 @@ object SageStubIndex {
         entryTargetCache[name]?.let { return it.takeIf { psi -> psi.isValid } }
         val statement = element.containingImportStatement as? PyFromImportStatement
         val moduleQName = statement?.importSource?.asQualifiedName()?.toString()
-        val importedName = element.importedQName?.lastComponent ?: name
+        val importedName = importedName(element) ?: name
         val target = followImportAlias(project, moduleQName, importedName)
         if (target != null && target.isValid) {
             entryTargetCache[name] = target
@@ -256,7 +269,7 @@ object SageStubIndex {
                 // reference was the reason this path never ran (v1.7.6
                 // probe: alias=null for CC/QQ while ZZ/RR worked only
                 // through PyCharm's own annotation resolution).
-                val aliasName = target.annotationValue
+                val aliasName = target.annotation?.value?.text
                 if (aliasName != null && aliasName.startsWith("_Type_")) {
                     val file = try {
                         target.containingFile
@@ -265,11 +278,11 @@ object SageStubIndex {
                     } as? PyFile
                     val importElement = file?.fromImports
                         ?.flatMap { it.importElements.asList() }
-                        ?.firstOrNull { it.visibleName == aliasName }
+                        ?.firstOrNull { visibleImportName(it) == aliasName }
                     if (importElement != null) {
                         val statement = importElement.containingImportStatement as? PyFromImportStatement
                         val moduleQName = statement?.importSource?.asQualifiedName()?.toString()
-                        val importedName = importElement.importedQName?.lastComponent ?: aliasName
+                        val importedName = importedName(importElement) ?: aliasName
                         val cls = followImportAlias(project, moduleQName, importedName) as? PyClass
                         if (cls != null && cls.isValid) {
                             return cls.findMethodByName("__call__", true, TypeEvalContext.codeInsightFallback(project)) != null
@@ -373,25 +386,25 @@ object SageStubIndex {
         // 1. Top-level attributes: ZZ/QQ/RR/CC/SR and the other module-level
         //    instances (`RR: _Type_RR` in the generated all.pyi).
         for (attribute in allFile.topLevelAttributes) {
-            val name = attribute.name ?: continue
+            val name = (attribute as PsiNamedElement).name ?: continue
             if (name == "__all__") continue
             byName.putIfAbsent(name, attribute)
         }
         // 2. Top-level functions: GF, Mod, factor, ... (`def GF(...)` etc.).
         for (function in allFile.topLevelFunctions) {
-            val name = function.name ?: continue
+            val name = (function as PsiNamedElement).name ?: continue
             byName.putIfAbsent(name, function)
         }
         // 3. Top-level classes.
         for (pyClass in allFile.topLevelClasses) {
-            val name = pyClass.name ?: continue
+            val name = (pyClass as PsiNamedElement).name ?: continue
             byName.putIfAbsent(name, pyClass)
         }
         // 4. From-import aliases: `from sage.misc.functional import
         //    numerical_approx as N` — N is invisible to the other collections.
         for (fromImport in allFile.fromImports) {
             for (importElement in fromImport.importElements) {
-                val name = importElement.visibleName ?: continue
+                val name = visibleImportName(importElement) ?: continue
                 byName.putIfAbsent(name, importElement)
             }
         }
@@ -400,7 +413,9 @@ object SageStubIndex {
         //    (runtime-synthesized aliases) are added without an element.
         for (entry in (allFile.findTopLevelAttribute("__all__")
                 ?.findAssignedValue() as? PyListLiteralExpression)?.elements.orEmpty()) {
-            val name = (entry as? PyStringLiteralExpression)?.stringValue ?: continue
+            val name = (entry as? PyStringLiteralExpression)
+                ?.let { (it as StringLiteralExpression).stringValue }
+                ?: continue
             byName.putIfAbsent(name, byName[name])
         }
         return byName
@@ -434,7 +449,7 @@ object SageStubIndex {
         val components = modulePath.split('/').filter { it.isNotBlank() }
         if (components.isEmpty()) return null
         val moduleComponents = if (components.last() == "__init__") components.dropLast(1) else components
-        val className = pyClass.name?.takeIf { it.isNotBlank() } ?: return null
+        val className = (pyClass as PsiNamedElement).name?.takeIf { it.isNotBlank() } ?: return null
         return (listOf("sage") + moduleComponents + className).joinToString(".")
     }
 

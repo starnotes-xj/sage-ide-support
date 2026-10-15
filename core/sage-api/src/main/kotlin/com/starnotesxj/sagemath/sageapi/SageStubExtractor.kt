@@ -229,10 +229,6 @@ class SageStubExtractor {
         val declaredNames = moduleTypeParameters.keys + setOf("Self", "typing.Self", "typing_extensions.Self")
         val annotations = splitTopLevel(parametersText).mapNotNull { parameterAnnotation(it) } +
             returnText.trim().takeIf(String::isNotBlank).orEmpty()
-        val paramSpecNames = moduleTypeParameters.values
-            .filter { it.kind == SageApiTypeParameterKind.PARAM_SPEC }
-            .map { it.name }
-            .toSet()
         return annotations.asSequence()
             .mapNotNull {
                 SageTypeRefExpressionParser.parse(

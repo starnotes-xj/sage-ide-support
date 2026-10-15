@@ -24,12 +24,8 @@ enum class SageApiSymbolKind {
 }
 
 enum class SageApiSourceKind {
-    RUNTIME,
     STUB,
     SIGNATURE,
-    DOCUMENTATION,
-    USER_STUB,
-    PROBE,
 }
 
 data class SageApiSourceRef(
@@ -127,7 +123,6 @@ data class SageApiTypeParameter(
 
 enum class SageApiReturnEvidenceKind {
     TRUSTED_MANIFEST,
-    TRUSTED_STUB,
 }
 
 data class SageApiReturnEvidence(
@@ -211,8 +206,6 @@ data class SageApiEntry(
     val confidence: SageApiConfidence = SageApiConfidence.UNKNOWN,
     val sources: List<SageApiSourceRef> = emptyList(),
 ) {
-    val moduleName: String
-        get() = qualifiedName.substringBeforeLast('.', qualifiedName)
 
     val ownerName: String?
         get() = qualifiedName.substringBeforeLast('.', "").takeIf { it.isNotBlank() }
@@ -249,7 +242,6 @@ data class SageApiIndex(
 enum class SageApiDiagnosticKind {
     DUPLICATE,
     CONFLICT,
-    INVALID,
     UNRESOLVED_ALIAS,
 }
 

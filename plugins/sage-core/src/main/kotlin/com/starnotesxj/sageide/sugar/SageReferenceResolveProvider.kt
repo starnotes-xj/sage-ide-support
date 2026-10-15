@@ -1,6 +1,7 @@
 package com.starnotesxj.sageide.sugar
 
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyAssignmentStatement
 import com.jetbrains.python.psi.PyQualifiedExpression
@@ -43,7 +44,7 @@ class SageReferenceResolveProvider : PyReferenceResolveProvider {
 
     override fun resolveName(element: PyQualifiedExpression, context: TypeEvalContext): List<RatedResolveResult> {
         val reference = element as? PyReferenceExpression ?: return emptyList()
-        if (reference.isQualified) return emptyList()
+        if (reference.qualifier != null) return emptyList()
         val file = reference.containingFile ?: return emptyList()
         if (!SageFileUtils.isSageFile(file)) return emptyList()
         val name = reference.referencedName ?: return emptyList()
@@ -61,7 +62,7 @@ class SageReferenceResolveProvider : PyReferenceResolveProvider {
         if (statement != null) {
             val info = SageSugarAnalyzer.analyze(statement)
             if (info != null) {
-                val target = info.nameTargets.firstOrNull { it.name == name }
+                val target = info.nameTargets.firstOrNull { (it as PsiNamedElement).name == name }
                 if (target != null) return ResolveResultList.to(target)
             }
         }

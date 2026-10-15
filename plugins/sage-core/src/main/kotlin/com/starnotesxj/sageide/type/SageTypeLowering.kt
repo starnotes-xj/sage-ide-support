@@ -1,40 +1,15 @@
 package com.starnotesxj.sageide.type
 
-import com.intellij.psi.PsiElement
 import com.intellij.openapi.util.RecursionManager
+import com.intellij.openapi.util.Ref
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiNamedElement
 import com.jetbrains.python.ast.PyAstFunction
-import com.jetbrains.python.psi.PyCallExpression
-import com.jetbrains.python.psi.PyFunction
-import com.jetbrains.python.psi.PyKeywordArgument
-import com.jetbrains.python.psi.PyExpression
-import com.jetbrains.python.psi.PyQualifiedExpression
-import com.jetbrains.python.psi.PyStarArgument
-import com.jetbrains.python.psi.PyStringElement
+import com.jetbrains.python.psi.*
 import com.jetbrains.python.psi.impl.PyBuiltinCache
-import com.jetbrains.python.psi.types.PyAnyType
-import com.jetbrains.python.psi.types.PyLiteralType
-import com.jetbrains.python.psi.types.PyTypeChecker
-import com.jetbrains.python.psi.types.PyCallableParameter
-import com.jetbrains.python.psi.types.PyCallableParameterImpl
-import com.jetbrains.python.psi.types.PyCallableType
-import com.jetbrains.python.psi.types.PyCallableTypeImpl
-import com.jetbrains.python.psi.types.PyClassType
-import com.jetbrains.python.psi.types.PyClassTypeImpl
-import com.jetbrains.python.psi.types.PyCollectionTypeImpl
-import com.jetbrains.python.psi.types.PyOverloadType
-import com.jetbrains.python.psi.types.PyTupleType
-import com.jetbrains.python.psi.types.PyType
-import com.jetbrains.python.psi.types.PyUnionType
-import com.jetbrains.python.psi.types.TypeEvalContext
-import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
-import com.starnotesxj.sagemath.sageapi.SageApiParameter
-import com.starnotesxj.sagemath.sageapi.SageApiSignature
-import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
-import com.starnotesxj.sagemath.sageapi.SageTypeExpression
-import com.starnotesxj.sagemath.sageapi.SageTypeRef
-import com.starnotesxj.sagemath.sageapi.SageTypeRefExpressionParser
-import com.starnotesxj.sagemath.sageapi.SageTypeState
+import com.jetbrains.python.psi.types.*
 import com.starnotesxj.sageide.sugar.SageStubIndex
+import com.starnotesxj.sagemath.sageapi.*
 
 /**
  * Lowers index type expressions to the platform's real PyType graph.
@@ -45,6 +20,57 @@ import com.starnotesxj.sageide.sugar.SageStubIndex
  */
 object SageTypeLowering {
     private const val STORED_PARAMETER_TYPEVAR_PREFIX = "_SageStored"
+
+    // PyCharm 2026.2 added generic arguments, variadic/signature-marker
+    // factories, string defaults, and literal factories to Python's PSI API.
+    // Keep these optional so the plugin remains binary-compatible with the
+    // advertised 2026.1 minimum; reflection is cached and older releases fall
+    // back to their equivalent non-generic/conservative representations.
+    private val classTypeArgumentsMethod by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        PyClassType::class.java.methods.firstOrNull { it.name == "getTypeArguments" && it.parameterCount == 0 }
+    }
+    private val genericClassTypeConstructor by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        PyClassTypeImpl::class.java.constructors.firstOrNull { constructor ->
+            val types = constructor.parameterTypes
+            types.size == 3 && types[0] == PyClass::class.java &&
+                types[1] == Boolean::class.javaPrimitiveType && List::class.java.isAssignableFrom(types[2])
+        }
+    }
+    private val legacyCallableParameterConstructor by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val booleanType = Boolean::class.javaPrimitiveType
+        PyCallableParameterImpl::class.java.constructors.firstOrNull { constructor ->
+            constructor.parameterTypes.contentEquals(
+                arrayOf(
+                    String::class.java,
+                    Ref::class.java,
+                    PyExpression::class.java,
+                    PyParameter::class.java,
+                    booleanType,
+                    booleanType,
+                    booleanType,
+                    PsiElement::class.java,
+                ),
+            )
+        }
+    }
+    private val callableParameterFactories by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        PyCallableParameterImpl.Companion::class.java.methods.associateBy { method ->
+            method.name to method.parameterTypes.toList()
+        }
+    }
+    private val literalFactories by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        PyLiteralType::class.java.methods.associateBy { method ->
+            method.name to method.parameterTypes.toList()
+        }
+    }
+    private val unionTypeFactory by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val collectionParameter = arrayOf(Collection::class.java)
+        PyUnionType::class.java.methods.firstOrNull {
+            it.name == "unionOrNever" && it.parameterTypes.contentEquals(collectionParameter)
+        } ?: PyUnionType::class.java.methods.firstOrNull {
+            it.name == "union" && it.parameterTypes.contentEquals(collectionParameter)
+        }
+    }
 
     fun lower(
         type: SageTypeRef,
@@ -68,7 +94,7 @@ object SageTypeLowering {
         is SageTypeExpression.Optional -> {
             val element = lower(expression.element, anchor, context, query, bindings) ?: return null
             val noneType = PyBuiltinCache.getInstance(anchor).noneType ?: return null
-            PyUnionType.union(listOf(element, noneType))
+            unionTypes(listOf(element, noneType))
         }
         is SageTypeExpression.Union -> lowerUnionAtomically(expression.members.map { lower(it, anchor, context, query, bindings) })
         is SageTypeExpression.Generic -> lowerGeneric(expression, anchor, context, query, bindings)
@@ -90,17 +116,17 @@ object SageTypeLowering {
         signature.parameters.forEach { parameter ->
             if (parameter.positionalOnly) hasPositionalOnly = true
             if (hasPositionalOnly && !parameter.positionalOnly && !positionalOnlySeparatorAdded) {
-                parameters += PyCallableParameterImpl.positionalOnlySeparatorNonPsi()
+                optionalCallableParameterFactory("positionalOnlySeparatorNonPsi")?.let(parameters::add)
                 positionalOnlySeparatorAdded = true
             }
-            if (parameter.keywordOnly && !keywordOnlySeparatorAdded && parameters.none { it.isKeywordOnlySeparator }) {
-                parameters += PyCallableParameterImpl.keywordOnlySeparatorNonPsi()
+            if (parameter.keywordOnly && !keywordOnlySeparatorAdded) {
+                optionalCallableParameterFactory("keywordOnlySeparatorNonPsi")?.let(parameters::add)
                 keywordOnlySeparatorAdded = true
             }
             parameters += lowerParameter(parameter, anchor, context, query) ?: return null
         }
         if (hasPositionalOnly && !positionalOnlySeparatorAdded) {
-            parameters += PyCallableParameterImpl.positionalOnlySeparatorNonPsi()
+            optionalCallableParameterFactory("positionalOnlySeparatorNonPsi")?.let(parameters::add)
         }
         return PyCallableTypeImpl(parameters, returnType)
     }
@@ -124,11 +150,11 @@ object SageTypeLowering {
      */
     fun viableSignatures(
         signatures: List<SageApiSignature>,
-        callSite: com.jetbrains.python.psi.PyCallSiteExpression,
+        callSite: PyCallSiteExpression,
         context: TypeEvalContext,
         query: SageApiIndexQuery,
         callableQualifiedName: String? = null,
-        callable: com.jetbrains.python.psi.PyFunction? = null,
+        callable: PyFunction? = null,
     ): List<SageApiSignature> {
         val arguments = callSite.getArguments(null)
         return signatures.mapNotNull { signature ->
@@ -138,11 +164,11 @@ object SageTypeLowering {
 
     fun lowerCallReturnType(
         signatures: List<SageApiSignature>,
-        callSite: com.jetbrains.python.psi.PyCallSiteExpression,
+        callSite: PyCallSiteExpression,
         context: TypeEvalContext,
         query: SageApiIndexQuery,
         callableQualifiedName: String? = null,
-        callable: com.jetbrains.python.psi.PyFunction? = null,
+        callable: PyFunction? = null,
         receiverOverride: PyType? = null,
     ): PyType? {
         val arguments = callSite.getArguments(null)
@@ -172,7 +198,7 @@ object SageTypeLowering {
         val candidates = viable.mapNotNull { (signature, bindings) ->
             val names = signature.typeParameters.map { it.name }.toSet()
             val paramSpecNames = signature.typeParameters
-                .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                .filter { it.kind == SageApiTypeParameterKind.PARAM_SPEC }
                 .map { it.name }
                 .toSet()
             val expression = signature.returnType.expression?.let {
@@ -186,7 +212,7 @@ object SageTypeLowering {
         if (viable.size == 1) return candidates.singleOrNull()?.second
         if (candidates.size != viable.size) return null
         if (viable.map { signatureShape(it.first) }.distinct().size != viable.size) return null
-        return PyUnionType.union(candidates.map { it.second })
+        return unionTypes(candidates.map { it.second })
     }
 
     /** Parameter shape used only to distinguish true overload ambiguity. */
@@ -206,11 +232,11 @@ object SageTypeLowering {
 
     private fun literalFallbackType(argument: PyExpression?): PyType? {
         return when (argument) {
-            is com.jetbrains.python.psi.PyNumericLiteralExpression -> {
+            is PyNumericLiteralExpression -> {
                 val cache = PyBuiltinCache.getInstance(argument)
                 if (argument.isIntegerLiteral) cache.intType else cache.floatType
             }
-            is com.jetbrains.python.psi.PyStringLiteralExpression -> PyBuiltinCache.getInstance(argument).strType
+            is PyStringLiteralExpression -> PyBuiltinCache.getInstance(argument).strType
             else -> null
         }
     }
@@ -222,7 +248,7 @@ object SageTypeLowering {
         context: TypeEvalContext,
         anchor: PsiElement,
         query: SageApiIndexQuery,
-        typeParameters: Map<String, com.starnotesxj.sagemath.sageapi.SageApiTypeParameter>,
+        typeParameters: Map<String, SageApiTypeParameter>,
     ): Boolean {
         val platformType = argument?.let { context.getType(it) }
             ?.takeUnless { it == PyAnyType.Any || it == PyAnyType.Unknown }
@@ -266,10 +292,10 @@ object SageTypeLowering {
         query: SageApiIndexQuery,
     ): PyType? {
         val call = argument as? PyCallExpression ?: return null
-        val callee = call.callee as? com.jetbrains.python.psi.PyReferenceExpression ?: return null
+        val callee = call.callee as? PyReferenceExpression ?: return null
         val function = callee.reference.resolve() as? PyFunction
         val resolvedName = function?.let(::sageQualifiedName)
-        val implicitName = if (resolvedName == null && !callee.isQualified) {
+        val implicitName = if (resolvedName == null && callee.qualifier == null) {
             callee.referencedName?.let { query.namespaceEntry("sage.all", it)?.qualifiedName }
         } else null
         val qualifiedName = resolvedName ?: implicitName ?: return null
@@ -292,9 +318,10 @@ object SageTypeLowering {
             ?.removeSuffix(".pyi")
             ?.replace('/', '.')
             ?.removeSuffix(".__init__")
-        val name = function.name
+        val name = (function as PsiNamedElement).name
         if (moduleName?.startsWith("sage.") == true && !name.isNullOrBlank()) {
-            function.containingClass?.name?.takeIf { it.isNotBlank() }?.let { owner ->
+            function.containingClass?.let { (it as PsiNamedElement).name }
+                ?.takeIf { it.isNotBlank() }?.let { owner ->
                 return "$moduleName.$owner.$name"
             }
             return "$moduleName.$name"
@@ -309,12 +336,12 @@ object SageTypeLowering {
         context: TypeEvalContext,
         anchor: PsiElement,
         query: SageApiIndexQuery,
-        typeParameters: Map<String, com.starnotesxj.sagemath.sageapi.SageApiTypeParameter>,
+        typeParameters: Map<String, SageApiTypeParameter>,
     ): Boolean {
         when (expected) {
             is SageTypeExpression.TypeVariable -> {
                 val declaration = typeParameters[expected.name] ?: return false
-                if (declaration.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC) return false
+                if (declaration.kind == SageApiTypeParameterKind.PARAM_SPEC) return false
                 if (actual == PyAnyType.Any || actual == PyAnyType.Unknown) return false
                 if (!typeParameterAccepts(declaration, actual, context, anchor, query)) return false
                 val previous = bindings[expected.name]
@@ -348,7 +375,7 @@ object SageTypeLowering {
                 val actualClass = actual as? PyClassType ?: return false
                 val expectedName = normalizeName(expected.base.qualifiedName)
                 if (actualClass.classQName != expectedName && actualClass.name != expected.base.qualifiedName.substringAfterLast('.')) return false
-                val actualArguments = actualClass.typeArguments
+                val actualArguments = genericTypeArguments(actualClass)
                 if (actualArguments.size != expected.arguments.size) return false
                 val candidate = LinkedHashMap(bindings)
                 if (!expected.arguments.zip(actualArguments).all { (expectedArgument, actualArgument) ->
@@ -366,11 +393,11 @@ object SageTypeLowering {
     }
 
     private fun resolveSelfReceiver(
-        callSite: com.jetbrains.python.psi.PyCallSiteExpression,
+        callSite: PyCallSiteExpression,
         context: TypeEvalContext,
         query: SageApiIndexQuery,
         callableQualifiedName: String?,
-        callable: com.jetbrains.python.psi.PyFunction?,
+        callable: PyFunction?,
     ): PyType? {
         if (callable?.let { it.modifier == PyAstFunction.Modifier.STATICMETHOD } == true) return null
         val callExpression = callSite as? PyCallExpression ?: return null
@@ -389,7 +416,7 @@ object SageTypeLowering {
     }
 
     private fun typeParameterAccepts(
-        declaration: com.starnotesxj.sagemath.sageapi.SageApiTypeParameter,
+        declaration: SageApiTypeParameter,
         actual: PyType,
         context: TypeEvalContext,
         anchor: PsiElement,
@@ -413,15 +440,15 @@ object SageTypeLowering {
     private fun signatureBindings(
         signature: SageApiSignature,
         arguments: List<PyExpression>,
-        callSite: com.jetbrains.python.psi.PyCallSiteExpression,
+        callSite: PyCallSiteExpression,
         context: TypeEvalContext,
         query: SageApiIndexQuery,
         callableQualifiedName: String?,
-        callable: com.jetbrains.python.psi.PyFunction?,
+        callable: PyFunction?,
         receiverOverride: PyType? = null,
     ): Map<String, PyType>? {
         val typeParameters = signature.typeParameters.associateBy { it.name }
-        if (typeParameters.values.any { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }) return null
+        if (typeParameters.values.any { it.kind == SageApiTypeParameterKind.PARAM_SPEC }) return null
         val bindings = linkedMapOf<String, PyType>()
         if (!bindGeneratedReceiverTypeVariables(
                 signature = signature,
@@ -432,7 +459,7 @@ object SageTypeLowering {
                 bindings = bindings,
             )
         ) return null
-        if (typeParameters.values.any { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.SELF }) {
+        if (typeParameters.values.any { it.kind == SageApiTypeParameterKind.SELF }) {
             val selfType = receiverOverride
                 ?: resolveSelfReceiver(callSite, context, query, callableQualifiedName, callable)
                 ?: return null
@@ -448,7 +475,7 @@ object SageTypeLowering {
             val expectedExpression = parameter.type.expression
             val names = signature.typeParameters.map { it.name }.toSet()
             val paramSpecNames = signature.typeParameters
-                .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                .filter { it.kind == SageApiTypeParameterKind.PARAM_SPEC }
                 .map { it.name }
                 .toSet()
             val parsed = expectedExpression?.let { SageTypeRefExpressionParser.parse(it, names, paramSpecNames) }
@@ -461,7 +488,7 @@ object SageTypeLowering {
         }
         for (argument in arguments) {
             if (argument is PyStarArgument) return null
-            val keyword = (argument as? PyKeywordArgument)?.keyword
+            val keyword = (argument as? PyKeywordArgument)?.let { (it as PsiNamedElement).name }
             if (keyword != null) {
                 val parameter = parameters.firstOrNull { it.name == keyword }
                 if (parameter == null) {
@@ -498,7 +525,7 @@ object SageTypeLowering {
      */
     private fun bindGeneratedReceiverTypeVariables(
         signature: SageApiSignature,
-        callSite: com.jetbrains.python.psi.PyCallSiteExpression,
+        callSite: PyCallSiteExpression,
         context: TypeEvalContext,
         anchor: PsiElement,
         query: SageApiIndexQuery,
@@ -511,7 +538,7 @@ object SageTypeLowering {
         val receiver = callee.qualifier ?: return true
         val receiverType = context.getType(receiver) as? PyClassType ?: return true
         if (receiverType.isDefinition) return true
-        val actualArguments = receiverType.typeArguments
+        val actualArguments = genericTypeArguments(receiverType)
         if (actualArguments.isEmpty()) return true
         val genericExpression = receiverType.pyClass.superClassExpressions.singleOrNull { expression ->
             expression.text.removePrefix("typing.").startsWith("Generic[")
@@ -540,7 +567,7 @@ object SageTypeLowering {
 
     private fun signatureAcceptsCall(
         signature: SageApiSignature,
-        arguments: List<com.jetbrains.python.psi.PyExpression>,
+        arguments: List<PyExpression>,
         context: TypeEvalContext,
         query: SageApiIndexQuery,
     ): Boolean {
@@ -551,8 +578,8 @@ object SageTypeLowering {
         val consumed = mutableSetOf<String>()
         var positionalIndex = 0
         for (argument in arguments) {
-            if (argument is com.jetbrains.python.psi.PyStarArgument) return false
-            val keyword = (argument as? com.jetbrains.python.psi.PyKeywordArgument)?.keyword
+            if (argument is PyStarArgument) return false
+            val keyword = (argument as? PyKeywordArgument)?.let { (it as PsiNamedElement).name }
             if (keyword != null) {
                 val parameter = parameters.firstOrNull { it.name == keyword }
                 if (parameter == null) {
@@ -578,16 +605,16 @@ object SageTypeLowering {
     }
 
     private fun argumentValueCompatible(
-        expression: com.jetbrains.python.psi.PyExpression?,
+        expression: PyExpression?,
         expected: SageTypeRef,
         context: TypeEvalContext,
         query: SageApiIndexQuery,
     ): Boolean {
-        if (expression == null || expected.state != com.starnotesxj.sagemath.sageapi.SageTypeState.KNOWN) return true
+        if (expression == null || expected.state != SageTypeState.KNOWN) return true
         val literalName = when (expression) {
-            is com.jetbrains.python.psi.PyNumericLiteralExpression ->
+            is PyNumericLiteralExpression ->
                 if (expression.isIntegerLiteral) "int" else "float"
-            is com.jetbrains.python.psi.PyStringLiteralExpression -> "str"
+            is PyStringLiteralExpression -> "str"
             else -> null
         }
         if (literalName != null) {
@@ -602,10 +629,10 @@ object SageTypeLowering {
         val expectedType = lower(expected, expression, context, query) ?: return true
         val platformType = context.getType(expression)
             ?.takeUnless { it == PyAnyType.Any || it == PyAnyType.Unknown }
-        val literalType = (expression as? com.jetbrains.python.psi.PyNumericLiteralExpression)?.let {
+        val literalType = (expression as? PyNumericLiteralExpression)?.let {
                 if (it.isIntegerLiteral) PyBuiltinCache.getInstance(expression).intType else PyBuiltinCache.getInstance(expression).floatType
             }
-            ?: (expression as? com.jetbrains.python.psi.PyStringLiteralExpression)?.let {
+            ?: (expression as? PyStringLiteralExpression)?.let {
                 PyBuiltinCache.getInstance(expression).strType
             }
         val actualCandidates = listOfNotNull(
@@ -621,8 +648,8 @@ object SageTypeLowering {
                 ?.let(SageStubIndex::canonicalQualifiedName)
             actual == expectedType ||
                 (expectedCanonical != null && expectedCanonical == actualCanonical) ||
-                actual is com.jetbrains.python.psi.types.PyAnyType ||
-                expectedType is com.jetbrains.python.psi.types.PyAnyType ||
+                actual is PyAnyType ||
+                expectedType is PyAnyType ||
                 PyTypeChecker.match(expectedType, actual, context)
         }
     }
@@ -635,13 +662,15 @@ object SageTypeLowering {
     ): PyCallableParameter? {
         val type = lower(parameter.type, anchor, context, query) ?: return null
         if (parameter.variadic) {
-            return if (parameter.keywordOnly) {
-                PyCallableParameterImpl.keywordContainerNonPsi(parameter.name, type)
-            } else {
-                PyCallableParameterImpl.positionalContainerNonPsi(parameter.name, type)
-            }
+            val factory = if (parameter.keywordOnly) "keywordContainerNonPsi" else "positionalContainerNonPsi"
+            return optionalCallableParameterFactory(factory, parameter.name, type)
+                ?: legacyVariadicParameter(parameter.name, type, parameter.keywordOnly, anchor)
         }
-        return PyCallableParameterImpl.nonPsi(parameter.name, type, parameter.defaultValue)
+        val defaultValue = parameter.defaultValue
+        if (defaultValue != null) {
+            optionalCallableParameterFactory("nonPsi", parameter.name, type, defaultValue)?.let { return it }
+        }
+        return PyCallableParameterImpl.nonPsi(parameter.name, type)
     }
 
     private fun lowerCallable(
@@ -686,7 +715,6 @@ object SageTypeLowering {
             "sage.type_contracts.ResidueRingElement", "ResidueRingElement" -> "residue_ring"
             "sage.type_contracts.ResidueFieldElement", "ResidueFieldElement" -> "residue_field"
             "sage.type_contracts.WeightLatticeElement", "WeightLatticeElement" -> "weight_lattice_realization"
-            "sage.type_contracts.DomainElement", "DomainElement" -> "domain"
             "sage.type_contracts.MessageSpaceElement", "MessageSpaceElement" -> "message_space"
             "sage.type_contracts.InputSpaceElement", "InputSpaceElement" -> "input_space"
             "sage.type_contracts.CoefficientRingElement", "CoefficientRingElement" -> "coefficient_ring"
@@ -732,16 +760,6 @@ object SageTypeLowering {
             "sage.type_contracts.FunctionField", "FunctionField" -> "function_field"
             "sage.type_contracts.Curve", "Curve" -> "curve"
             "sage.type_contracts.Ideal", "Ideal" -> "ideal"
-            "sage.type_contracts.MessageSpaceElement", "MessageSpaceElement" -> "message_space"
-            "sage.type_contracts.InputSpaceElement", "InputSpaceElement" -> "input_space"
-            "sage.type_contracts.CoefficientRingElement", "CoefficientRingElement" -> "coefficient_ring"
-            "sage.type_contracts.FreeModuleElement", "FreeModuleElement" -> "free_module"
-            "sage.type_contracts.FunctionFieldElement", "FunctionFieldElement" -> "function_field"
-            "sage.type_contracts.GroupElement", "GroupElement" -> "group"
-            "sage.type_contracts.LatticeElement", "LatticeElement" -> "lattice"
-            "sage.type_contracts.ModuleElement", "ModuleElement" -> "module"
-            "sage.type_contracts.IdealElement", "IdealElement" -> "ideal"
-            "sage.type_contracts.CurveElement", "CurveElement" -> "curve"
             else -> null
         }
         if (relatedParent != null) {
@@ -763,7 +781,7 @@ object SageTypeLowering {
         return if (isBuiltinCollection(baseName)) {
             PyCollectionTypeImpl(base.pyClass, base.isDefinition, arguments)
         } else {
-            PyClassTypeImpl(base.pyClass, base.isDefinition, arguments)
+            genericClassType(base, arguments)
         }
     }
 
@@ -807,7 +825,7 @@ object SageTypeLowering {
                     ) return@mapNotNull null
                     val typeNames = signature.typeParameters.map { it.name }.toSet()
                     val paramSpecNames = signature.typeParameters
-                        .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                        .filter { it.kind == SageApiTypeParameterKind.PARAM_SPEC }
                         .map { it.name }
                         .toSet()
                     val parsed = SageTypeRefExpressionParser.parse(
@@ -866,7 +884,7 @@ object SageTypeLowering {
                 ) return@mapNotNull null
                 val typeNames = signature.typeParameters.map { it.name }.toSet()
                 val paramSpecNames = signature.typeParameters
-                    .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                    .filter { it.kind == SageApiTypeParameterKind.PARAM_SPEC }
                     .map { it.name }
                     .toSet()
                 val parsed = SageTypeRefExpressionParser.parse(
@@ -876,7 +894,9 @@ object SageTypeLowering {
                 ) ?: return@mapNotNull null
                 lower(parsed, anchor, context, query, mapOf("Self" to receiver)) as? PyClassType
             }
-            .distinctBy { SageStubIndex.canonicalQualifiedName(it.pyClass) ?: it.pyClass.name }
+            .distinctBy {
+                SageStubIndex.canonicalQualifiedName(it.pyClass) ?: (it.pyClass as PsiNamedElement).name
+            }
             .toList()
         val parent = relatedParents.singleOrNull() ?: return null
         return lowerParentElement(parent, anchor, context, query)
@@ -939,7 +959,7 @@ object SageTypeLowering {
                 ) return@mapNotNull null
                 val typeNames = signature.typeParameters.map { it.name }.toSet()
                 val paramSpecNames = signature.typeParameters
-                    .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiTypeParameterKind.PARAM_SPEC }
+                    .filter { it.kind == SageApiTypeParameterKind.PARAM_SPEC }
                     .map { it.name }
                     .toSet()
                 val parsed = SageTypeRefExpressionParser.parse(
@@ -952,7 +972,7 @@ object SageTypeLowering {
                 ) return@mapNotNull null
                 lower(parsed, anchor, context, query, mapOf("Self" to receiver))
             }
-            .filterNot { it is com.jetbrains.python.psi.types.PyAnyType }
+            .filterNot { it is PyAnyType }
             .distinctBy { type ->
                 (type as? PyClassType)?.let { SageStubIndex.canonicalQualifiedName(it.pyClass) }
                     ?: type.toString()
@@ -981,13 +1001,26 @@ object SageTypeLowering {
     ): PyType? {
         val lowered = expression.values.map { value ->
             when (value) {
-                is com.starnotesxj.sagemath.sageapi.SageLiteralValue.StringValue ->
-                    PyLiteralType.stringLiteral(anchor, value.value)
-                is com.starnotesxj.sagemath.sageapi.SageLiteralValue.IntegerValue ->
-                    value.value.toBigIntegerOrNull()?.let { PyLiteralType.intLiteral(anchor, it) }
-                is com.starnotesxj.sagemath.sageapi.SageLiteralValue.BooleanValue ->
-                    PyLiteralType.boolLiteral(anchor, value.value)
-                com.starnotesxj.sagemath.sageapi.SageLiteralValue.NoneValue ->
+                is SageLiteralValue.StringValue ->
+                    literalFactory("stringLiteral", arrayOf(PsiElement::class.java, String::class.java), anchor, value.value)
+                        ?: PyBuiltinCache.getInstance(anchor).strType
+                is SageLiteralValue.IntegerValue ->
+                    value.value.toBigIntegerOrNull()?.let { integer ->
+                        literalFactory(
+                            "intLiteral",
+                            arrayOf(PsiElement::class.java, java.math.BigInteger::class.java),
+                            anchor,
+                            integer,
+                        ) ?: PyBuiltinCache.getInstance(anchor).intType
+                    }
+                is SageLiteralValue.BooleanValue ->
+                    literalFactory(
+                        "boolLiteral",
+                        arrayOf(PsiElement::class.java, Boolean::class.javaPrimitiveType!!),
+                        anchor,
+                        value.value,
+                    ) ?: PyBuiltinCache.getInstance(anchor).boolType
+                SageLiteralValue.NoneValue ->
                     PyBuiltinCache.getInstance(anchor).noneType
             }
         }
@@ -995,14 +1028,61 @@ object SageTypeLowering {
         return lowerUnionAtomically(lowered)
     }
 
-    fun lowerTrustedReturn(
-        signature: SageApiSignature,
+    private fun genericTypeArguments(type: PyClassType): List<PyType> = runCatching {
+        (classTypeArgumentsMethod?.invoke(type) as? List<*>)?.filterIsInstance<PyType>().orEmpty()
+    }.getOrDefault(emptyList())
+
+    private fun genericClassType(base: PyClassType, arguments: List<PyType>): PyClassType {
+        val constructor = genericClassTypeConstructor ?: return PyClassTypeImpl(base.pyClass, base.isDefinition)
+        return runCatching {
+            constructor.newInstance(base.pyClass, base.isDefinition, arguments) as PyClassType
+        }.getOrDefault(PyClassTypeImpl(base.pyClass, base.isDefinition))
+    }
+
+    private fun legacyVariadicParameter(
+        name: String,
+        type: PyType,
+        keywordOnly: Boolean,
         anchor: PsiElement,
-        context: TypeEvalContext,
-        query: SageApiIndexQuery,
+    ): PyCallableParameter? {
+        val constructor = legacyCallableParameterConstructor ?: return null
+        return runCatching {
+            constructor.newInstance(
+                *arrayOf<Any?>(
+                    name,
+                    Ref.create(type),
+                    null,
+                    null,
+                    !keywordOnly,
+                    keywordOnly,
+                    false,
+                    anchor,
+                ),
+            ) as? PyCallableParameter
+        }.getOrNull()
+    }
+
+    private fun optionalCallableParameterFactory(name: String, vararg arguments: Any): PyCallableParameter? {
+        val parameterTypes = when (arguments.size) {
+            0 -> emptyList()
+            2 -> listOf(String::class.java, PyType::class.java)
+            3 -> listOf(String::class.java, PyType::class.java, String::class.java)
+            else -> return null
+        }
+        val factory = callableParameterFactories[name to parameterTypes] ?: return null
+        return runCatching {
+            factory.invoke(PyCallableParameterImpl.Companion, *arguments) as? PyCallableParameter
+        }.getOrNull()
+    }
+
+    private fun literalFactory(
+        name: String,
+        parameterTypes: Array<Class<*>>,
+        anchor: PsiElement,
+        value: Any,
     ): PyType? {
-        val trusted = query.uniqueTrustedKnownReturnExpression(signature) ?: return null
-        return lower(trusted, anchor, context, query)
+        val factory = literalFactories[name to parameterTypes.toList()] ?: return null
+        return runCatching { factory.invoke(null, anchor, value) as? PyType }.getOrNull()
     }
 
     /** Lower a known return contract without requiring call-argument binding. */
@@ -1012,7 +1092,7 @@ object SageTypeLowering {
         context: TypeEvalContext,
         query: SageApiIndexQuery,
     ): PyType? {
-        if (signature.returnType.state != com.starnotesxj.sagemath.sageapi.SageTypeState.KNOWN ||
+        if (signature.returnType.state != SageTypeState.KNOWN ||
             signature.returnType.expression.isNullOrBlank()
         ) return null
         return lower(signature.returnType, anchor, context, query)
@@ -1044,8 +1124,15 @@ object SageTypeLowering {
         return when (known.size) {
             0 -> null
             1 -> known.single()
-            else -> PyUnionType.union(known)
+            else -> unionTypes(known)
         }
+    }
+
+    internal fun unionTypes(types: List<PyType>): PyType? {
+        val distinct = types.distinct()
+        if (distinct.isEmpty()) return null
+        val factory = unionTypeFactory ?: return null
+        return runCatching { factory.invoke(null, distinct) as? PyType }.getOrNull()
     }
 
     private fun lowerUnionAtomically(types: List<PyType?>): PyType? {

@@ -1,8 +1,8 @@
 package com.starnotesxj.sageide.type
 
-import com.intellij.execution.process.ProcessAdapter
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessHandler
+import com.intellij.execution.process.ProcessListener
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -70,7 +70,7 @@ internal class SageRunTypeFeedbackSession private constructor(
     }
 
     fun attach(handler: ProcessHandler, project: Project) {
-        handler.addProcessListener(object : ProcessAdapter() {
+        handler.addProcessListener(object : ProcessListener {
             override fun processTerminated(event: ProcessEvent) {
                 ApplicationManager.getApplication().executeOnPooledThread {
                     try {

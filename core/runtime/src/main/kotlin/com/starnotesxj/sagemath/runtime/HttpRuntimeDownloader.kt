@@ -21,7 +21,7 @@ class JdkHttpRuntimeDownloader(
         .build()
     override fun download(
         artifact: RuntimeArtifact,
-        destination: java.nio.file.Path,
+        destination: Path,
         progress: DownloadProgressListener,
         cancellation: InstallationCancellation,
         control: RuntimeControl,
@@ -93,7 +93,7 @@ class JdkHttpRuntimeDownloader(
         private fun copyAndVerify(
             artifact: RuntimeArtifact,
             input: java.io.InputStream,
-            destination: java.nio.file.Path,
+            destination: Path,
             progress: DownloadProgressListener,
             cancellation: InstallationCancellation,
             maxDownloadBytes: Long,

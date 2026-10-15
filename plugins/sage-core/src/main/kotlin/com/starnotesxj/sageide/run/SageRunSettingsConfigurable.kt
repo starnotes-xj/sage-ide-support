@@ -85,7 +85,7 @@ class SageRunSettingsConfigurable : Configurable {
 
     override fun getDisplayName(): String = SageBundle.message("settings.display.name")
 
-    override fun createComponent(): JComponent? {
+    override fun createComponent(): JComponent {
         rootComponent?.let { return it }
         listOf(nativeCard, wslCard, dockerCard, sshCard).forEach { it.removeAll() }
         cards.removeAll()

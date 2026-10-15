@@ -1,5 +1,6 @@
 package com.starnotesxj.sageide.sugar
 
+import com.intellij.psi.PsiNamedElement
 import com.jetbrains.python.psi.PyAssignmentStatement
 import com.jetbrains.python.psi.PyCallExpression
 import com.jetbrains.python.psi.PyTargetExpression
@@ -19,6 +20,6 @@ class SageSugarInfo(
     val call: PyCallExpression?,
     val nameTargets: List<PyTargetExpression>,
 ) {
-    val factoryName: String = factoryTarget.name ?: factoryTarget.text
-    val names: List<String> = nameTargets.map { it.name ?: it.text }
+    val factoryName: String = (factoryTarget as PsiNamedElement).name ?: factoryTarget.text
+    val names: List<String> = nameTargets.map { (it as PsiNamedElement).name ?: it.text }
 }

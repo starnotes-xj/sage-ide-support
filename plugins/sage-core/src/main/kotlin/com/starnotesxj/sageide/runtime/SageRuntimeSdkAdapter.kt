@@ -78,21 +78,6 @@ class SageRuntimeSdkAdapter(
     ): RuntimeOperationResult<ResolvedRuntimeExecutables> =
         RuntimeExecutableResolver.resolve(runtime, target, remoteRoot)
 
-    fun bundledPython(
-        runtime: InstalledRuntime,
-        target: RuntimeTarget,
-        remoteRoot: String? = null,
-    ): RuntimeOperationResult<String> = bundledExecutables(runtime, target, remoteRoot).let { result ->
-        val python = result.value?.python
-        if (result.succeeded && python != null) RuntimeOperationResult(python, result.diagnostics)
-        else if (!result.succeeded) RuntimeOperationResult(null, result.diagnostics, false)
-        else RuntimeOperationResult(
-            null,
-            listOf(RuntimeDiagnostic(RuntimeDiagnosticCode.RUNTIME_PYTHON_UNAVAILABLE, "SDK_PYTHON", "Bundled SageMath Python is unavailable")),
-            false,
-        )
-    }
-
     fun resolveSdk(sdk: Sdk, remoteRoot: String? = null): RuntimeOperationResult<ResolvedRuntimeExecutables> {
         val validation = validate(sdk)
         if (!validation.succeeded) return RuntimeOperationResult(null, validation.diagnostics, false)
@@ -126,19 +111,6 @@ class SageRuntimeSdkAdapter(
         return RuntimeOperationResult(data.binding())
     }
 
-    fun presentation(sdk: Sdk): SageRuntimeSdkPresentation {
-        val data = sdk.getSdkAdditionalData() as? SageRuntimeSdkAdditionalData
-            ?: return SageRuntimeSdkPresentation(
-                sdkName = sdk.name,
-                runtimeLabel = "Unknown SageMath runtime",
-                targetLabel = "Unknown target",
-                state = SageRuntimeSdkState.INVALID,
-                diagnostic = "SageMath SDK metadata is missing",
-            )
-        val validation = validate(data.runtimeId, data.target)
-        return presentationFor(sdk.name, data.binding(), validation.diagnostics)
-    }
-
     fun validate(id: SageRuntimeId, target: RuntimeTarget): RuntimeOperationResult<InstalledRuntime> {
         val targetDiagnostic = RuntimeTargetCompatibility.diagnostic(id, target)
         if (targetDiagnostic != null) return RuntimeOperationResult(null, listOf(targetDiagnostic), false)
@@ -155,12 +127,6 @@ class SageRuntimeSdkAdapter(
         }
         return RuntimeOperationResult(null, diagnostics, false)
     }
-
-    fun selectSettings(binding: RuntimeSdkBinding): RuntimeOperationResult<RuntimeSdkBinding> =
-        validate(binding.runtimeId, binding.target).let { result ->
-            if (!result.succeeded) RuntimeOperationResult(null, result.diagnostics, false)
-            else RuntimeOperationResult(binding)
-        }
 
     private fun commit(modificator: SdkModificator) {
         val application = ApplicationManager.getApplication()
@@ -224,8 +190,6 @@ class SageRuntimeManagerService : Disposable {
         return loader.load(primary, mirrors, control).also { lastCatalog = it }
     }
 
-    fun lastCatalogLoad(): RuntimeCatalogLoadResult? = lastCatalog
-
     fun availableRuntimes(query: RuntimeQuery = RuntimeQuery()): List<com.starnotesxj.sagemath.runtime.RuntimeArtifact> =
         lastCatalog?.trustedCatalog?.list(query).orEmpty()
 
@@ -278,37 +242,6 @@ class SageRuntimeSdkService : Disposable {
 
     fun installedRuntimes(): List<InstalledRuntime> = manager.installedRuntimes()
 
-    fun availableRuntimes(query: RuntimeQuery = RuntimeQuery()): List<com.starnotesxj.sagemath.runtime.RuntimeArtifact> = manager.availableRuntimes(query)
-
-    fun currentRuntime(): RuntimeOperationResult<InstalledRuntime> = manager.currentRuntime()
-
-    fun validateRuntime(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime> = manager.validateRuntime(id)
-
-    fun selectRuntime(id: SageRuntimeId): RuntimeOperationResult<InstalledRuntime> = manager.selectRuntime(id)
-
-    fun removeRuntime(id: SageRuntimeId): RuntimeOperationResult<Unit> = manager.removeRuntime(id)
-
-    fun rollbackRuntime(): RuntimeOperationResult<InstalledRuntime> = manager.rollbackRuntime()
-
-    fun loadCatalog(
-        primary: java.net.URI,
-        mirrors: List<java.net.URI> = emptyList(),
-        source: RuntimeCatalogSource,
-        cachePath: Path = manager.installRoot.resolve("catalog.cache"),
-        control: RuntimeControl = RuntimeControl(),
-    ): RuntimeCatalogLoadResult = manager.loadCatalog(primary, mirrors, source, cachePath, control)
-
-    fun installRuntime(
-        catalog: com.starnotesxj.sagemath.runtime.VerifiedRuntimeCatalog,
-        id: SageRuntimeId,
-        manifest: RuntimeManifest,
-        downloader: com.starnotesxj.sagemath.runtime.RuntimeDownloader = JdkHttpRuntimeDownloader(),
-        progress: com.starnotesxj.sagemath.runtime.DownloadProgressListener = com.starnotesxj.sagemath.runtime.NoopDownloadProgress,
-        cancellation: InstallationCancellation = com.starnotesxj.sagemath.runtime.NeverCancelled,
-        replaceExisting: Boolean = false,
-        control: RuntimeControl = RuntimeControl(),
-    ): InstallResult = manager.installRuntime(catalog, id, manifest, downloader, progress, cancellation, replaceExisting, control)
-
     fun validate(id: SageRuntimeId, target: RuntimeTarget): RuntimeOperationResult<InstalledRuntime> =
         sdkAdapter.validate(id, target)
 
@@ -318,27 +251,10 @@ class SageRuntimeSdkService : Disposable {
         target: RuntimeTarget,
     ): RuntimeOperationResult<Sdk> = sdkAdapter.createSdk(sdkModel, runtime, target)
 
-    fun bundledExecutables(
-        runtime: InstalledRuntime,
-        target: RuntimeTarget,
-        remoteRoot: String? = null,
-    ): RuntimeOperationResult<ResolvedRuntimeExecutables> =
-        sdkAdapter.bundledExecutables(runtime, target, remoteRoot)
-
     fun resolveSdkExecutables(
         sdk: Sdk,
         remoteRoot: String? = null,
     ): RuntimeOperationResult<ResolvedRuntimeExecutables> = sdkAdapter.resolveSdk(sdk, remoteRoot)
-
-    fun currentExecutables(
-        target: RuntimeTarget,
-        remoteRoot: String? = null,
-    ): RuntimeOperationResult<ResolvedRuntimeExecutables> {
-        val current = manager.lifecycle.current()
-        val runtime = current.value
-            ?: return RuntimeOperationResult(null, current.diagnostics, false)
-        return sdkAdapter.bundledExecutables(runtime, target, remoteRoot)
-    }
 
     override fun dispose() = Unit
 

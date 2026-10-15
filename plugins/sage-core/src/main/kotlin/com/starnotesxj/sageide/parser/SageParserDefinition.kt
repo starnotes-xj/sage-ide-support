@@ -46,12 +46,12 @@ class SageParserDefinition : PythonParserDefinition() {
         }
 
     /**
-     * The Sage file PSI: a [PyFileImpl] whose `getIcon()` returns the Sage
+     * The Sage file PSI: a [com.jetbrains.python.psi.impl.PyFileImpl] whose `getIcon()` returns the Sage
      * icon.  PyCharm 2026.1's PyFileImpl.getIcon() returns the Python icon
      * unconditionally and the project view short-circuits through it.
      */
     /**
-     * The Sage file PSI: a [PyFileImpl] whose `getIcon()` returns the Sage
+     * The Sage file PSI: a [com.jetbrains.python.psi.impl.PyFileImpl] whose `getIcon()` returns the Sage
      * icon.  PyCharm 2026.1's PyFileImpl.getIcon() returns the Python icon
      * unconditionally and the project view short-circuits through it.
      */

@@ -1,8 +1,8 @@
-import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
-import java.io.File
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.models.ProductRelease
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
@@ -17,6 +17,7 @@ val onCi = System.getenv("CI") == "true"
 val fullIndexPath = providers.gradleProperty("sage.bundle.fullIndex").orNull
 val releaseFullIndexSha256 = providers.gradleProperty("sage.release.fullIndex.sha256").orNull
 val releaseTag = providers.environmentVariable("GITHUB_REF_NAME").orNull
+val verifierLocalIdePath = providers.gradleProperty("sage.verifier.localIdePath").orNull
 val bundleNativeInlineScorer = providers.gradleProperty("sage.bundle.nativeInlineScorer")
     .map(String::toBoolean)
     .orElse(false)
@@ -64,6 +65,7 @@ dependencies {
         // locally bundled API.  The plugin descriptor keeps it optional, so
         // SageMath Core remains loadable in IDEs without Full Line installed.
         bundledPlugin("org.jetbrains.completion.full.line")
+        pluginVerifier()
         testFramework(TestFrameworkType.Platform)
     }
 }
@@ -90,6 +92,28 @@ intellijPlatform {
             name = "starnotes-xj"
             email = "starnotes@qq.com"
             url = "https://github.com/starnotes-xj/sage-ide-support"
+        }
+    }
+    pluginVerification {
+        ides {
+            if (verifierLocalIdePath != null) {
+                // Useful when network access prevents resolving the advertised
+                // matrix. This explicit local-only run does not replace CI's matrix.
+                local(file(verifierLocalIdePath))
+            } else {
+                // Always verify the advertised minimum against a real release,
+                // alongside the IDE used to compile/run the current build.
+                create(IntelliJPlatformType.PyCharm, "2026.1.5")
+                current()
+                // The plugin advertises 263.* support; verify the newest matching
+                // IntelliJ IDEA EAP now and the 2026.3 release once it is available.
+                latest {
+                    types = listOf(IntelliJPlatformType.IntellijIdea)
+                    channels = listOf(ProductRelease.Channel.RELEASE, ProductRelease.Channel.EAP)
+                    sinceBuild = "263"
+                    untilBuild = "263.*"
+                }
+            }
         }
     }
     buildSearchableOptions = false

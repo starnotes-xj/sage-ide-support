@@ -551,10 +551,6 @@ class ZipRuntimeInstaller(
         }
     }
 
-    private fun sha256Bytes(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
-        .digest(bytes)
-        .joinToString("") { "%02x".format(it) }
-
     private fun deleteRecursively(path: Path) {
         if (!Files.exists(path)) return
         Files.walk(path).use { stream ->

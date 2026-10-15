@@ -69,7 +69,6 @@ class SageApiModuleMembersProvider : PyModuleMembersProvider() {
     private fun SageApiEntry.toCustomMember(module: PyFile): PyCustomMember {
         val name = qualifiedName.substringAfterLast('.')
         val facade = SageApiIntelligenceFacade.getInstance()
-        val query = facade.query()
 
         fun typedValue(entry: SageApiEntry): PyCustomMember = PyCustomMember(
             name,

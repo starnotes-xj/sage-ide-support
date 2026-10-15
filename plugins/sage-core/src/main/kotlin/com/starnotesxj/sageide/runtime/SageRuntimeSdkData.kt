@@ -31,8 +31,7 @@ class SageRuntimeSdkAdditionalData(
         element.setAttribute("runtimeArchitecture", runtimeId.platform.architecture.name)
         runtimeId.platform.libc?.let { element.setAttribute("runtimeLibc", it.name) }
         element.setAttribute("targetKind", target.kindName())
-        val selectedTarget = target
-        when (selectedTarget) {
+        when (val selectedTarget = target) {
             RuntimeTarget.Native -> Unit
             is RuntimeTarget.Wsl -> {
                 element.setAttribute("targetDistribution", selectedTarget.distribution)
@@ -156,7 +155,6 @@ object SageRuntimeSdkDisplay {
 
     fun sdkName(binding: RuntimeSdkBinding): String = "${runtimeLabel(binding.runtimeId)} (${targetLabel(binding.target)})"
 
-    fun homePath(runtimeRoot: Path): String = runtimeRoot.toAbsolutePath().normalize().toString()
 }
 
 enum class SageRuntimeSdkState {
@@ -172,19 +170,7 @@ data class SageRuntimeSdkPresentation(
     val targetLabel: String,
     val state: SageRuntimeSdkState,
     val diagnostic: String? = null,
-) {
-    val displayText: String
-        get() = buildString {
-            append(runtimeLabel)
-            append(" — ")
-            append(targetLabel)
-            if (state != SageRuntimeSdkState.VALID) {
-                append(" [")
-                append(state.name.lowercase())
-                append("]")
-            }
-        }
-}
+)
 
 fun presentationFor(
     sdkName: String,

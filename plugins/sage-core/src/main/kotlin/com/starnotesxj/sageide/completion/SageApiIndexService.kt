@@ -11,6 +11,7 @@ import java.nio.file.Path
 
 /** Where the currently installed index came from. */
 enum class SageApiIndexOrigin {
+    LOADING,
     EXTERNAL,
     PRODUCT,
     BUNDLED,
@@ -47,7 +48,17 @@ data class SageApiIndexLoadState(
  * only from the installed IDE home; malformed or mismatched sidecars fail closed.
  */
 @Service(Service.Level.APP)
-class SageApiIndexService {
+class SageApiIndexService(
+    private val enqueueInitialLoad: (Runnable) -> Unit,
+) {
+    /** Required by the IntelliJ application-service container. */
+    constructor() : this({ task -> ApplicationManager.getApplication().executeOnPooledThread(task) })
+
+    private val publicationLock = Any()
+
+    @Volatile
+    private var loadGeneration: Long = 0
+
     @Volatile
     private var current: SageApiIndexQuery? = null
 
@@ -57,15 +68,23 @@ class SageApiIndexService {
     private val loader = SageApiIndexLoader()
 
     init {
-        loadConfiguredOrBundled()
+        val generation = beginLoading()
+        runCatching {
+            enqueueInitialLoad(Runnable { loadConfiguredOrBundled(generation) })
+        }.onFailure {
+            unavailable(generation, null, "Cannot schedule initial Sage API index load")
+        }
     }
 
     fun install(query: SageApiIndexQuery?) {
-        current = query
-        state = if (query == null) {
-            SageApiIndexLoadState(SageApiIndexOrigin.UNAVAILABLE)
-        } else {
-            query.toLoadState(SageApiIndexOrigin.MANUAL, path = null)
+        synchronized(publicationLock) {
+            loadGeneration++
+            current = query
+            state = if (query == null) {
+                SageApiIndexLoadState(SageApiIndexOrigin.UNAVAILABLE)
+            } else {
+                query.toLoadState(SageApiIndexOrigin.MANUAL, path = null)
+            }
         }
     }
 
@@ -79,37 +98,55 @@ class SageApiIndexService {
      * bundled data is used only when neither the property nor environment
      * variable is configured.
      */
-    fun reloadConfigured(): Boolean = loadConfiguredOrBundled()
+    fun reloadConfigured(): Boolean {
+        val generation = beginLoading()
+        return loadConfiguredOrBundled(generation)
+    }
 
-    private fun loadConfiguredOrBundled(): Boolean {
+    private fun beginLoading(path: Path? = null): Long = synchronized(publicationLock) {
+        loadGeneration++
+        current = null
+        state = SageApiIndexLoadState(SageApiIndexOrigin.LOADING, path = path)
+        loadGeneration
+    }
+
+    private fun isCurrent(generation: Long): Boolean = loadGeneration == generation
+
+    private fun publish(
+        generation: Long,
+        query: SageApiIndexQuery?,
+        newState: SageApiIndexLoadState,
+    ): Boolean = synchronized(publicationLock) {
+        if (loadGeneration != generation) return@synchronized false
+        current = query
+        state = newState
+        true
+    }
+
+    private fun loadConfiguredOrBundled(generation: Long): Boolean {
+        if (!isCurrent(generation)) return false
         val raw = System.getProperty(INDEX_PATH_PROPERTY)?.trim()?.takeIf { it.isNotEmpty() }
             ?: System.getenv(INDEX_PATH_ENV)?.trim()?.takeIf { it.isNotEmpty() }
         if (raw != null) {
             // An explicit external index is a product input, not an optional hint.
             // Do not replace it with the reviewed-but-scoped bundled fixture on error.
-            current = null
             val path = runCatching { Path.of(raw) }.getOrNull()
             if (path == null) {
-                state = SageApiIndexLoadState(
-                    origin = SageApiIndexOrigin.UNAVAILABLE,
-                    error = "Invalid configured Sage API index path: " + raw,
-                )
-                LOG.warn("Invalid configured Sage API index path: " + raw)
-                return false
+                return unavailable(generation, null, "Invalid configured Sage API index path: " + raw)
             }
-            return reload(path, SageApiIndexOrigin.EXTERNAL)
+            return reload(path, generation, SageApiIndexOrigin.EXTERNAL)
         }
 
         val configuredProduct = System.getProperty(PRODUCT_INDEX_PATH_PROPERTY)?.trim()?.takeIf { it.isNotEmpty() }
         if (configuredProduct != null) {
             val path = runCatching { Path.of(configuredProduct) }.getOrNull()
-                ?: return unavailable(null, "Invalid configured Sage API product sidecar path")
-            return reloadProductSidecar(path)
+                ?: return unavailable(generation, null, "Invalid configured Sage API product sidecar path")
+            return reloadProductSidecar(path, generation)
         }
 
         val productPath = productIndexPath()
-        if (productPath != null) return reloadProductSidecar(productPath)
-        return reloadBundled()
+        if (productPath != null) return reloadProductSidecar(productPath, generation)
+        return reloadBundled(generation)
     }
 
     private fun productIndexPath(): Path? {
@@ -122,12 +159,19 @@ class SageApiIndexService {
         return path.takeIf { declared }
     }
 
-    private fun reloadProductSidecar(path: Path): Boolean {
+    private fun reloadProductSidecar(path: Path, generation: Long): Boolean {
         val directory = path.parent
-        if (directory == null) return unavailable(path, "Product Sage API index has no parent directory")
+        if (directory == null) return unavailable(generation, path, "Product Sage API index has no parent directory")
         val metadata = readProductMetadata(directory)
-            ?: return unavailable(path, "Product Sage API index sidecar metadata is missing or invalid")
-        return reload(path, SageApiIndexOrigin.PRODUCT, metadata.sha256, metadata.artifactId, metadata.entryCount)
+            ?: return unavailable(generation, path, "Product Sage API index sidecar metadata is missing or invalid")
+        return reload(
+            path,
+            generation,
+            SageApiIndexOrigin.PRODUCT,
+            metadata.sha256,
+            metadata.artifactId,
+            metadata.entryCount,
+        )
     }
 
     private fun readProductMetadata(directory: Path): ProductSidecarMetadata? {
@@ -168,109 +212,101 @@ class SageApiIndexService {
     private fun jsonBoolean(json: String, key: String): Boolean =
         Regex(""""$key"\s*:\s*true""").containsMatchIn(json)
 
-    private fun unavailable(path: Path?, message: String): Boolean {
-        current = null
-        state = SageApiIndexLoadState(SageApiIndexOrigin.UNAVAILABLE, path = path, error = message)
-        LOG.warn(message + (path?.let { ": $it" } ?: ""))
+    private fun unavailable(generation: Long, path: Path?, message: String, sizeBytes: Long? = null): Boolean {
+        if (publish(
+                generation,
+                null,
+                SageApiIndexLoadState(SageApiIndexOrigin.UNAVAILABLE, path = path, sizeBytes = sizeBytes, error = message),
+            )
+        ) {
+            LOG.warn(message + (path?.let { ": $it" } ?: ""))
+        }
         return false
     }
 
-    private fun reloadBundled(): Boolean {
+    private fun reloadBundled(generation: Long): Boolean {
+        if (!isCurrent(generation)) return false
         val index = loader.fromResource(javaClass.classLoader, BUNDLED_INDEX_RESOURCE)
         if (index == null) {
-            current = null
-            state = SageApiIndexLoadState(
-                origin = SageApiIndexOrigin.UNAVAILABLE,
-                error = "Bundled Sage API index is missing or invalid",
-            )
-            LOG.warn("Cannot load bundled Sage API index; indexed completion remains unavailable")
-            return false
+            return unavailable(generation, null, "Bundled Sage API index is missing or invalid")
         }
         val query = SageApiIndexQuery(index)
-        current = query
-        state = query.toLoadState(SageApiIndexOrigin.BUNDLED, path = null, sizeBytes = null)
-        return true
+        return publish(generation, query, query.toLoadState(SageApiIndexOrigin.BUNDLED, path = null, sizeBytes = null))
     }
 
-    fun reload(path: Path): Boolean = reload(path, SageApiIndexOrigin.EXTERNAL)
+    fun reload(path: Path): Boolean {
+        val generation = beginLoading(path)
+        return reload(path, generation, SageApiIndexOrigin.EXTERNAL)
+    }
 
     private fun reload(
         path: Path,
+        generation: Long,
         origin: SageApiIndexOrigin,
         expectedSha256: String? = null,
         artifactId: String? = null,
         expectedEntryCount: Int? = null,
     ): Boolean {
+        if (!isCurrent(generation)) return false
         // External configuration is fail-closed. Never leave a stale query
         // available when the selected artifact cannot be inspected or loaded.
-        current = null
         val sizeBytes = runCatching {
             require(Files.isRegularFile(path)) { "Configured Sage API index is not a regular file" }
             Files.size(path)
         }.getOrElse { error ->
-            state = SageApiIndexLoadState(
-                origin = SageApiIndexOrigin.UNAVAILABLE,
-                path = path,
-                error = error.message ?: "Cannot inspect Sage API index from " + path,
-            )
-            LOG.warn("Cannot inspect Sage API index from " + path, error)
-            return false
+            return unavailable(generation, path, error.message ?: ("Cannot inspect Sage API index from " + path))
         }
         if (sizeBytes > MAX_EXTERNAL_INDEX_BYTES) {
-            state = SageApiIndexLoadState(
-                origin = SageApiIndexOrigin.UNAVAILABLE,
-                path = path,
-                sizeBytes = sizeBytes,
-                error = "Sage API index exceeds maximum supported size of " + MAX_EXTERNAL_INDEX_BYTES + " bytes",
+            return unavailable(
+                generation,
+                path,
+                "Sage API index exceeds maximum supported size of " + MAX_EXTERNAL_INDEX_BYTES + " bytes",
+                sizeBytes,
             )
-            LOG.warn("Refusing oversized Sage API index at " + path + " (" + sizeBytes + " bytes)")
-            return false
         }
         val actualSha256 = if (expectedSha256 == null) {
             null
         } else {
             runCatching { sha256(path) }.getOrElse {
-                return unavailable(path, "Cannot calculate Sage API index SHA-256")
+                return unavailable(generation, path, "Cannot calculate Sage API index SHA-256")
             }
         }
         if (expectedSha256 != null && actualSha256 != expectedSha256.lowercase()) {
-            return unavailable(path, "Sage API index SHA-256 does not match the product receipt")
+            return unavailable(generation, path, "Sage API index SHA-256 does not match the product receipt")
         }
 
+        if (!isCurrent(generation)) return false
         val index = loader.fromPath(path)
         if (index == null) {
-            state = SageApiIndexLoadState(
-                origin = SageApiIndexOrigin.UNAVAILABLE,
-                path = path,
-                sizeBytes = sizeBytes,
-                error = "Cannot load Sage API index from " + path,
-            )
-            LOG.warn("Cannot load Sage API index from " + path)
-            return false
+            return unavailable(generation, path, "Cannot load Sage API index from " + path)
         }
         if (expectedEntryCount != null && index.entries.size != expectedEntryCount) {
-            return unavailable(path, "Sage API index entry count does not match the product receipt")
+            return unavailable(generation, path, "Sage API index entry count does not match the product receipt")
         }
         if (index.entries.size > MAX_INDEX_ENTRIES) {
-            state = SageApiIndexQuery(index).toLoadState(
+            val unavailableState = SageApiIndexQuery(index).toLoadState(
                 origin = SageApiIndexOrigin.UNAVAILABLE,
                 path = path,
                 sizeBytes = sizeBytes,
                 error = "Sage API index exceeds maximum supported entry count of " + MAX_INDEX_ENTRIES,
             )
-            LOG.warn("Refusing Sage API index at " + path + " with " + index.entries.size + " entries")
+            if (publish(generation, null, unavailableState)) {
+                LOG.warn("Refusing Sage API index at " + path + " with " + index.entries.size + " entries")
+            }
             return false
         }
         val query = SageApiIndexQuery(index)
-        current = query
-        state = query.toLoadState(
-            origin,
-            path,
-            sizeBytes,
-            verifiedSha256 = actualSha256,
-            artifactId = artifactId,
+        return publish(
+            generation,
+            query,
+            query.toLoadState(
+                origin,
+                path,
+                sizeBytes,
+                verifiedSha256 = actualSha256,
+                artifactId = artifactId,
+            ),
         )
-        return true
     }
 
     companion object {

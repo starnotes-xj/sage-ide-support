@@ -12,7 +12,34 @@ data class RuntimeProcessRequest(
     val control: RuntimeControl = RuntimeControl(), val maxOutputBytes: Int = 1024 * 1024,
     /** Optional payload written directly to stdin, never through a shell. */
     val standardInput: ByteArray? = null,
-) { init { require(command.isNotEmpty() && command.all(String::isNotEmpty)); require(maxOutputBytes > 0) } }
+) { init { require(command.isNotEmpty() && command.all(String::isNotEmpty)); require(maxOutputBytes > 0) }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as RuntimeProcessRequest
+
+        if (maxOutputBytes != other.maxOutputBytes) return false
+        if (command != other.command) return false
+        if (workingDirectory != other.workingDirectory) return false
+        if (environment != other.environment) return false
+        if (control != other.control) return false
+        if (!standardInput.contentEquals(other.standardInput)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = maxOutputBytes
+        result = 31 * result + command.hashCode()
+        result = 31 * result + workingDirectory.hashCode()
+        result = 31 * result + environment.hashCode()
+        result = 31 * result + control.hashCode()
+        result = 31 * result + (standardInput?.contentHashCode() ?: 0)
+        return result
+    }
+}
 data class RuntimeProcessResult(val status: RuntimeExecutionStatus, val exitCode: Int?, val standardOutput: String, val standardError: String, val durationMillis: Long, val outputTruncated: Boolean, val failure: Throwable? = null)
 fun interface RuntimeProcessExecutor { fun execute(request: RuntimeProcessRequest): RuntimeProcessResult }
 
@@ -46,6 +73,6 @@ class JdkRuntimeProcessExecutor(private val pollInterval: Duration = Duration.of
     private fun result(s: RuntimeExecutionStatus, e: Int?, o: String, x: String, started: Long, t: Boolean, f: Throwable? = null) = RuntimeProcessResult(s, e, o, x, (System.nanoTime()-started)/1_000_000, t, f)
     private class BoundedOutput(private val limit: Int) { private val bytes = java.io.ByteArrayOutputStream(limit); var truncated=false; private set
         fun read(input: java.io.InputStream) { val b=ByteArray(8192); while(true) { val n=input.read(b); if(n<0)return; val a=(limit-bytes.size()).coerceAtLeast(0).coerceAtMost(n); if(a>0)bytes.write(b,0,a); if(a<n)truncated=true } }
-        fun text()=bytes.toString(StandardCharsets.UTF_8)
+        fun text(): String = bytes.toString(StandardCharsets.UTF_8)
     }
 }

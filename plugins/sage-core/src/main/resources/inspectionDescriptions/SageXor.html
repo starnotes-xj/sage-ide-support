@@ -1,0 +1,7 @@
+<html>
+<body>
+<p>Reports a caret operator used for byte-wise XOR in Sage code. In Sage, <code>^</code> means exponentiation; use <code>^^</code> for XOR.</p>
+<p>The inspection reports only unambiguous byte contexts, such as byte literals, byte-producing calls, or names annotated as <code>bytes</code> or <code>bytearray</code>. It does not flag ordinary Sage exponentiation.</p>
+<p>When available, the quick-fix changes <code>^</code> to <code>^^</code> (or <code>^=</code> to <code>^^=</code>).</p>
+</body>
+</html>

@@ -2,13 +2,14 @@ package com.starnotesxj.sageide.completion
 
 import com.intellij.lang.documentation.DocumentationMarkup
 import com.intellij.lang.documentation.DocumentationProvider
+import com.intellij.lang.documentation.QuickDocHighlightingHelper
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
-import com.jetbrains.python.PythonDocumentationHighlightingService
 import com.jetbrains.python.documentation.PythonDocumentationProvider
 import com.jetbrains.python.highlighting.PyHighlighter
 import com.jetbrains.python.psi.PyAnnotationOwner
@@ -20,6 +21,7 @@ import com.jetbrains.python.psi.PyNamedParameter
 import com.jetbrains.python.psi.PyParameter
 import com.jetbrains.python.psi.PyQualifiedNameOwner
 import com.jetbrains.python.psi.PyReferenceExpression
+import com.jetbrains.python.psi.StringLiteralExpression
 import com.jetbrains.python.psi.types.PyClassType
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sagemath.sageapi.SageApiEntry
@@ -45,7 +47,7 @@ class SageApiDocumentationProvider : DocumentationProvider {
             ?: findNativeQuickNavigateInfo(element, originalElement)
 
     override fun generateDoc(element: PsiElement, originalElement: PsiElement?): String? =
-        findEntry(element, originalElement)?.let { renderDocumentation(it, element.project) }
+        findEntry(element, originalElement)?.let { renderDocumentation(this, it, element.project) }
             ?: renderNativeDocumentation(element, originalElement)
 
     /**
@@ -90,7 +92,7 @@ class SageApiDocumentationProvider : DocumentationProvider {
         else {
             psiDocString ?: standardLibraryDocumentation
         }
-        if (quickInfo.isNullOrBlank() && docString.isNullOrBlank()) return null
+        if (quickInfo.isBlank() && docString.isNullOrBlank()) return null
 
         return buildString {
             append(DocumentationMarkup.DEFINITION_START)
@@ -154,7 +156,8 @@ class SageApiDocumentationProvider : DocumentationProvider {
             text.startsWith("*") -> "*"
             else -> ""
         }
-        val name = named.name ?: text.removePrefix(prefix).substringBefore(':').substringBefore('=').trim()
+        val name = (named as PsiNamedElement).name
+            ?: text.removePrefix(prefix).substringBefore(':').substringBefore('=').trim()
         return buildString {
             if (prefix.isNotEmpty()) append(styled(prefix, PyHighlighter.PY_OPERATION_SIGN))
             val isSelf = name == "self" || name == "cls"
@@ -245,7 +248,9 @@ class SageApiDocumentationProvider : DocumentationProvider {
     }
 
     private fun nativeDocString(owner: PyDocStringOwner): String? {
-        val expressionText = runCatching { owner.docStringExpression?.stringValue }.getOrNull()
+        val expressionText = runCatching {
+            owner.docStringExpression?.let { (it as StringLiteralExpression).stringValue }
+        }.getOrNull()
             ?.takeIf { it.isNotBlank() }
         if (expressionText != null) return expressionText
 
@@ -349,8 +354,8 @@ class SageApiDocumentationProvider : DocumentationProvider {
         val nestedNames = generateSequence(candidate) { current -> current.parent }
             .mapNotNull { element ->
                 when (element) {
-                    is PyClass -> element.name
-                    is PyFunction -> element.name
+                    is PyClass -> (element as PsiNamedElement).name
+                    is PyFunction -> (element as PsiNamedElement).name
                     else -> null
                 }
             }
@@ -360,7 +365,7 @@ class SageApiDocumentationProvider : DocumentationProvider {
     }
 
     private fun isConstructorOwner(owner: PyDocStringOwner): Boolean =
-        owner is PyFunction && owner.name in CONSTRUCTOR_METHOD_NAMES
+        owner is PyFunction && (owner as PsiNamedElement).name in CONSTRUCTOR_METHOD_NAMES
 
     private fun findEntry(element: PsiElement, originalElement: PsiElement?): SageApiEntry? {
         // Ctrl+Q supplies the documentation target separately from the caret
@@ -419,46 +424,6 @@ class SageApiDocumentationProvider : DocumentationProvider {
                 ?.let { return it }
         }
         return null
-    }
-
-    private fun renderDocumentation(entry: SageApiEntry): String = renderDocumentation(entry, null)
-
-    private fun renderDocumentation(entry: SageApiEntry, project: Project?): String = buildString {
-        append(DocumentationMarkup.DEFINITION_START)
-        append(renderSignatureHtml(entry))
-        append(DocumentationMarkup.DEFINITION_END)
-        // The full release index keeps documentation in small lazy sidecar
-        // buckets.  Completion/type metadata stays resident, while Ctrl+Q
-        // retrieves only the requested document.
-        val documentation = SageApiDocumentationService.getInstance().documentation(entry)
-        if (documentation == null) return@buildString
-
-        append(DocumentationMarkup.CONTENT_START)
-        documentation.summary
-            ?.takeIf { it.isNotBlank() }
-            ?.let { append(renderRichText(it, project = project)) }
-
-        documentation.body
-            ?.takeIf { it.isNotBlank() && it != documentation.summary }
-            ?.let { body ->
-                if (documentation.summary?.isNotBlank() == true) append("<br/><br/>")
-                val bodyWithoutSummary = documentation.summary
-                    ?.takeIf { summary -> body.startsWith(summary) }
-                    ?.let { body.removePrefix(it).trimStart() }
-                    ?: body
-                val parsed = splitSections(bodyWithoutSummary)
-                append(renderRichText(parsed.prose, project = project))
-                if (parsed.sections.isNotEmpty()) {
-                    if (parsed.prose.isNotBlank()) append("<br/><br/>")
-                    append(renderSections(parsed.sections, project))
-                }
-            }
-
-        if (documentation.examples.isNotEmpty()) {
-            append("<br/><br/>")
-            append(renderSections(listOf(RichSection("Examples", documentation.examples.joinToString("\n"))), project))
-        }
-        append(DocumentationMarkup.CONTENT_END)
     }
 
     private fun renderRawDocumentation(text: String, project: Project?): String = buildString {
@@ -624,8 +589,9 @@ class SageApiDocumentationProvider : DocumentationProvider {
         }
         val sourceHtml = "<pre data-language=\"${StringUtil.escapeXmlEntities(normalizedLanguage)}\"><code>$escaped</code></pre>"
         val highlighted = runCatching {
-            PythonDocumentationHighlightingService.getInstance()
-                .highlightCodeBlockInHtml(project, sourceHtml)
+            QuickDocHighlightingHelper.guessLanguage(normalizedLanguage)?.let { codeLanguage ->
+                QuickDocHighlightingHelper.getStyledCodeBlock(project, codeLanguage, code)
+            }
         }.getOrNull()
         return highlighted?.takeIf { it.isNotBlank() && it != sourceHtml } ?: sourceHtml
     }
@@ -693,10 +659,12 @@ class SageApiDocumentationProvider : DocumentationProvider {
     }
 
     private fun styled(text: String, key: TextAttributesKey): String {
-        val rendered = runCatching {
-            PythonDocumentationHighlightingService.getInstance().styledSpan(key, text)
-        }.getOrNull()
-        return rendered?.takeIf { it != text } ?: StringUtil.escapeXmlEntities(text)
+        val escaped = StringUtil.escapeXmlEntities(text)
+        return runCatching {
+            QuickDocHighlightingHelper.run {
+                StringBuilder().appendStyledSignatureFragment(escaped, key).toString()
+            }
+        }.getOrNull() ?: escaped
     }
 
     private fun escapeText(text: String): String =
@@ -725,5 +693,55 @@ class SageApiDocumentationProvider : DocumentationProvider {
             "测试", "注意", "备注", "另见", "参考", "属性", "警告", "算法", "实现", "定义",
         )
         val EXAMPLE_TITLES = setOf("examples", "example", "示例")
+        private fun renderDocumentation(
+            sageApiDocumentationProvider: SageApiDocumentationProvider,
+            entry: SageApiEntry,
+            project: Project?
+        ): String = buildString {
+            append(DocumentationMarkup.DEFINITION_START)
+            append(sageApiDocumentationProvider.renderSignatureHtml(entry))
+            append(DocumentationMarkup.DEFINITION_END)
+            // The full release index keeps documentation in small lazy sidecar
+            // buckets.  Completion/type metadata stays resident, while Ctrl+Q
+            // retrieves only the requested document.
+            val documentation = SageApiDocumentationService.getInstance().documentation(entry)
+            if (documentation == null) return@buildString
+
+            append(DocumentationMarkup.CONTENT_START)
+            documentation.summary
+                ?.takeIf { it.isNotBlank() }
+                ?.let { append(sageApiDocumentationProvider.renderRichText(it, project = project)) }
+
+            documentation.body
+                ?.takeIf { it.isNotBlank() && it != documentation.summary }
+                ?.let { body ->
+                    if (documentation.summary?.isNotBlank() == true) append("<br/><br/>")
+                    val bodyWithoutSummary = documentation.summary
+                        ?.takeIf { summary -> body.startsWith(summary) }
+                        ?.let { body.removePrefix(it).trimStart() }
+                        ?: body
+                    val parsed = sageApiDocumentationProvider.splitSections(bodyWithoutSummary)
+                    append(sageApiDocumentationProvider.renderRichText(parsed.prose, project = project))
+                    if (parsed.sections.isNotEmpty()) {
+                        if (parsed.prose.isNotBlank()) append("<br/><br/>")
+                        append(sageApiDocumentationProvider.renderSections(parsed.sections, project))
+                    }
+                }
+
+            if (documentation.examples.isNotEmpty()) {
+                append("<br/><br/>")
+                append(
+                    sageApiDocumentationProvider.renderSections(
+                        listOf(
+                            RichSection(
+                                "Examples",
+                                documentation.examples.joinToString("\n")
+                            )
+                        ), project
+                    )
+                )
+            }
+            append(DocumentationMarkup.CONTENT_END)
+        }
     }
 }

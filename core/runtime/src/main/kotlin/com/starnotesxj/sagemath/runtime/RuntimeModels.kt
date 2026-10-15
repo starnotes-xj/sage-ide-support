@@ -29,7 +29,6 @@ enum class CpuArchitecture {
 
 enum class Libc {
     GLIBC,
-    MUSL,
     UNKNOWN,
 }
 

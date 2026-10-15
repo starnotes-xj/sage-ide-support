@@ -3,8 +3,15 @@ package com.starnotesxj.sageide.run
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.jetbrains.python.run.PythonRunConfiguration
+import java.nio.file.Path
 
 class SageDebugCommandLineStateTest {
+
+    @Test
+    fun `Sage run configuration participates in the native Python debugger backend selection`() {
+        assertTrue(PythonRunConfiguration::class.java.isAssignableFrom(SageRunConfiguration::class.java))
+    }
 
     @Test
     fun `tokenizes quoted arguments like PyCharm`() {
@@ -17,6 +24,43 @@ class SageDebugCommandLineStateTest {
     @Test
     fun `tokenizes empty input`() {
         assertEquals(emptyList<String>(), tokenizeArguments("   "))
+    }
+
+    @Test
+    fun `targeted debugger plan keeps Sage launcher source and arguments`() {
+        val launcher = Path.of("C:/Temp/sage-debug.py")
+        val script = Path.of("C:/Users/test/problem.sage")
+        val plan = createSageDebugExecutionPlan(
+            launcher = launcher,
+            script = script,
+            scriptParameters = listOf("value with spaces", "--flag"),
+            interpreterParameters = listOf("-O"),
+        )
+
+        assertEquals(launcher, plan.launcher)
+        assertEquals(script, plan.script)
+        assertEquals(listOf("value with spaces", "--flag"), plan.scriptParameters)
+        assertEquals(listOf("-O"), plan.interpreterParameters)
+    }
+
+    @Test
+    fun `debugpy arguments preserve a Sage path and user arguments containing spaces`() {
+        val script = Path.of("C:/Users/test user/curve.sage")
+        val arguments = listOf("value with spaces", "--flag")
+
+        assertEquals(
+            listOf(script.toString(), "value with spaces", "--flag"),
+            tokenizeArguments(formatSageDebugpyScriptParameters(script, arguments)),
+        )
+    }
+
+    @Test
+    fun `debug state implements PyCharm target execution hook`() {
+        assertTrue(
+            SageDebugCommandLineState::class.java.declaredMethods.any {
+                it.name == "buildPythonExecution" && it.parameterCount == 1
+            },
+        )
     }
 
     @Test
@@ -106,11 +150,29 @@ class SageDebugCommandLineStateTest {
 
     @Test
     fun `WSL debug wrapper uses explicit bundled Python path`() {
-        val command = wslConfiguredDebugScript("/home/user/miniconda3/envs/sage/bin/python")
-        assertEquals(true, command.contains("host_ip="))
+        val command = wslConfiguredDebugScript(
+            "/home/user/miniconda3/envs/sage/bin/python",
+            "sage",
+            "/home/user/miniconda3/bin/conda",
+        )
+        val wrappers = listOf(
+            command,
+            wslDebugScript(
+                "sage",
+                "/home/user/miniconda3/envs/sage/bin/sage",
+                "/home/user/miniconda3/envs/sage/bin/python",
+            ),
+        )
+        wrappers.forEach { wrapper ->
+            assertEquals(false, wrapper.contains("host_ip="))
+            assertEquals(false, wrapper.contains("previous="))
+            assertTrue(wrapper.contains("args+=(\"${'$'}(map_arg \"${'$'}raw_arg\")\")"))
+            assertTrue(wrapper.contains("""rest="${'$'}{rest//\\//}"""))
+            assertTrue(wrapper.contains("""rest="${'$'}{rest#/}"""))
+        }
         assertEquals(true, command.contains("python_executable='/home/user/miniconda3/envs/sage/bin/python'"))
+        assertEquals(true, command.contains("conda activate 'sage'"))
         assertEquals(false, command.contains("command -v sage"))
-        assertEquals(false, command.contains("conda activate"))
         assertEquals(false, command.contains("%/sage"))
         assertEquals(true, command.contains("exec \"${'$'}python_executable\""))
     }
@@ -123,9 +185,18 @@ class SageDebugCommandLineStateTest {
     }
 
     @Test
-    fun `container debug boundary is documented in source contract`() {
+    fun `debug launcher preparses Sage while retaining original source path`() {
         val source = SageDebugCommandLineState::class.java
             .getDeclaredField("LAUNCHER_SOURCE")
-        assertTrue(source.name == "LAUNCHER_SOURCE")
+            .apply { isAccessible = true }
+            .get(null) as String
+
+        assertTrue(source.contains("from sage.repl.preparse import preparse_file"))
+        assertTrue(source.contains("exec(\"from sage.all_cmdline import *\", namespace, namespace)"))
+        assertTrue(source.contains("compile(preparse_file(source, namespace), str(target), \"exec\")"))
+        assertTrue(source.contains("with tokenize.open(target) as source_file:"))
+        assertTrue(!source.contains("read_text(encoding=\"utf-8\")"))
+        assertTrue(source.contains("sys.argv = [str(target), *sys.argv[2:]]"))
+        assertTrue(source.contains("exec(code, namespace, namespace)"))
     }
 }

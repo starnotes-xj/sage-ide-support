@@ -1,11 +1,14 @@
 package com.starnotesxj.sageide.completion
 
+import com.intellij.openapi.editor.colors.TextAttributesKey
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiManager
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyClass
 import com.jetbrains.python.psi.PyDocStringOwner
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.jetbrains.python.psi.types.TypeEvalContext
+import com.jetbrains.python.highlighting.PyHighlighter
 import com.starnotesxj.sageide.SagePluginTestBase
 import com.starnotesxj.sagemath.sageapi.SageApiDocumentation
 import com.starnotesxj.sagemath.sageapi.SageApiEntry
@@ -18,6 +21,26 @@ import com.starnotesxj.sagemath.sageapi.SageTypeRef
 import kotlin.test.assertTrue
 
 class SageApiDocumentationProviderTest : SagePluginTestBase() {
+    fun testPublicQuickDocHighlightingEscapesCodeAndSignatureText() {
+        val provider = SageApiDocumentationProvider()
+        val providerClass = SageApiDocumentationProvider::class.java
+        val renderCodeBlock = providerClass.getDeclaredMethod(
+            "renderCodeBlock",
+            String::class.java,
+            String::class.java,
+            com.intellij.openapi.project.Project::class.java,
+        ).apply { isAccessible = true }
+        val codeHtml = renderCodeBlock.invoke(provider, "print(\"<sage>\")", "sage", project) as String
+        assertTrue("&lt;sage&gt;" in codeHtml, codeHtml)
+        assertTrue("<sage>" !in codeHtml, codeHtml)
+
+        val styled = providerClass.getDeclaredMethod("styled", String::class.java, TextAttributesKey::class.java)
+            .apply { isAccessible = true }
+        val signatureHtml = styled.invoke(provider, "<script>", PyHighlighter.PY_PARAMETER) as String
+        assertTrue("&lt;script&gt;" in signatureHtml, signatureHtml)
+        assertTrue("<script>" !in signatureHtml, signatureHtml)
+    }
+
     fun testSageIndexedDocumentationWinsWithoutLocalPythonSdk() {
         val indexResource = javaClass.classLoader.getResourceAsStream("sage-api-index.json")!!
         SageApiIndexService.getInstance().install(
@@ -255,7 +278,7 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
         val quick = requireNotNull(provider.getQuickNavigateInfo(resolved, reference))
         assertTrue(quick.contains("randint"), "quick=$quick resolved=$resolved context=${reference.containingFile.name}")
         assertTrue(quick.contains("<span"), "semantic quick info=$quick")
-        val quickText = quick.replace(Regex("<[^>]+>"), "")
+        val quickText = StringUtil.unescapeXmlEntities(quick.replace(Regex("<[^>]+>"), ""))
         assertTrue("def native_docs.randint(a: int, b: int) -> int" in quickText, quickText)
         val doc = requireNotNull(provider.generateDoc(resolved, reference))
         assertTrue(doc.contains("Return an integer."), doc)
@@ -290,10 +313,24 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
                 """.trimIndent(),
             ),
         )
-        val renderDocumentation = SageApiDocumentationProvider::class.java
-            .getDeclaredMethod("renderDocumentation", SageApiEntry::class.java)
+        val providerClass = SageApiDocumentationProvider::class.java
+        val companion = providerClass.getDeclaredField("Companion")
             .apply { isAccessible = true }
-        val html = renderDocumentation.invoke(SageApiDocumentationProvider(), entry) as String
+            .get(null)
+        val renderDocumentation = companion.javaClass
+            .getDeclaredMethod(
+                "renderDocumentation",
+                SageApiDocumentationProvider::class.java,
+                SageApiEntry::class.java,
+                com.intellij.openapi.project.Project::class.java,
+            )
+            .apply { isAccessible = true }
+        val html = renderDocumentation.invoke(
+            companion,
+            SageApiDocumentationProvider(),
+            entry,
+            null,
+        ) as String
 
         assertTrue("<table class='sections'>" in html, html)
         assertTrue("class='section'" in html, html)

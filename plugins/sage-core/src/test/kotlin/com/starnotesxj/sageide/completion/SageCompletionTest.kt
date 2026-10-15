@@ -323,6 +323,8 @@ class SageCompletionTest : SagePluginTestBase() {
             val smartLookup = myFixture.complete(CompletionType.SMART, 0)?.map { it.lookupString }.orEmpty()
             assertTrue("static Q smart completion=$smartLookup", "is_zero" in smartLookup)
             assertTrue("static Q smart completion=$smartLookup", "order" in smartLookup)
+            assertEquals("static Q smart completion must not duplicate the same member: $smartLookup", 1, smartLookup.count { it == "is_zero" })
+            assertEquals("static Q smart completion must not duplicate the same member: $smartLookup", 1, smartLookup.count { it == "order" })
         } finally {
             SageApiIndexService.getInstance().install(null)
         }

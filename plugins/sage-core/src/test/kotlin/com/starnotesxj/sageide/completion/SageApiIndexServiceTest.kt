@@ -19,6 +19,30 @@ class SageApiIndexServiceTest : SagePluginTestBase() {
         SageApiSymbolKind.PROPERTY,
         SageApiSymbolKind.CONSTANT,
     )
+
+    fun testInitialIndexLoadIsQueuedAndCannotReplaceManualIndex() {
+        assertNotNull(SageApiIndexService::class.java.getConstructor())
+        val queuedTasks = mutableListOf<Runnable>()
+        val service = SageApiIndexService { queuedTasks += it }
+        val resource = javaClass.classLoader.getResourceAsStream("sage-api-index.json")
+            ?: error("bundled sage-api-index.json is missing")
+        val query = SageApiIndexQuery(SageApiIndexJsonReader.read(resource.bufferedReader().use { it.readText() }))
+
+        try {
+            assertEquals(SageApiIndexOrigin.LOADING, service.loadState().origin)
+            assertEquals(null, service.query())
+            assertEquals(1, queuedTasks.size)
+
+            service.install(query)
+            queuedTasks.single().run()
+
+            assertTrue(service.query() === query)
+            assertEquals(SageApiIndexOrigin.MANUAL, service.loadState().origin)
+        } finally {
+            service.install(null)
+        }
+    }
+
     fun testConfiguredExternalIndexIsAuthoritativeAndExposesState() {
         val fixture = javaClass.classLoader.getResourceAsStream("sage-api-index.json")
             ?: error("bundled sage-api-index.json is missing")

@@ -70,7 +70,7 @@ class SagePostfixTemplateEditor(provider: PostfixTemplateProvider) :
         // F.<a> generator statements; inheritance-based, so subclasses
         // qualify too).
         for (sageType in SAGE_TYPES) {
-            val condition = PyPostfixTemplateExpressionCondition.PyClassCondition.create(sageType)
+            val condition = create(sageType)
             if (condition != null) {
                 group.add(AddConditionAction(condition))
             }

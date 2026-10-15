@@ -4,7 +4,6 @@ import com.intellij.execution.actions.ConfigurationContext
 import com.intellij.execution.actions.LazyRunConfigurationProducer
 import com.intellij.execution.configurations.ConfigurationFactory
 import com.intellij.openapi.util.Ref
-import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 
 /**
@@ -35,5 +34,3 @@ class SageRunConfigurationProducer : LazyRunConfigurationProducer<SageRunConfigu
         return file.extension == "sage" && configuration.scriptPath == file.path
     }
 }
-
-private fun VirtualFile?.extensionOrNull(): String? = this?.extension

@@ -1,7 +1,7 @@
 package com.starnotesxj.sageide.highlight
 
+import com.intellij.codeInspection.CleanupLocalInspectionTool
 import com.intellij.codeInspection.LocalInspectionTool
-import com.intellij.codeInspection.LocalQuickFix
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.ProblemsHolder
@@ -40,7 +40,7 @@ import com.jetbrains.python.psi.PyStatement
  * or a `^` that feeds directly into a `bytes(...)` call.  Sage power math
  * (`e^254`, `2^8`) is never flagged.
  */
-class SageXorInspection : LocalInspectionTool() {
+class SageXorInspection : LocalInspectionTool(), CleanupLocalInspectionTool {
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor =
         object : PyElementVisitor() {
@@ -115,27 +115,37 @@ class SageXorInspection : LocalInspectionTool() {
         return false
     }
 
-    private object ReplaceCaretWithDoubleCaret : LocalQuickFix {
+    private object ReplaceCaretWithDoubleCaret : SageBatchTextReplacement {
+        override val expectedText: String = "^"
+        override val replacementText: String = "^^"
+
         override fun getFamilyName(): String = "Replace ^ with ^^"
 
+        override fun availableInBatchMode(): Boolean = true
+
         override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
-            val operator = descriptor.psiElement
+            val operator = descriptor.psiElement.takeIf { it.isValid && it.text == expectedText } ?: return
             val document = PsiDocumentManager.getInstance(project)
                 .getDocument(operator.containingFile) ?: return
             val range = operator.textRange
-            document.replaceString(range.startOffset, range.endOffset, "^^")
+            document.replaceString(range.startOffset, range.endOffset, replacementText)
         }
     }
 
-    private object ReplaceCaretEqWithDoubleCaretEq : LocalQuickFix {
+    private object ReplaceCaretEqWithDoubleCaretEq : SageBatchTextReplacement {
+        override val expectedText: String = "^="
+        override val replacementText: String = "^^="
+
         override fun getFamilyName(): String = "Replace ^= with ^^="
 
+        override fun availableInBatchMode(): Boolean = true
+
         override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
-            val operator = descriptor.psiElement
+            val operator = descriptor.psiElement.takeIf { it.isValid && it.text == expectedText } ?: return
             val document = PsiDocumentManager.getInstance(project)
                 .getDocument(operator.containingFile) ?: return
             val range = operator.textRange
-            document.replaceString(range.startOffset, range.endOffset, "^^=")
+            document.replaceString(range.startOffset, range.endOffset, replacementText)
         }
     }
 }

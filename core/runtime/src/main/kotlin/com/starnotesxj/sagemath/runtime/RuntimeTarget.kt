@@ -188,7 +188,37 @@ data class TargetProcessRequest(
     val control: RuntimeControl = RuntimeControl(),
     val maxOutputBytes: Int = 64 * 1024,
     val standardInput: ByteArray? = null,
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as TargetProcessRequest
+
+        if (maxOutputBytes != other.maxOutputBytes) return false
+        if (target != other.target) return false
+        if (executable != other.executable) return false
+        if (args != other.args) return false
+        if (workingDirectory != other.workingDirectory) return false
+        if (environment != other.environment) return false
+        if (control != other.control) return false
+        if (!standardInput.contentEquals(other.standardInput)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = maxOutputBytes
+        result = 31 * result + target.hashCode()
+        result = 31 * result + executable.hashCode()
+        result = 31 * result + args.hashCode()
+        result = 31 * result + workingDirectory.hashCode()
+        result = 31 * result + environment.hashCode()
+        result = 31 * result + control.hashCode()
+        result = 31 * result + (standardInput?.contentHashCode() ?: 0)
+        return result
+    }
+}
 
 fun interface RuntimeTargetExecutor {
     fun execute(request: TargetProcessRequest): RuntimeProcessResult

@@ -188,5 +188,3 @@ class ContainerRuntimeProbe(private val executor: ContainerRuntimeExecutor) {
         RuntimeExecutionStatus.FAILED
     }
 }
-
-internal fun containerTarget(engine: ContainerEngine, image: String): RuntimeTarget.Docker = RuntimeTarget.Docker(image = image, engine = engine)

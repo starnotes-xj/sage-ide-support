@@ -4,6 +4,7 @@ import com.intellij.execution.configurations.ConfigurationFactory
 import com.intellij.execution.configurations.ConfigurationType
 import com.intellij.execution.configurations.ConfigurationTypeUtil
 import com.intellij.execution.configurations.RunConfiguration
+import com.intellij.execution.configurations.RunProfileState
 import com.intellij.execution.configurations.RuntimeConfigurationException
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.openapi.project.Project
@@ -11,8 +12,8 @@ import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.util.JDOMExternalizerUtil
-import com.jetbrains.python.run.AbstractPythonRunConfiguration
 import com.jetbrains.python.run.DebugAwareConfiguration
+import com.jetbrains.python.run.PythonRunConfiguration
 import com.starnotesxj.sageide.runtime.SageRuntimeSdkService
 import com.starnotesxj.sageide.runtime.SageRuntimeSdkType
 import com.starnotesxj.sageide.sugar.SageIcons
@@ -63,11 +64,31 @@ internal fun configurationValidationError(scriptPath: String, settings: SageRunS
 class SageRunConfiguration(
     project: Project,
     factory: ConfigurationFactory,
-) : AbstractPythonRunConfiguration<SageRunConfiguration>(project, factory), DebugAwareConfiguration {
+) : PythonRunConfiguration(project, factory), DebugAwareConfiguration {
 
     var scriptPath: String = ""
 
-    var scriptParameters: String = ""
+    var sageScriptParameters: String = ""
+
+    @Volatile
+    private var debugLaunchContext: SageDebugCommandLineState? = null
+
+    override fun getScriptName(): String = debugLaunchContext?.debugpyScriptName() ?: scriptPath
+
+    override fun getScriptParameters(): String = debugLaunchContext?.let { state ->
+        state.debugpyScriptParameters().also { clearDebugLaunchContext(state) }
+    } ?: sageScriptParameters
+
+    override fun getInterpreterOptions(): String {
+        val baseOptions = super.getInterpreterOptions()
+        val state = debugLaunchContext ?: return baseOptions
+        val options = tokenizeArguments(baseOptions) + state.debugpyInterpreterArguments()
+        return com.intellij.util.execution.ParametersListUtil.join(options)
+    }
+
+    internal fun clearDebugLaunchContext(state: SageDebugCommandLineState) {
+        if (debugLaunchContext === state) debugLaunchContext = null
+    }
 
     /** Optional explicit SDK name; blank means inherit the project SDK. */
     var sageSdkName: String? = null
@@ -168,12 +189,16 @@ class SageRunConfiguration(
         return RuntimeOperationResult(null, sdkResult.diagnostics, false)
     }
 
-    override fun getState(executor: com.intellij.execution.Executor, environment: ExecutionEnvironment) =
+    override fun getState(
+        executor: com.intellij.execution.Executor,
+        environment: ExecutionEnvironment,
+    ): RunProfileState {
         if (executor.id == "Debug") {
-            SageDebugCommandLineState(this, environment)
-        } else {
-            SageCommandLineState(this, environment)
+            return SageDebugCommandLineState(this, environment).also { debugLaunchContext = it }
         }
+        debugLaunchContext = null
+        return SageCommandLineState(this, environment)
+    }
 
     override fun createConfigurationEditor() = SageRunSettingsEditor()
 
@@ -189,16 +214,18 @@ class SageRunConfiguration(
     }
 
     override fun writeExternal(element: org.jdom.Element) {
-        super<AbstractPythonRunConfiguration>.writeExternal(element)
+        debugLaunchContext = null
+        super<PythonRunConfiguration>.writeExternal(element)
         element.setAttribute("scriptPath", scriptPath)
-        element.setAttribute("scriptParameters", scriptParameters)
+        element.setAttribute("scriptParameters", sageScriptParameters)
         JDOMExternalizerUtil.writeField(element, "SAGE_SDK_NAME", sageSdkName)
     }
 
     override fun readExternal(element: org.jdom.Element) {
-        super<AbstractPythonRunConfiguration>.readExternal(element)
-        scriptPath = element.getAttributeValue("scriptPath") ?: ""
-        scriptParameters = element.getAttributeValue("scriptParameters") ?: ""
+        debugLaunchContext = null
+        super<PythonRunConfiguration>.readExternal(element)
+        scriptPath = element.getAttributeValue("scriptPath") ?: super.getScriptName()
+        sageScriptParameters = element.getAttributeValue("scriptParameters") ?: super.getScriptParameters()
         sageSdkName = JDOMExternalizerUtil.readField(element, "SAGE_SDK_NAME")?.takeIf { it.isNotBlank() }
     }
 }

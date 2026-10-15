@@ -37,7 +37,7 @@ import com.jetbrains.python.codeInsight.postfix.PyPostfixUtils
  */
 open class SageFixedPostfixTemplate(
     name: String,
-    private val key: String,
+    key: String,
     example: String,
     private val templateText: String,
     provider: PostfixTemplateProvider,

@@ -1,11 +1,7 @@
 package com.starnotesxj.sagemath.runtime
 
 import java.io.IOException
-import java.net.ProxySelector
 import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -17,7 +13,6 @@ import java.security.KeyFactory
 import java.security.PublicKey
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
-import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
@@ -52,7 +47,6 @@ enum class RuntimeDiagnosticCode {
     RUNTIME_SELECT_FAILED,
     RUNTIME_REMOVE_FAILED,
     RUNTIME_ROLLBACK_UNAVAILABLE,
-    RUNTIME_IO_ERROR,
     PATH_MAPPING_REQUIRED,
     PATH_OUTSIDE_MAPPING,
     TARGET_INVALID,
@@ -376,18 +370,6 @@ class RuntimeCatalogSignatureVerifier(
         )
 }
 
-class SignedRuntimeCatalog(
-    envelope: RuntimeCatalogEnvelope,
-    verifier: RuntimeCatalogSignatureVerifier = RuntimeCatalogSignatureVerifier(),
-) : RuntimeCatalog {
-    private val trusted: VerifiedRuntimeCatalog = verifier.verify(envelope).let {
-        require(it.valid) { it.diagnostics.joinToString { diagnostic -> diagnostic.message } }
-        it.trustedCatalog!!
-    }
-
-    override fun list(query: RuntimeQuery): List<RuntimeArtifact> = trusted.list(query)
-}
-
 enum class RuntimeCatalogLoadSource {
     PRIMARY,
     MIRROR,
@@ -458,7 +440,29 @@ class SignedRuntimeCatalogLoader(
         val trustedCatalog: VerifiedRuntimeCatalog? = null,
         val bytes: ByteArray? = null,
         val diagnostics: List<RuntimeDiagnostic> = emptyList(),
-    )
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as VerifiedBytes
+
+            if (document != other.document) return false
+            if (trustedCatalog != other.trustedCatalog) return false
+            if (!bytes.contentEquals(other.bytes)) return false
+            if (diagnostics != other.diagnostics) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = document.hashCode()
+            result = 31 * result + trustedCatalog.hashCode()
+            result = 31 * result + (bytes?.contentHashCode() ?: 0)
+            result = 31 * result + diagnostics.hashCode()
+            return result
+        }
+    }
 
     private fun fetchAndVerify(uri: URI, control: RuntimeControl): VerifiedBytes {
         return try {
@@ -553,45 +557,5 @@ class SignedRuntimeCatalogLoader(
             current = current.resolve(part.toString())
             if (Files.isSymbolicLink(current)) error("Catalog cache path contains a symbolic link: $current")
         }
-    }
-}
-
-/** JDK-only source with optional HTTP proxy; it never accepts an HTTP catalog. */
-class JdkRuntimeCatalogSource(
-    proxySelector: ProxySelector? = null,
-    private val requestTimeout: Duration = Duration.ofMinutes(5),
-    private val maxCatalogBytes: Int = RuntimeCatalogCodec.MAX_ENCODED_BYTES,
-) : RuntimeCatalogSource {
-    private val client: HttpClient = HttpClient.newBuilder()
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .connectTimeout(Duration.ofSeconds(30))
-        .apply { proxySelector?.let { proxy(it) } }
-        .build()
-
-    override fun fetch(uri: URI, control: RuntimeControl): ByteArray {
-        require(uri.scheme.equals("https", ignoreCase = true)) { "Runtime catalogs must use HTTPS" }
-        control.checkpoint("CATALOG_HTTP")
-        val request = HttpRequest.newBuilder(uri)
-            .timeout(requestTimeout)
-            .header("Accept", "application/octet-stream")
-            .GET()
-            .build()
-        val response = try {
-            client.send(request, HttpResponse.BodyHandlers.ofByteArray())
-        }
-        catch (error: Exception) {
-            throw RuntimeCatalogFetchException("NETWORK_ERROR", "Unable to fetch runtime catalog", error)
-        }
-        control.checkpoint("CATALOG_HTTP")
-        if (!response.uri().scheme.equals("https", ignoreCase = true)) {
-            throw RuntimeCatalogFetchException("NETWORK_ERROR", "Runtime catalog redirected to an insecure URL")
-        }
-        if (response.statusCode() !in 200..299) {
-            throw RuntimeCatalogFetchException("NETWORK_ERROR", "Runtime catalog returned HTTP ${response.statusCode()}")
-        }
-        if (response.body().size > maxCatalogBytes) {
-            throw RuntimeCatalogFetchException("TOO_LARGE", "Runtime catalog exceeds the configured size limit")
-        }
-        return response.body()
     }
 }

@@ -16,6 +16,7 @@ import com.intellij.patterns.PlatformPatterns
 import com.intellij.patterns.StandardPatterns
 import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.PsiFile
 import com.intellij.util.ProcessingContext
@@ -82,10 +83,8 @@ import javax.swing.Icon
  * paths.  Keeping BASIC separate prevents duplicate Ctrl+Space candidates.
  */
 open class SageImplicitCompletionContributor protected constructor(
-    private val completionTypes: Set<CompletionType>,
+    completionTypes: Set<CompletionType>,
 ) : CompletionContributor(), DumbAware {
-
-    constructor() : this(setOf(CompletionType.BASIC, CompletionType.SMART))
 
     init {
         val provider = object : CompletionProvider<CompletionParameters>() {
@@ -143,7 +142,7 @@ open class SageImplicitCompletionContributor protected constructor(
                     // namespace (which is why the popup previously showed
                     // only entries such as `test.c`).
                     val incompleteMemberQualifier = findIncompleteMemberQualifier(file, parameters.offset)
-                    val memberCompletion = completionReference?.isQualified == true ||
+                    val memberCompletion = completionReference?.qualifier != null ||
                         incompleteMemberQualifier != null
                     if (memberCompletion) {
                         val qualifier = completionReference?.qualifier ?: incompleteMemberQualifier ?: return
@@ -181,7 +180,7 @@ open class SageImplicitCompletionContributor protected constructor(
                             resolvedTarget?.let { addAll(SageIndexedTypeResolver.ownersForTarget(it)) }
                             if (isEmpty()) addAll(SageIndexedTypeResolver.ownersForExpression(qualifier))
                         }
-                        val memberPrefix = if (completionReference?.isQualified == true) {
+                        val memberPrefix = if (completionReference?.qualifier != null) {
                             val referenceRange = completionReference.reference.rangeInElement
                             val offsetInElement =
                                 (parameters.offset - completionReference.textRange.startOffset)
@@ -269,12 +268,12 @@ open class SageImplicitCompletionContributor protected constructor(
                             )
                             val classVariants: List<PyClassType> = when (qualifierType) {
                                 is PyClassType -> listOf(qualifierType)
-                                is PyUnionType -> qualifierType.members.orEmpty().filterIsInstance<PyClassType>()
+                                is PyUnionType -> qualifierType.members.filterIsInstance<PyClassType>()
                                 else -> emptyList()
                             }
                             for (classVariant in classVariants) {
                                 for (method in classVariant.pyClass.getMethodsInherited(memberContext)) {
-                                    val methodName = method.name ?: continue
+                                    val methodName = (method as PsiNamedElement).name ?: continue
                                     if (!emittedNames.add(methodName)) continue
                                     var builder = LookupElementBuilder.createWithSmartPointer(methodName, method)
                                     method.getIcon(0)?.let { builder = builder.withIcon(it) }
@@ -467,7 +466,7 @@ open class SageImplicitCompletionContributor protected constructor(
         repeat(MAX_TARGET_FALLBACK_LEAVES) {
             leaf = PsiTreeUtil.prevVisibleLeaf(leaf) ?: return null
             val target = PsiTreeUtil.getParentOfType(leaf, PyTargetExpression::class.java)
-            if (target != null && target.name == name &&
+            if (target != null && (target as PsiNamedElement).name == name &&
                 target.textRange.endOffset <= qualifier.textRange.startOffset
             ) {
                 return target
@@ -518,6 +517,13 @@ open class SageImplicitCompletionContributor protected constructor(
     private val MAX_TARGET_FALLBACK_BYTES = 64 * 1024
     private val MAX_TARGET_FALLBACK_LEAVES = 256
 }
+
+/**
+ * Python-dialect endpoint for BASIC completion (Ctrl+Space). The public
+ * extension must expose a no-argument constructor; the shared implementation
+ * keeps its completion-type configuration protected.
+ */
+class SageBasicCompletionContributor : SageImplicitCompletionContributor(setOf(CompletionType.BASIC))
 
 /**
  * Sage-dialect compatibility endpoint for Ctrl+Shift+Space. It shares the

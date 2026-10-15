@@ -6,7 +6,7 @@ object SageApiIndexJsonReader {
         val root = JsonParser(json).parse().asObject("$")
         val schemaVersion = root.requiredInteger("schemaVersion")
         require(schemaVersion == SAGE_API_SCHEMA_VERSION) {
-            "Unsupported Sage API schema version: " + schemaVersion
+            "Unsupported Sage API schema version: $schemaVersion"
         }
         val sourceDigests = root.optionalObject("sourceDigests")
             ?.mapValues { (_, value) -> value.asString("$.sourceDigests") }
@@ -16,7 +16,7 @@ object SageApiIndexJsonReader {
             pythonVersion = root.requiredString("pythonVersion"),
             generatorVersion = root.optionalString("generatorVersion") ?: "sage-api-index/unknown",
             sourceDigests = sourceDigests,
-            entries = root.requiredArray("entries").mapIndexed { index, value -> parseEntry(value, "$.entries[" + index + "]") },
+            entries = root.requiredArray("entries").mapIndexed { index, value -> parseEntry(value, "$.entries[$index]") },
             schemaVersion = schemaVersion,
         )
     }
@@ -31,17 +31,17 @@ object SageApiIndexJsonReader {
             qualifiedName = objectValue.requiredString("qualifiedName", path),
             kind = objectValue.requiredEnum("kind", path),
             signatures = objectValue.optionalArray("signatures")?.mapIndexed { index, item ->
-                parseSignature(item, path + ".signatures[" + index + "]")
+                parseSignature(item, "$path.signatures[$index]")
             } ?: emptyList(),
-            valueType = objectValue.optionalValue("valueType")?.let { parseType(it, path + ".valueType") },
+            valueType = objectValue.optionalValue("valueType")?.let { parseType(it, "$path.valueType") },
             parents = objectValue.optionalStringArray("parents", path),
             protocols = objectValue.optionalStringArray("protocols", path),
             aliases = objectValue.optionalStringArray("aliases", path),
-            documentation = objectValue.optionalValue("documentation")?.let { parseDocumentation(it, path + ".documentation") },
+            documentation = objectValue.optionalValue("documentation")?.let { parseDocumentation(it, "$path.documentation") },
             dynamicity = objectValue.optionalEnum("dynamicity", path) ?: SageApiDynamicity.UNKNOWN,
             confidence = objectValue.optionalEnum("confidence", path) ?: SageApiConfidence.UNKNOWN,
             sources = objectValue.optionalArray("sources")?.mapIndexed { index, item ->
-                parseSource(item, path + ".sources[" + index + "]")
+                parseSource(item, "$path.sources[$index]")
             } ?: emptyList(),
         )
     }
@@ -59,8 +59,8 @@ object SageApiIndexJsonReader {
         val objectValue = value.asObject(path)
         return SageApiReturnEvidence(
             kind = objectValue.requiredEnum("kind", path),
-            returnType = parseType(objectValue.requiredValue("returnType", path), path + ".returnType"),
-            source = parseSource(objectValue.requiredValue("source", path), path + ".source"),
+            returnType = parseType(objectValue.requiredValue("returnType", path), "$path.returnType"),
+            source = parseSource(objectValue.requiredValue("source", path), "$path.source"),
         )
     }
 
@@ -68,14 +68,14 @@ object SageApiIndexJsonReader {
         val objectValue = value.asObject(path)
         return SageApiSignature(
             parameters = objectValue.optionalArray("parameters")?.mapIndexed { index, item ->
-                parseParameter(item, path + ".parameters[" + index + "]")
+                parseParameter(item, "$path.parameters[$index]")
             } ?: emptyList(),
-            returnType = parseType(objectValue.requiredValue("returnType", path), path + ".returnType"),
+            returnType = parseType(objectValue.requiredValue("returnType", path), "$path.returnType"),
             typeParameters = objectValue.optionalArray("typeParameters")?.mapIndexed { index, item ->
-                parseTypeParameter(item, path + ".typeParameters[" + index + "]")
+                parseTypeParameter(item, "$path.typeParameters[$index]")
             } ?: emptyList(),
             trustedReturnEvidence = objectValue.optionalArray("trustedReturnEvidence")?.mapIndexed { index, item ->
-                parseReturnEvidence(item, path + ".trustedReturnEvidence[" + index + "]")
+                parseReturnEvidence(item, "$path.trustedReturnEvidence[$index]")
             } ?: emptyList(),
         )
     }
@@ -85,9 +85,9 @@ object SageApiIndexJsonReader {
         return SageApiTypeParameter(
             name = objectValue.requiredString("name", path),
             kind = objectValue.optionalEnum<SageApiTypeParameterKind>("kind", path) ?: SageApiTypeParameterKind.TYPE_VARIABLE,
-            bound = objectValue.optionalValue("bound")?.let { parseType(it, path + ".bound") },
+            bound = objectValue.optionalValue("bound")?.let { parseType(it, "$path.bound") },
             constraints = objectValue.optionalArray("constraints")?.mapIndexed { index, item ->
-                parseType(item, path + ".constraints[" + index + "]")
+                parseType(item, "$path.constraints[$index]")
             } ?: emptyList(),
         )
     }
@@ -96,7 +96,7 @@ object SageApiIndexJsonReader {
         val objectValue = value.asObject(path)
         return SageApiParameter(
             name = objectValue.requiredString("name", path),
-            type = objectValue.optionalValue("type")?.let { parseType(it, path + ".type") } ?: SageTypeRef.unknown(),
+            type = objectValue.optionalValue("type")?.let { parseType(it, "$path.type") } ?: SageTypeRef.unknown(),
             defaultValue = objectValue.optionalString("defaultValue"),
             optional = objectValue.optionalBoolean("optional") ?: (objectValue.optionalString("defaultValue") != null),
             keywordOnly = objectValue.optionalBoolean("keywordOnly") ?: false,
@@ -123,26 +123,26 @@ object SageApiIndexJsonReader {
     }
 
     private inline fun <reified T : Enum<T>> Map<String, Any?>.requiredEnum(name: String, path: String): T =
-        optionalEnum<T>(name, path) ?: fail("Missing or invalid enum '" + name + "' at " + path)
+        optionalEnum<T>(name, path) ?: fail("Missing or invalid enum '$name' at $path")
 
     private inline fun <reified T : Enum<T>> Map<String, Any?>.optionalEnum(name: String, path: String): T? {
         val value = this[name] ?: return null
-        val text = value.asString(path + "." + name)
+        val text = value.asString("$path.$name")
         return try {
             enumValueOf<T>(text)
         } catch (_: IllegalArgumentException) {
-            fail("Invalid enum '" + text + "' for '" + name + "' at " + path)
+            fail("Invalid enum '$text' for '$name' at $path")
         }
     }
 
     private fun Map<String, Any?>.requiredString(name: String, path: String = "$"): String =
-        (this[name] ?: fail("Missing '" + name + "' at " + path)).asString(path + "." + name)
+        (this[name] ?: fail("Missing '$name' at $path")).asString("$path.$name")
 
     private fun Map<String, Any?>.optionalString(name: String): String? = this[name]?.asString(name)
 
     private fun Map<String, Any?>.requiredInteger(name: String): Int {
-        val number = (this[name] ?: fail("Missing '" + name + "'")).asNumber(name)
-        require(number.toDouble() == number.toInt().toDouble()) { "Expected integer at " + name }
+        val number = (this[name] ?: fail("Missing '$name'")).asNumber(name)
+        require(number.toDouble() == number.toInt().toDouble()) { "Expected integer at $name" }
         return number.toInt()
     }
 
@@ -162,19 +162,19 @@ object SageApiIndexJsonReader {
     private fun Map<String, Any?>.optionalObject(name: String): Map<String, Any?>? = this[name]?.asObject(name)
 
     private fun Map<String, Any?>.optionalStringArray(name: String, path: String): List<String> =
-        optionalArray(name)?.mapIndexed { index, value -> value.asString(path + "." + name + "[" + index + "]") } ?: emptyList()
+        optionalArray(name)?.mapIndexed { index, value -> value.asString("$path.$name[$index]") } ?: emptyList()
 
     private fun Any?.asObject(path: String): Map<String, Any?> =
-        this as? Map<String, Any?> ?: fail("Expected object at " + path)
+        this as? Map<String, Any?> ?: fail("Expected object at $path")
 
     private fun Any?.asArray(path: String): List<Any?> =
-        this as? List<Any?> ?: fail("Expected array at " + path)
+        this as? List<Any?> ?: fail("Expected array at $path")
 
     private fun Any?.asString(path: String): String =
-        this as? String ?: fail("Expected string at " + path)
+        this as? String ?: fail("Expected string at $path")
 
     private fun Any?.asNumber(path: String): Number =
-        this as? Number ?: fail("Expected number at " + path)
+        this as? Number ?: fail("Expected number at $path")
 
     private fun fail(message: String): Nothing = throw IllegalArgumentException(message)
 
@@ -185,7 +185,7 @@ object SageApiIndexJsonReader {
             skipWhitespace()
             val value = readValue()
             skipWhitespace()
-            require(offset == source.length) { "Trailing JSON content at offset " + offset }
+            require(offset == source.length) { "Trailing JSON content at offset $offset" }
             return value
         }
 
@@ -200,7 +200,7 @@ object SageApiIndexJsonReader {
                 'f' -> readLiteral("false", false)
                 'n' -> readLiteral("null", null)
                 '-', in '0'..'9' -> readNumber()
-                else -> fail("Unexpected JSON character '" + source[offset] + "' at offset " + offset)
+                else -> fail("Unexpected JSON character '${source[offset]}' at offset $offset")
             }
         }
 
@@ -214,9 +214,9 @@ object SageApiIndexJsonReader {
             }
             while (true) {
                 skipWhitespace()
-                require(peek('"')) { "Expected object key at offset " + offset }
+                require(peek('"')) { "Expected object key at offset $offset" }
                 val key = readString()
-                require(!result.containsKey(key)) { "Duplicate JSON object key '" + key + "' at offset " + offset }
+                require(!result.containsKey(key)) { "Duplicate JSON object key '$key' at offset $offset" }
                 skipWhitespace()
                 expect(':')
                 result[key] = readValue()
@@ -255,7 +255,7 @@ object SageApiIndexJsonReader {
                     when (val character = source[offset++]) {
                         '\"' -> return@buildString
                         '\\' -> {
-                            require(offset < source.length) { "Incomplete escape at offset " + offset }
+                            require(offset < source.length) { "Incomplete escape at offset $offset" }
                             when (val escaped = source[offset++]) {
                                 '\"' -> append('\"')
                                 '\\' -> append('\\')
@@ -266,17 +266,17 @@ object SageApiIndexJsonReader {
                                 'r' -> append('\r')
                                 't' -> append('\t')
                                 'u' -> {
-                                    require(offset + 4 <= source.length) { "Incomplete unicode escape at offset " + offset }
+                                    require(offset + 4 <= source.length) { "Incomplete unicode escape at offset $offset" }
                                     val hex = source.substring(offset, offset + 4)
-                                    require(hex.all { it in "0123456789abcdefABCDEF" }) { "Invalid unicode escape at offset " + offset }
+                                    require(hex.all { it in "0123456789abcdefABCDEF" }) { "Invalid unicode escape at offset $offset" }
                                     append(hex.toInt(16).toChar())
                                     offset += 4
                                 }
-                                else -> fail("Invalid escape '" + escaped + "' at offset " + offset)
+                                else -> fail("Invalid escape '$escaped' at offset $offset")
                             }
                         }
                         else -> {
-                            require(character.code >= 0x20) { "Control character in JSON string at offset " + offset }
+                            require(character.code >= 0x20) { "Control character in JSON string at offset $offset" }
                             append(character)
                         }
                     }
@@ -288,25 +288,25 @@ object SageApiIndexJsonReader {
         private fun readNumber(): Number {
             val start = offset
             if (peek('-')) offset++
-            require(offset < source.length) { "Incomplete number at offset " + offset }
+            require(offset < source.length) { "Incomplete number at offset $offset" }
             if (peek('0')) {
                 offset++
             } else {
-                require(source[offset] in '1'..'9') { "Invalid number at offset " + offset }
+                require(source[offset] in '1'..'9') { "Invalid number at offset $offset" }
                 while (offset < source.length && source[offset].isDigit()) offset++
             }
             var fractional = false
             if (peek('.')) {
                 fractional = true
                 offset++
-                require(offset < source.length && source[offset].isDigit()) { "Invalid fraction at offset " + offset }
+                require(offset < source.length && source[offset].isDigit()) { "Invalid fraction at offset $offset" }
                 while (offset < source.length && source[offset].isDigit()) offset++
             }
             if (offset < source.length && (source[offset] == 'e' || source[offset] == 'E')) {
                 fractional = true
                 offset++
                 if (offset < source.length && (source[offset] == '+' || source[offset] == '-')) offset++
-                require(offset < source.length && source[offset].isDigit()) { "Invalid exponent at offset " + offset }
+                require(offset < source.length && source[offset].isDigit()) { "Invalid exponent at offset $offset" }
                 while (offset < source.length && source[offset].isDigit()) offset++
             }
             val text = source.substring(start, offset)
@@ -314,13 +314,13 @@ object SageApiIndexJsonReader {
         }
 
         private fun readLiteral(literal: String, value: Any?): Any? {
-            require(source.regionMatches(offset, literal, 0, literal.length)) { "Expected '" + literal + "' at offset " + offset }
+            require(source.regionMatches(offset, literal, 0, literal.length)) { "Expected '$literal' at offset $offset" }
             offset += literal.length
             return value
         }
 
         private fun expect(character: Char) {
-            require(offset < source.length && source[offset] == character) { "Expected '" + character + "' at offset " + offset }
+            require(offset < source.length && source[offset] == character) { "Expected '$character' at offset $offset" }
             offset++
         }
 

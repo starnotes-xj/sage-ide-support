@@ -36,7 +36,7 @@ object SageFileUtils {
         CachedValuesManager.getManager(file.project).getCachedValue(
             file,
             EXPLICIT_SAGE_ALL_IMPORT_KEY,
-            CachedValueProvider {
+            {
                 CachedValueProvider.Result.create(
                     PsiTreeUtil.collectElementsOfType(file, PyFromImportStatement::class.java)
                         .any { it.importSource?.asQualifiedName()?.toString() == "sage.all" },
