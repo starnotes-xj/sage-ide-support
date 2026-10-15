@@ -8,6 +8,7 @@ import com.intellij.psi.tree.IElementType
 import com.jetbrains.python.PyElementTypes
 import com.jetbrains.python.PyParsingBundle
 import com.jetbrains.python.PyTokenTypes
+import com.jetbrains.python.psi.LanguageLevel
 
 /**
  * The Python parser extended with Sage generator statements.
@@ -32,7 +33,7 @@ class SageParser : PythonParser(), PsiParser {
 
     override fun parseRoot(root: IElementType, builder: SyntaxTreeBuilder) {
         val rootMarker = builder.mark()
-        val context = createParsingContext(builder, myLanguageLevel)
+        val context = SageParsingContext(builder, myLanguageLevel)
         val statementParser = context.statementParser
         builder.setTokenTypeRemapper(statementParser) // must be done before touching the caching lexer
         var lastAfterSemicolon = false
@@ -82,7 +83,7 @@ class SageParser : PythonParser(), PsiParser {
      * Returns false (after rollback) when the shape does not complete, so
      * the caller falls back to the normal Python statement parser.
      */
-    private fun parseSugarStatement(context: ParsingContext, builder: SyntaxTreeBuilder): Boolean {
+    private fun parseSugarStatement(context: SageParsingContext, builder: SyntaxTreeBuilder): Boolean {
         val marker = builder.mark()
         buildTarget(builder) // the factory target, e.g. R or F
         builder.advanceLexer() // DOT — plain token leaf
@@ -110,8 +111,17 @@ class SageParser : PythonParser(), PsiParser {
             return false
         }
         builder.advanceLexer() // EQ — must stay a token leaf: calcTargets scans up to it
-        if (!context.expressionParser.parseYieldOrTupleExpression(false)) {
-            builder.error(PyParsingBundle.message("PARSE.expected.expression"))
+        // Sage's generator declaration gives the trailing empty `[]` its
+        // generator names (R.<x> = GF(2)[]). Python's ordinary subscription
+        // parser rejects a zero-item index list, so enable that one form only
+        // while parsing this assignment's RHS.
+        context.allowGeneratorEmptySubscription = true
+        try {
+            if (!context.expressionParser.parseYieldOrTupleExpression(false)) {
+                builder.error(PyParsingBundle.message("PARSE.expected.expression"))
+            }
+        } finally {
+            context.allowGeneratorEmptySubscription = false
         }
         checkEndOfStatement(context, builder)
         marker.done(PyElementTypes.ASSIGNMENT_STATEMENT)
@@ -145,4 +155,25 @@ class SageParser : PythonParser(), PsiParser {
             builder.error(PyParsingBundle.message("end.of.statement.expected"))
         }
     }
+}
+
+/** Shares Python's parser and PSI, with one Sage generator-RHS grammar exception. */
+private class SageParsingContext(builder: SyntaxTreeBuilder, level: LanguageLevel) : ParsingContext(builder, level) {
+    var allowGeneratorEmptySubscription = false
+
+    private val sageExpressionParser = object : ExpressionParsing(this) {
+        override fun parseSubscriptionIndexArgumentList() {
+            val next = builder.lookAhead(1)
+            if (allowGeneratorEmptySubscription &&
+                builder.tokenType === PyTokenTypes.RBRACKET &&
+                (next == null || next === PyTokenTypes.STATEMENT_BREAK || next === PyTokenTypes.SEMICOLON)
+            ) {
+                builder.advanceLexer()
+                return
+            }
+            super.parseSubscriptionIndexArgumentList()
+        }
+    }
+
+    override fun getExpressionParser(): ExpressionParsing = sageExpressionParser
 }

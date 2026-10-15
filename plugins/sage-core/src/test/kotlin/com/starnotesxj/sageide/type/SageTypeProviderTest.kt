@@ -2195,6 +2195,83 @@ def local(T):
         }
     }
 
+    fun testDictionaryWriteProofTypifiesSubscriptReadsAndUnpackedTargets() {
+        myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+        myFixture.addFileToProject("site-packages/sage/rings/__init__.pyi", "")
+        myFixture.addFileToProject(
+            "site-packages/sage/rings/integer.pyi",
+            "class Integer:\n" +
+                "    def is_square(self) -> bool: ...\n" +
+                "    def sqrt(self) -> Integer: ...\n",
+        )
+        myFixture.configureByText(
+            "dict-write.sage",
+            "values = {}\n" +
+                "values['N'] = Integer(13)\n" +
+                "values['e'] = Integer(65537)\n" +
+                "N, e = values['N'], values['e']\n" +
+                "direct = values['N']\n",
+        )
+        val context = defaultContext()
+        for (name in listOf("N", "e", "direct")) {
+            val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+                .last { it.name == name }
+            val type = context.getType(target) as? PyClassType
+            assertEquals(
+                "target '$name' should carry the dictionary write's Integer type",
+                "sage.rings.integer.Integer",
+                type?.pyClass?.let(SageStubIndex::canonicalQualifiedName),
+            )
+        }
+    }
+
+    fun testDictionaryWriteWithLocalConstructorShadowingStaysUnknown() {
+        myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+        myFixture.addFileToProject("site-packages/sage/rings/__init__.pyi", "")
+        myFixture.addFileToProject("site-packages/sage/rings/integer.pyi", "class Integer: ...\n")
+        myFixture.configureByText(
+            "dict-write-shadowed.sage",
+            "values = {}\n" +
+                "Integer = int\n" +
+                "values['N'] = Integer(13)\n" +
+                "N = values['N']\n",
+        )
+        val context = defaultContext()
+        val target = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+            .last { it.name == "N" }
+        val type = context.getType(target) as? PyClassType
+        assertTrue(
+            "a shadowed constructor must not leak the Sage class type",
+            type?.pyClass?.let(SageStubIndex::canonicalQualifiedName) != "sage.rings.integer.Integer",
+        )
+    }
+
+    fun testForLoopTargetReceivesListElementType() {
+        myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+        myFixture.addFileToProject("site-packages/sage/rings/__init__.pyi", "")
+        myFixture.addFileToProject(
+            "site-packages/sage/rings/integer.pyi",
+            "class Integer:\n    def numerator(self) -> Integer: ...\n",
+        )
+        myFixture.configureByText(
+            "for-list.sage",
+            "items = [Integer(1), Integer(2)]\n" +
+                "for item in items:\n" +
+                "    use = item\n",
+        )
+        val context = defaultContext()
+        // A for-loop target's type surfaces through references to it (the
+        // completion path); querying the target directly goes through
+        // Python's own for-part element inference instead.
+        val itemReference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+            .single { it.referencedName == "item" && it.qualifier == null }
+        val type = context.getType(itemReference) as? PyClassType
+        assertEquals(
+            "sage.rings.integer.Integer",
+            type?.pyClass?.let(SageStubIndex::canonicalQualifiedName),
+        )
+    }
+
     private fun defaultContext() = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(
         myFixture.file.project,
         myFixture.file,

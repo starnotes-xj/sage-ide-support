@@ -474,7 +474,21 @@ class SageTypeProvider : PyTypeProviderBase() {
             if (assigned !is PyCallExpression &&
                 assigned !is PyBinaryExpression &&
                 assigned !is PyReferenceExpression
-            ) return null
+            ) {
+                // A subscript read (`N = values['N']`), a tuple unpacking
+                // (`N, e = values['N'], values['e']`), and a list literal
+                // whose element types only the Sage stubs can prove are the
+                // source-evidence shapes: the index has no contract for
+                // them, and write/element proofs are the only sound answer.
+                // Everything else stays with Python.
+                if (assigned is PySubscriptionExpression ||
+                    assigned is com.jetbrains.python.psi.PyTupleExpression ||
+                    assigned is com.jetbrains.python.psi.PyListLiteralExpression
+                ) {
+                    SageSourceEvidenceLowering.assignedConcreteType(target, context)?.let { return it }
+                }
+                return null
+            }
 
             val rhsCall = assigned as? PyCallExpression
             val query = SageApiIndexService.getInstance().query()
@@ -512,6 +526,13 @@ class SageTypeProvider : PyTypeProviderBase() {
         // Resolve the RHS expression from its concrete Sage receiver/operator
         // contracts before publishing the assignment target.
         indexedExpressionAssignedType(target, context)?.let { return it }
+
+        // Last Sage-only fallback: source-level evidence the index cannot
+        // express — `for x in <list[T]>` loop targets, dictionary write
+        // proofs, and unresolved implicit sage.all constructors.
+        if (isSageFile) {
+            SageSourceEvidenceLowering.assignedConcreteType(target, context)?.let { return it }
+        }
 
         // The Sage preparser wraps EVERY numeric literal (verified against
         // sage.repl.preparse: `x = 5` -> `x = Integer(5)`, `x = 1.5` ->

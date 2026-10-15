@@ -3,7 +3,10 @@ package com.starnotesxj.sageide.parser
 import com.intellij.psi.PsiErrorElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.starnotesxj.sageide.SagePluginTestBase
+import junit.framework.Assert.assertSame
 import com.jetbrains.python.psi.PyAssignmentStatement
+import com.jetbrains.python.psi.PyCallExpression
+import com.jetbrains.python.psi.PySubscriptionExpression
 import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
 
 /**
@@ -55,7 +58,47 @@ class SageParserParsingTest : SagePluginTestBase() {
         assertEquals("R.<", myFixture.file.text)
     }
 
+    fun testEmptySubscriptionInGeneratorRhsKeepsTheSageAssignmentAndCallPsi() {
+        myFixture.configureByText("ring.sage", "R.<x> = GF(2)[]\nfollowing = 1\n")
+
+        val errors = PsiTreeUtil.collectElementsOfType(myFixture.file, PsiErrorElement::class.java)
+        assertTrue("Sage generator RHS should parse without errors: ${errors.joinToString { it.errorDescription }}", errors.isEmpty())
+        val statements = PsiTreeUtil.collectElementsOfType(myFixture.file, PyAssignmentStatement::class.java)
+        val sugar = statements.single { SageSugarAnalyzer.shapePredicate(it) }
+        assertEquals(listOf("R", "x"), sugar.targets.map { it.name })
+        val subscription = sugar.assignedValue as? PySubscriptionExpression
+            ?: error("empty Sage brackets should remain a subscription PSI")
+        val call = subscription.operand as? PyCallExpression
+            ?: error("the subscription operand should remain the GF call")
+        assertEquals("GF", call.callee?.text)
+        assertSame(call, SageSugarAnalyzer.analyze(sugar)?.call)
+        assertTrue(statements.any { it.targets.firstOrNull()?.name == "following" })
+    }
+
+    fun testEmptySubscriptionOutsideGeneratorSugarKeepsPythonSyntaxErrors() {
+        for (name in listOf("ordinary.sage", "ordinary.py")) {
+            myFixture.configureByText(name, "value = GF(2)[]\n")
+            val errors = PsiTreeUtil.collectElementsOfType(myFixture.file, PsiErrorElement::class.java)
+            assertTrue("$name must not accept an empty Python subscript", errors.isNotEmpty())
+        }
+    }
+
+    fun testIncompleteGeneratorSugarWithNamesFallsBackAndParsesFollowingStatements() {
+        myFixture.configureByText(
+            "incomplete-sugar.sage",
+            "R.<x,> = 1\nvalue = 2\n",
+        )
+
+        val errors = PsiTreeUtil.collectElementsOfType(myFixture.file, PsiErrorElement::class.java)
+        assertTrue("incomplete sugar should remain a visible syntax error", errors.isNotEmpty())
+        val assignments = PsiTreeUtil.collectElementsOfType(myFixture.file, PyAssignmentStatement::class.java)
+        assertTrue("Python fallback should parse the following assignment", assignments.any { statement ->
+            statement.targets.any { it.name == "value" }
+        })
+    }
+
     companion object {
+
         private val AES_EXERCISE = """
             # 必须指定 modulus=0x11B！Sage 默认用 Conway 多项式，结果和 AES 对不上
             R.<x> = GF(2)                                   # GF(2) 上多项式环

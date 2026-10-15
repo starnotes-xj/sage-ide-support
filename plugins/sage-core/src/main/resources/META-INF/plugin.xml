@@ -21,6 +21,14 @@
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.8.27 — Sage grammar and inference ported from the intelligence
+        framework worktree: `R.<x> = GF(2)[]` generator-sugar RHS now parses
+        (the empty subscript stays a subscription PSI, ordinary Python
+        subscripts still error); dictionary write proofs carry
+        `values[name] = Integer(...)` types through subscript reads and
+        tuple unpacking with local-shadowing fail-closed; and `for x in
+        [Integer(...)]` loop references receive the unanimous element
+        type.</li>
     <li>1.8.26 — Editor responsiveness: parameter type inference now resolves
         its candidate classes through an inverted member-name index instead of
         scanning every indexed class per unannotated parameter; the optional

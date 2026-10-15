@@ -1,12 +1,15 @@
 package com.starnotesxj.sageide.sugar
 
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiInvalidElementAccessException
+import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyClass
 import com.jetbrains.python.psi.PyFile
 import com.jetbrains.python.psi.PyFromImportStatement
@@ -507,7 +510,67 @@ object SageStubIndex {
         return result
     }
 
+    /**
+     * The sibling `.py` implementation of a Sage stub method, when it exists
+     * and is unambiguous.  The stub tree installs `.pyi` next to the runtime
+     * sources, so the implementation is the same module file with the same
+     * class nesting; a `.pyx`-only module has no sibling and answers null.
+     * Positive results are cached per stub method identity.
+     */
+    fun findSourceImplementation(stubMethod: PyFunction): PyFunction? {
+        if (!stubMethod.isValid) return null
+        val stubFile = safeContainingFile(stubMethod) as? PyFile ?: return null
+        if (!isSageStubFile(stubFile)) return null
+        val stubVirtualFile = stubFile.virtualFile ?: return null
+        val stubName = stubVirtualFile.name
+        if (!stubName.endsWith(".pyi")) return null
+        val sourceVirtualFile = stubVirtualFile.parent.findChild(stubName.removeSuffix(".pyi") + ".py") ?: return null
+        val methodName = stubMethod.name ?: return null
+        val ownerPath = containingClassPath(stubMethod) ?: return null
+        val key = "${stubVirtualFile.path}#${ownerPath.joinToString(".")}#$methodName"
+        sourceImplementationCache[key]?.let { cached ->
+            if (
+                cached.isValid && cached.name == methodName &&
+                containingClassPath(cached) == ownerPath &&
+                safeContainingFile(cached)?.virtualFile == sourceVirtualFile
+            ) {
+                return cached
+            }
+            sourceImplementationCache.remove(key, cached)
+        }
+        ProgressManager.checkCanceled()
+        val sourceFile = PsiManager.getInstance(stubMethod.project).findFile(sourceVirtualFile) as? PyFile ?: return null
+        val candidates = PsiTreeUtil.findChildrenOfType(sourceFile, PyFunction::class.java).filter { candidate ->
+            ProgressManager.checkCanceled()
+            candidate.name == methodName && containingClassPath(candidate) == ownerPath && !isNestedFunction(candidate)
+        }
+        if (candidates.size != 1) return null
+        val sourceMethod = candidates.single()
+        return sourceImplementationCache.putIfAbsent(key, sourceMethod) ?: sourceMethod
+    }
+
+    private fun containingClassPath(function: PyFunction): List<String>? {
+        val path = mutableListOf<String>()
+        var owner = function.containingClass
+        while (owner != null) {
+            if (!owner.isValid) return null
+            path += owner.name ?: return null
+            owner = PsiTreeUtil.getParentOfType(owner, PyClass::class.java)
+        }
+        return path.asReversed()
+    }
+
+    private fun isNestedFunction(function: PyFunction): Boolean {
+        var parent = function.parent
+        while (parent != null) {
+            if (parent is PyFunction) return true
+            parent = parent.parent
+        }
+        return false
+    }
+
     private val classCache = java.util.concurrent.ConcurrentHashMap<String, PyClass>()
+    private val sourceImplementationCache = java.util.concurrent.ConcurrentHashMap<String, PyFunction>()
 
     /** Session cache of the sage.all namespace: name -> declaration in `sage/all.pyi` (null when undeclared). */
     @Volatile
