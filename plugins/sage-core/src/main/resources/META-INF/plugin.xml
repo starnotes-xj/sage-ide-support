@@ -21,6 +21,17 @@
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.8.26 — Editor responsiveness: parameter type inference now resolves
+        its candidate classes through an inverted member-name index instead of
+        scanning every indexed class per unannotated parameter; the optional
+        native inline scorer starts lazily on the first real Sage member
+        completion instead of five seconds after every project open; and the
+        live-type run-evidence digest for saved files is warmed on a
+        background thread instead of reading the whole (WSL-backed) file on
+        the first daemon query.</li>
+    <li>1.8.25 — Sage run configurations now participate in PyCharm's native
+        Python debugger backend routing while keeping Sage preparsing and the
+        existing pydevd fallback.</li>
     <li>1.8.0 — Sage IDE Support is upgraded in place to SageMath Core. The
         Marketplace plugin ID is intentionally unchanged, so existing users
         receive this version as an update rather than installing a conflicting
@@ -233,7 +244,41 @@
                      displayName="Misused ^ operator (Sage power vs Python XOR)"
                      enabledByDefault="true"
                      level="ERROR"
+                     cleanupTool="true"
                      implementationClass="com.starnotesxj.sageide.highlight.SageXorInspection"/>
+
+    <!-- Only flags small, explicit cardinalities that can be proven not to be prime powers;
+         dynamic or large values remain for Sage runtime validation. -->
+    <localInspection language="Sage"
+                     groupName="SageMath"
+                     displayName="Invalid finite field cardinality"
+                     enabledByDefault="true"
+                     level="ERROR"
+                     implementationClass="com.starnotesxj.sageide.highlight.SageFiniteFieldOrderInspection"/>
+
+    <!-- Only checks literal short-Weierstrass models over QQ or a directly stated GF(q). -->
+    <localInspection language="Sage"
+                     groupName="SageMath"
+                     displayName="Provably singular short-Weierstrass curve"
+                     enabledByDefault="true"
+                     level="ERROR"
+                     implementationClass="com.starnotesxj.sageide.highlight.SageSingularEllipticCurveInspection"/>
+
+    <!-- A modular inverse is reported only when literal integer arguments prove gcd(a, m) != 1. -->
+    <localInspection language="Sage"
+                     groupName="SageMath"
+                     displayName="Provably non-invertible modular inverse"
+                     enabledByDefault="true"
+                     level="ERROR"
+                     implementationClass="com.starnotesxj.sageide.highlight.SageNonInvertibleModularInverseInspection"/>
+
+    <!-- Only reports four-literal integer CRT calls proven inconsistent modulo gcd(m,n). -->
+    <localInspection language="Sage"
+                     groupName="SageMath"
+                     displayName="Incompatible Chinese remainder congruences"
+                     enabledByDefault="true"
+                     level="ERROR"
+                     implementationClass="com.starnotesxj.sageide.highlight.SageIncompatibleCrtInspection"/>
 
     <!-- Project view icon: the tree resolves file icons through the
          fileIconProvider chain, where a Python presentation can win for
@@ -248,11 +293,13 @@
          Python debug executor can attach pydevd for native Sage launches. -->
     <configurationType implementation="com.starnotesxj.sageide.run.SageRunConfigurationType"/>
 
+    <!-- Use XDebugger's native hover gutter and Python's breakpoint handler for Sage lines. -->
+    <xdebugger.breakpointType implementation="com.starnotesxj.sageide.run.SageLineBreakpointType"/>
+
     <runConfigurationProducer implementation="com.starnotesxj.sageide.run.SageRunConfigurationProducer"/>
     <runLineMarkerContributor language="Sage"
                               implementationClass="com.starnotesxj.sageide.run.SageRunLineMarkerContributor"/>
     <postStartupActivity implementation="com.starnotesxj.sageide.run.SageRuntimeDiscoveryStartupActivity"/>
-    <postStartupActivity implementation="com.starnotesxj.sageide.inline.SageInlineWarmupStartupActivity"/>
 
     <!-- Shared Sage execution settings (Settings | Tools | SageMath). -->
     <applicationService serviceImplementation="com.starnotesxj.sageide.run.SageRunSettings"/>
@@ -278,7 +325,10 @@
          Ctrl+Shift+Space through different language paths by version. -->
     <completion.contributor language="Python"
                             order="first"
-                            implementationClass="com.starnotesxj.sageide.sugar.SageImplicitCompletionContributor"/>
+                            implementationClass="com.starnotesxj.sageide.sugar.SageBasicCompletionContributor"/>
+    <completion.contributor language="Python"
+                            order="first"
+                            implementationClass="com.starnotesxj.sageide.sugar.SageSmartCompletionContributor"/>
     <completion.contributor language="Sage"
                             order="first"
                             implementationClass="com.starnotesxj.sageide.sugar.SageSmartCompletionContributor"/>
@@ -336,6 +386,8 @@
   </extensions>
 
   <extensions defaultExtensionNs="Pythonid">
+    <!-- Route Sage line breakpoints through PyCharm's native pydevd line protocol. -->
+    <breakpointHandler implementation="com.starnotesxj.sageide.run.SageBreakpointHandlerFactory"/>
     <!-- Types the factory target (F) and the generator targets (a/x) of
          F.<a> = Constructor(...) statements. Return types for Sage stub
          methods are provided by the indexed data layer when available. -->
@@ -357,6 +409,12 @@
     </action>
     <action id="Sage.DebugFile" class="com.starnotesxj.sageide.run.DebugSageFileAction" text="Debug Sage Script" description="Debug the selected Sage script">
       <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+    </action>
+    <action id="Sage.ReviewSafeFixes" class="com.starnotesxj.sageide.highlight.SageSafeFixPreviewAction" text="Review and Apply Sage Safe Fixes" description="Preview and confirm safe Sage fixes for the current .sage file">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+    </action>
+    <action id="Sage.ReviewSelectedSafeFixes" class="com.starnotesxj.sageide.highlight.SageSelectedFilesSafeFixPreviewAction" text="Review and Apply Sage Safe Fixes in Selected Files" description="Preview and confirm safe Sage fixes across selected .sage files">
       <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
     </action>
   </actions>

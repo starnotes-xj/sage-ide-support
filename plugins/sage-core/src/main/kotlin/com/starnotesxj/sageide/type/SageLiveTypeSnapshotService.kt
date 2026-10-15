@@ -6,6 +6,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiErrorElement
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyAssignmentStatement
 import com.jetbrains.python.psi.PyCallExpression
@@ -60,6 +61,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     private val scheduled = ConcurrentHashMap<SnapshotKey, ScheduledFuture<*>>()
     private val active = ConcurrentHashMap<SnapshotKey, SageRuntimeProbeHandle<*>>()
     private val savedDocumentDigests = ConcurrentHashMap<String, SavedDocumentDigest>()
+    private val pendingDigests: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val workerLock = Any()
     private var workerRuntime: ConfiguredRuntime? = null
     private var worker: SageLiveTypeWorker? = null
@@ -67,6 +69,12 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     private val debounceExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "sage-live-type-snapshot").apply { isDaemon = true }
     }
+    // Digest warming is blocking VFS I/O (WSL files are slow to read whole);
+    // it must never delay the debounce thread that schedules probes.
+    private val digestExecutor: java.util.concurrent.ExecutorService =
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "sage-live-type-digest").apply { isDaemon = true }
+        }
 
     fun typeForReference(reference: PyReferenceExpression): PyType? {
         if (reference.qualifier != null || PsiTreeUtil.getParentOfType(reference, PyFunction::class.java) != null) return null
@@ -106,7 +114,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
 
     fun typeForTarget(target: PyTargetExpression): PyType? {
         if (target.qualifier != null || PsiTreeUtil.getParentOfType(target, PyFunction::class.java) != null) return null
-        val name = target.name ?: return null
+        val name = (target as PsiNamedElement).name ?: return null
         observedRunType(target, name)?.let { return it }
         // Assignment targets are queried on every daemon pass.  Do not build a
         // full snapshot request (which hashes and walks the entire file) here;
@@ -196,20 +204,6 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         callSnapshotRequest(call)?.let(::schedule)
     }
 
-    private fun typeFor(
-        anchor: com.intellij.psi.PsiElement,
-        name: String,
-        includeContainingStatement: Boolean,
-        scheduleIfAbsent: Boolean,
-    ): PyType? {
-        if (!isSafeIdentifier(name) || !SageRunSettings.getInstance().getState().liveTypeProbingEnabled) return null
-        val request = snapshotRequest(anchor, name, includeContainingStatement) ?: return null
-        val observed = evidence.completed(request.key)?.get(name)
-        if (observed != null) return SageObservedTypeResolver.resolve(project, observed)
-        if (scheduleIfAbsent) schedule(request)
-        return null
-    }
-
     internal fun acceptsMemberProbe(reference: PyReferenceExpression): Boolean {
         if (PsiTreeUtil.getParentOfType(reference, PyFunction::class.java) != null) return false
         val memberReference = reference.parent as? PyReferenceExpression ?: return false
@@ -256,10 +250,11 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
 
     /**
      * A saved-file member/target query can run many times during one daemon
-     * pass.  Re-reading the entire WSL-backed file for SHA-256 on each query
-     * was needlessly expensive and showed up as edit latency even though the
-     * file had not changed.  The VFS stamp and length are sufficient to reuse
-     * the exact digest until the file is modified.
+     * pass.  Re-reading the entire WSL-backed file for SHA-256 synchronously
+     * on the first query showed up as edit latency; the digest is now warmed
+     * on a background thread and the lookup simply misses (fail-closed) until
+     * it lands.  The VFS stamp and length remain sufficient to reuse the
+     * exact digest until the file is modified.
      */
     private fun savedDocumentDigest(file: VirtualFile): String? {
         val key = file.url
@@ -268,9 +263,31 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         savedDocumentDigests[key]?.takeIf {
             it.modificationStamp == stamp && it.length == length
         }?.let { return it.digest }
-        val digest = runCatching { sha256(file.contentsToByteArray()) }.getOrNull() ?: return null
-        savedDocumentDigests[key] = SavedDocumentDigest(stamp, length, digest)
-        return digest
+        if (!file.isValid) return null
+        if (com.intellij.openapi.application.ApplicationManager.getApplication().isUnitTestMode) {
+            // Tests assert deterministic evidence lookups on their first query;
+            // the IDE path below deliberately returns null until the warmed
+            // digest lands instead of reading the whole file synchronously.
+            val digest = runCatching { sha256(file.contentsToByteArray()) }.getOrNull() ?: return null
+            savedDocumentDigests[key] = SavedDocumentDigest(stamp, length, digest)
+            return digest
+        }
+        if (pendingDigests.add(key)) {
+            digestExecutor.execute {
+                try {
+                    val digest = runCatching { sha256(file.contentsToByteArray()) }.getOrNull()
+                    // A stamp change during the read means the bytes and the
+                    // stamp no longer describe the same content; drop the
+                    // result and let the next query re-warm it.
+                    if (digest != null && file.isValid && file.modificationStamp == stamp && file.length == length) {
+                        savedDocumentDigests[key] = SavedDocumentDigest(stamp, length, digest)
+                    }
+                } finally {
+                    pendingDigests.remove(key)
+                }
+            }
+        }
+        return null
     }
 
     /**
@@ -288,35 +305,6 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         val anchorOffset = anchor.textRange.startOffset
         if (anchorOffset < savedSource.length || anchorOffset > currentText.length) return false
         return currentText.substring(savedSource.length, anchorOffset).all(Char::isWhitespace)
-    }
-
-    private fun snapshotRequest(
-        anchor: com.intellij.psi.PsiElement,
-        requestedName: String,
-        includeContainingStatement: Boolean,
-    ): SnapshotRequest? {
-        val file = anchor.containingFile as? PyFile ?: return null
-        if (!SageFileUtils.isSageFile(file) || SageStubIndex.isSageStubFile(file)) return null
-        val virtualFile = file.virtualFile ?: return null
-        val statement = PsiTreeUtil.getParentOfType(anchor, PyStatement::class.java) ?: return null
-        val cutoff = if (includeContainingStatement) statement.textRange.endOffset else statement.textRange.startOffset
-        if (cutoff <= 0) return null
-        if (PsiTreeUtil.collectElementsOfType(file, PsiErrorElement::class.java)
-                .any { it.textRange.startOffset < cutoff }) return null
-        val fullText = file.text
-        if (cutoff > fullText.length) return null
-        val source = fullText.substring(0, cutoff)
-        if (source.toByteArray(StandardCharsets.UTF_8).size > MAX_SOURCE_BYTES) return null
-        val requestedNames = collectSnapshotNames(file, cutoff) + requestedName
-        val runtime = configuredRuntime() ?: return null
-        return SnapshotRequest(
-            SnapshotKey(virtualFile.url, sha256(source), runtime.key),
-            source,
-            requestedNames,
-            runtime,
-            virtualFile.name,
-            virtualFile,
-        )
     }
 
     private fun callSnapshotRequest(call: PyCallExpression): SnapshotRequest? {
@@ -363,7 +351,7 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
                 val assignment = PsiTreeUtil.getParentOfType(target, PyAssignmentStatement::class.java)
                 assignment != null && assignment.textRange.endOffset <= cutoff
             }
-            .mapNotNull(PyTargetExpression::getName)
+            .mapNotNull { (it as PsiNamedElement).name }
             .filter(::isSafeIdentifier)
             .toSet()
 
@@ -469,7 +457,9 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         evidence.clear()
         runEvidence.clear()
         savedDocumentDigests.clear()
+        pendingDigests.clear()
         debounceExecutor.shutdownNow()
+        digestExecutor.shutdownNow()
     }
 
     private data class ConfiguredRuntime(val target: RuntimeTarget, val executable: String) {

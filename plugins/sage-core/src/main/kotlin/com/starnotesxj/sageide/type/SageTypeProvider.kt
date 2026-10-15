@@ -4,38 +4,17 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.RecursionManager
 import com.intellij.openapi.util.Ref
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.PyElementTypes
-import com.jetbrains.python.psi.PyAssignmentStatement
-import com.jetbrains.python.psi.PyBinaryExpression
-import com.jetbrains.python.psi.PyCallExpression
-import com.jetbrains.python.psi.PyCallSiteExpression
-import com.jetbrains.python.psi.PyCallSiteOwner
-import com.jetbrains.python.psi.PyCallable
-import com.jetbrains.python.psi.PyFunction
-import com.jetbrains.python.psi.PyLambdaExpression
-import com.jetbrains.python.psi.PyNamedParameter
-import com.jetbrains.python.psi.PyStatement
-import com.jetbrains.python.psi.PyNumericLiteralExpression
-import com.jetbrains.python.psi.PyReferenceExpression
-import com.jetbrains.python.psi.PyTargetExpression
-import com.jetbrains.python.psi.impl.PyBuiltinCache
-import com.jetbrains.python.psi.types.PyCallableType
-import com.jetbrains.python.psi.types.PyClassType
-import com.jetbrains.python.psi.types.PyClassTypeImpl
-import com.jetbrains.python.psi.types.PyTupleType
-import com.jetbrains.python.psi.types.PyType
-import com.jetbrains.python.psi.types.PyTypeProviderBase
-import com.jetbrains.python.psi.types.PyUnionType
-import com.jetbrains.python.psi.types.TypeEvalContext
-import com.starnotesxj.sageide.sugar.SageFileUtils
+import com.jetbrains.python.psi.*
+import com.jetbrains.python.psi.types.*
 import com.starnotesxj.sageide.completion.SageApiIndexService
 import com.starnotesxj.sageide.completion.SageApiIntelligenceFacade
+import com.starnotesxj.sageide.sugar.SageFileUtils
 import com.starnotesxj.sageide.sugar.SageStubIndex
 import com.starnotesxj.sageide.sugar.SageSugarAnalyzer
 import com.starnotesxj.sageide.sugar.SageSugarInfo
-import com.starnotesxj.sageide.type.SageTypeLowering
-import com.starnotesxj.sagemath.sageapi.SageApiEntry
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
 import com.starnotesxj.sagemath.sageapi.SageApiSignature
 import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
@@ -114,7 +93,7 @@ class SageTypeProvider : PyTypeProviderBase() {
     }
 
     override fun getReferenceExpressionType(
-        referenceExpression: com.jetbrains.python.psi.PyReferenceExpression,
+        referenceExpression: PyReferenceExpression,
         context: TypeEvalContext,
     ): PyType? {
         val file = referenceExpression.containingFile ?: return null
@@ -128,7 +107,7 @@ class SageTypeProvider : PyTypeProviderBase() {
         val liveTypes = SageLiveTypeSnapshotService.getInstance(referenceExpression.project)
         liveTypes.typeForReference(referenceExpression)
             ?.let { return it }
-        if (referenceExpression.isQualified) return null
+        if (referenceExpression.qualifier != null) return null
 
         // Unannotated parameters in a .sage function are ordinary reference
         // expressions when the editor asks for the type of a receiver.  Do not
@@ -199,9 +178,9 @@ class SageTypeProvider : PyTypeProviderBase() {
     ): PyType? {
         val file = function.containingFile
         if (!SageFileUtils.isSageFile(file) || SageStubIndex.isSageStubFile(file)) return null
-        if (param.annotationValue != null || param.typeCommentAnnotation != null) return null
+        if (param.annotation != null || param.typeCommentAnnotation != null) return null
         if (param.isPositionalContainer || param.isKeywordContainer) return null
-        val parameterName = param.name?.takeIf { it.isNotBlank() } ?: return null
+        val parameterName = (param as PsiNamedElement).name?.takeIf { it.isNotBlank() } ?: return null
         val body = function.statementList
         if (PsiTreeUtil.collectElementsOfType(body, PyLambdaExpression::class.java).isNotEmpty()) return null
 
@@ -216,7 +195,8 @@ class SageTypeProvider : PyTypeProviderBase() {
                 if (receiver.qualifier != null || receiver.referencedName != parameterName) return@mapNotNull null
                 val resolvedReceiver = receiver.reference.resolve()
                 if (resolvedReceiver != null &&
-                    (resolvedReceiver !is PyNamedParameter || resolvedReceiver.name != parameterName)
+                    (resolvedReceiver !is PyNamedParameter ||
+                        (resolvedReceiver as PsiNamedElement).name != parameterName)
                 ) return@mapNotNull null
                 if (resolvedReceiver == null && function.parameterList.findParameterByName(parameterName) !== param) {
                     return@mapNotNull null
@@ -237,19 +217,22 @@ class SageTypeProvider : PyTypeProviderBase() {
         // Only direct member calls are witnesses; assignment propagation is handled separately.
 
         val query = SageApiIndexService.getInstance().query() ?: return null
+        // The inverted member index answers "which classes can serve this
+        // member name" directly; iterating every CLASS entry here was
+        // O(indexed classes) per unannotated parameter on every daemon pass.
         val ownerCandidates = witnesses.map { (call, memberName) ->
-            val viableOwners = query.index.entries
+            val viableOwners = query.classesWithMember(memberName)
                 .asSequence()
-                .filter { it.kind == SageApiSymbolKind.CLASS }
-                .map { it.qualifiedName }
-                .distinct()
                 .filter { owner ->
                     val classEntry = query.findAll(owner, SageApiSymbolKind.CLASS).singleOrNull() ?: return@filter false
-                    val methods = query.members(classEntry.qualifiedName, memberName)
-                    methods.any { entry ->
-                        entry.kind == SageApiSymbolKind.METHOD &&
-                            entry.signatures.any { signature -> hasSafeReturnContract(signature, call, context, query) }
-                    } && classEntry.qualifiedName == owner && ownerIsActiveSageClass(param.project, owner)
+                    // The active-stub provenance check is a positively cached
+                    // lookup; running it before the signature contract check
+                    // rejects unrelated classes at the lowest cost.
+                    ownerIsActiveSageClass(param.project, owner) &&
+                        query.members(classEntry.qualifiedName, memberName).any { entry ->
+                            entry.kind == SageApiSymbolKind.METHOD &&
+                                entry.signatures.any { signature -> hasSafeReturnContract(signature, call, context, query) }
+                        }
                 }
                 .toSet()
             viableOwners
@@ -361,7 +344,7 @@ class SageTypeProvider : PyTypeProviderBase() {
         function: PyFunction,
         witnesses: List<PyCallExpression>,
     ): Boolean {
-        val name = param.name ?: return true
+        val name = (param as PsiNamedElement).name ?: return true
         val firstWitness = witnesses.minOf { it.textRange.startOffset }
         return PsiTreeUtil.collectElementsOfType(function.statementList, PyTargetExpression::class.java)
             .asSequence()
@@ -369,7 +352,8 @@ class SageTypeProvider : PyTypeProviderBase() {
                 PsiTreeUtil.getParentOfType(target, PyFunction::class.java, PyLambdaExpression::class.java) === function
             }
             .any { target ->
-                target.name == name && target.qualifier == null && target.textRange.startOffset < firstWitness
+                (target as PsiNamedElement).name == name && target.qualifier == null &&
+                    target.textRange.startOffset < firstWitness
             }
     }
 
@@ -397,19 +381,6 @@ class SageTypeProvider : PyTypeProviderBase() {
         return Ref.create(lowered)
     }
 
-    /**
-     * Python's type engine asks the owner overload for operators such as
-     * ``x^3``/``x + y``.  Those PSI nodes implement both call-site interfaces,
-     * but dispatching through only the expression overload lets the native
-     * ``Any``/``NotImplemented`` union win before the Sage contract is seen.
-     * Route the owner entry point through the same concrete indexed contract.
-     */
-    override fun getCallType(
-        function: PyFunction,
-        callSite: PyCallSiteOwner,
-        context: TypeEvalContext,
-    ): Ref<PyType>? = (callSite as? PyCallSiteExpression)?.let { getCallType(function, it, context) }
-
     private fun receiverSpecificMemberReturn(
         callSite: PyCallSiteExpression,
         context: TypeEvalContext,
@@ -418,7 +389,7 @@ class SageTypeProvider : PyTypeProviderBase() {
     ): PyType? {
         val call = callSite as? PyCallExpression ?: return null
         val callee = call.callee as? PyReferenceExpression ?: return null
-        val receiver = callee.qualifier ?: callee.takeIf { !it.isQualified } ?: return null
+        val receiver = callee.qualifier ?: callee.takeIf { it.qualifier == null } ?: return null
         val receiverType = context.getType(receiver) as? PyClassType
             ?: (receiver.reference?.resolve() as? PyTargetExpression)?.let(context::getType) as? PyClassType
             ?: return null
@@ -451,9 +422,10 @@ class SageTypeProvider : PyTypeProviderBase() {
             ?.removeSuffix(".pyi")
             ?.replace('/', '.')
             ?.removeSuffix(".__init__")
-        val name = function.name
+        val name = (function as PsiNamedElement).name
         if (moduleName?.startsWith("sage.") == true && !name.isNullOrBlank()) {
-            function.containingClass?.name?.takeIf { it.isNotBlank() }?.let { owner ->
+            function.containingClass?.let { (it as PsiNamedElement).name }
+                ?.takeIf { it.isNotBlank() }?.let { owner ->
                 return "$moduleName.$owner.$name"
             }
             return "$moduleName.$name"
@@ -650,7 +622,7 @@ class SageTypeProvider : PyTypeProviderBase() {
                             } else null
                         }
                         if (branchReturns.size == owners.size) {
-                            PyUnionType.union(branchReturns)?.let { return it }
+                            SageTypeLowering.unionTypes(branchReturns)?.let { return it }
                         }
                     }
                 }
@@ -681,7 +653,7 @@ class SageTypeProvider : PyTypeProviderBase() {
     /** Preserve every concrete class in a finite return union for call dispatch. */
     private fun sageClassOwners(type: PyType?): List<String> = when (type) {
         is PyClassType -> listOfNotNull(sageClassOwner(type))
-        is PyUnionType -> type.members.orEmpty().flatMap(::sageClassOwners).distinct()
+        is PyUnionType -> type.members.flatMap(::sageClassOwners).distinct()
         else -> emptyList()
     }
 
@@ -736,7 +708,7 @@ class SageTypeProvider : PyTypeProviderBase() {
                 ?: return null
             else -> return null
         }
-        if (parameter.annotationValue != null || parameter.typeCommentAnnotation != null) return null
+        if (parameter.annotation != null || parameter.typeCommentAnnotation != null) return null
         if (hasUnsafeParameterBinding(parameter, function, listOf(call))) return null
         val query = SageApiIndexService.getInstance().query() ?: return null
         // Resolve the parameter from the same indexed witness proof first.
@@ -788,14 +760,14 @@ class SageTypeProvider : PyTypeProviderBase() {
                             ?.removeSuffix(".pyi")
                             ?.replace('/', '.')
                             ?.removeSuffix(".__init__")
-                        val name = resolved.name
+                        val name = (resolved as PsiNamedElement).name
                         if (moduleName?.startsWith("sage.") == true && !name.isNullOrBlank()) "$moduleName.$name" else null
                     }
             }
             .distinct()
         val implicitQualifiedNames = if (sageFile && resolvedNames.isEmpty()) {
-            val rootReference = call.callee as? com.jetbrains.python.psi.PyReferenceExpression
-            if (rootReference != null && !rootReference.isQualified && rootReference.reference.resolve() == null) {
+            val rootReference = call.callee as? PyReferenceExpression
+            if (rootReference != null && rootReference.qualifier == null && rootReference.reference.resolve() == null) {
                 rootReference.referencedName?.let { name ->
                     query.namespaceEntry("sage.all", name)?.let { listOf(it.qualifiedName) }.orEmpty()
                 }.orEmpty()
@@ -865,7 +837,7 @@ class SageTypeProvider : PyTypeProviderBase() {
         query: SageApiIndexQuery,
     ): List<String> {
         val callee = call.callee as? PyReferenceExpression ?: return emptyList()
-        val receiver = callee.qualifier ?: callee.takeIf { !it.isQualified } ?: return emptyList()
+        val receiver = callee.qualifier ?: callee.takeIf { it.qualifier == null } ?: return emptyList()
         val receiverType = context.getType(receiver) as? PyClassType
             ?: (receiver.reference?.resolve() as? PyTargetExpression)?.let(context::getType) as? PyClassType
             ?: return emptyList()
@@ -956,13 +928,13 @@ class SageTypeProvider : PyTypeProviderBase() {
         if (file == null) return null
         // `getAnnotationValue()` returns the annotation TEXT String on this
         // platform (the stub's annotation string), NOT a PyExpression.
-        val aliasName = target.annotationValue
+        val aliasName = target.annotation?.value?.text
         if (aliasName == null || !aliasName.startsWith("_Type_")) return null
         for (fromImport in file.fromImports) {
             for (importElement in fromImport.importElements) {
-                if (importElement.visibleName != aliasName) continue
+                if (SageStubIndex.visibleImportName(importElement) != aliasName) continue
                 val moduleQName = fromImport.importSource?.asQualifiedName()?.toString()
-                val importedName = importElement.importedQName?.lastComponent ?: aliasName
+                val importedName = SageStubIndex.importedName(importElement) ?: aliasName
                 val cls = SageStubIndex.findAliasClass(target.project, moduleQName, importedName)
                 if (cls == null) continue
                 if (!cls.isValid) continue

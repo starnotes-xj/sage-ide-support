@@ -27,6 +27,23 @@ import com.jetbrains.python.psi.PyStringLiteralExpression
 @Service(Service.Level.PROJECT)
 class SageInlinePredictionService(private val project: Project) {
     private val candidatesCache = SageInlineLruCache<CandidateKey, List<SageInlineCandidate>>(MAX_CACHE_ENTRIES)
+    private val nativeWarmupScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Warms the optional native scorer on the first real Sage member request
+     * instead of at project startup. Every project open used to pay the
+     * process spawn five seconds in, even for sessions that never type a
+     * Sage member expression; the semantic in-process model answers until
+     * the native scorer is ready, so nothing else changes.
+     */
+    private fun scheduleNativeWarmupOnce() {
+        if (project.isDisposed || !nativeWarmupScheduled.compareAndSet(false, true)) return
+        com.intellij.util.concurrency.AppExecutorUtil.getAppExecutorService().execute {
+            if (!project.isDisposed) {
+                SageInlineNativeRuntime.getInstance(project).warmUp()
+            }
+        }
+    }
 
     /**
      * Captures a small, immutable scoring request from PSI and the Sage index.
@@ -51,6 +68,7 @@ class SageInlinePredictionService(private val project: Project) {
         val query = SageApiIndexService.getInstance().query() ?: return null
         val owners = SageIndexedTypeResolver.ownersForExpression(qualifier, query)
         if (owners.isEmpty()) return null
+        scheduleNativeWarmupOnce()
 
         val key = CandidateKey(owners.sorted().joinToString("\u001f"), prefix)
         val candidates = candidatesCache.getOrPut(key) {
@@ -98,7 +116,7 @@ class SageInlinePredictionService(private val project: Project) {
         sequenceOf(
             PsiTreeUtil.getParentOfType(probe, PyReferenceExpression::class.java),
             PsiTreeUtil.getParentOfType(PsiTreeUtil.prevVisibleLeaf(probe), PyReferenceExpression::class.java),
-        ).filterNotNull().firstOrNull { it.isQualified }
+        ).filterNotNull().firstOrNull { it.qualifier != null }
 
     /** Handles both a token *inside* a non-code PSI node and the node itself. */
     private fun isInsideStringOrComment(element: PsiElement): Boolean =

@@ -1064,6 +1064,65 @@ def separated(value: Literal["a,b"], /, *, option: int) -> None: ...
         assertEquals(null, SageApiDocumentationSidecar.find(sidecar.byteInputStream(), SageApiEntry("sage.rings.Integer.missing", SageApiSymbolKind.METHOD)))
     }
 
+    @Test
+    fun classesWithMemberReturnsDeclarerAndDescendantsOnly() {
+        val result = SageApiNormalizer().normalize(
+            SageApiVersion(sage = "10.6", python = "3.11"),
+            listOf(
+                SageRawSymbol(
+                    qualifiedName = "sage.rings.ring.RingElement",
+                    kind = SageApiSymbolKind.CLASS,
+                    source = SageApiSourceRef(SageApiSourceKind.STUB, "fixtures/ring.pyi"),
+                ),
+                SageRawSymbol(
+                    qualifiedName = "sage.rings.integer.Integer",
+                    kind = SageApiSymbolKind.CLASS,
+                    source = SageApiSourceRef(SageApiSourceKind.STUB, "fixtures/integer.pyi"),
+                    parents = listOf("sage.rings.ring.RingElement"),
+                ),
+                SageRawSymbol(
+                    qualifiedName = "sage.rings.integer.Integer.nth_root",
+                    kind = SageApiSymbolKind.METHOD,
+                    source = SageApiSourceRef(SageApiSourceKind.STUB, "fixtures/integer.pyi"),
+                    signatures = listOf(
+                        SageApiSignature(
+                            parameters = listOf(SageApiParameter("n", SageTypeRef.known("int"))),
+                            returnType = SageTypeRef.known("Integer"),
+                        ),
+                    ),
+                ),
+                SageRawSymbol(
+                    qualifiedName = "sage.rings.integer.Integer_with_category",
+                    kind = SageApiSymbolKind.CLASS,
+                    source = SageApiSourceRef(SageApiSourceKind.STUB, "fixtures/integer.pyi"),
+                    parents = listOf("sage.rings.integer.Integer"),
+                ),
+                SageRawSymbol(
+                    qualifiedName = "sage.rings.rational.Rational",
+                    kind = SageApiSymbolKind.CLASS,
+                    source = SageApiSourceRef(SageApiSourceKind.STUB, "fixtures/rational.pyi"),
+                ),
+            ),
+        )
+        assertTrue(result.diagnostics.isEmpty(), result.diagnostics.joinToString())
+        val query = SageApiIndexQuery(result.index)
+
+        // The declarer, its subclass, and the indexed ancestor all serve the
+        // member through members(owner, name); the unrelated class does not.
+        val owners = query.classesWithMember("nth_root")
+        assertTrue("sage.rings.integer.Integer" in owners, owners.toString())
+        assertTrue("sage.rings.integer.Integer_with_category" in owners, owners.toString())
+        assertTrue("sage.rings.ring.RingElement" in owners, owners.toString())
+        assertFalse("sage.rings.rational.Rational" in owners, owners.toString())
+
+        assertEquals(emptySet(), query.classesWithMember("missing_member"))
+        // Every returned owner must be a class entry whose linearized member
+        // list actually contains the name (exact-check parity with callers).
+        for (owner in owners) {
+            assertTrue(query.members(owner, "nth_root").isNotEmpty(), owner)
+        }
+    }
+
     private companion object {
         val FIXTURE = """
             from sage.rings.ring import RingElement as RingElement

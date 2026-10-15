@@ -22,6 +22,15 @@ class SageApiIndexQuery(val index: SageApiIndex) {
     // typed prefix. The index is immutable, so cache the sorted result instead
     // of rebuilding the C3 walk and duplicate-resolution map on every keystroke.
     private val membersCache = BoundedLruCache<String, List<SageApiEntry>>(MAX_CACHED_MEMBERS)
+    // Inverted member-name index: parameter inference used to iterate every
+    // CLASS entry and ask members(owner, name) one by one — O(classes) per
+    // unannotated parameter on every type-evaluation pass. These maps answer
+    // "which classes can serve this member name" from precomputed edges.
+    private val classFqns: Set<String>
+    private val memberDeclarersByShortName: Map<String, List<String>>
+    private val childrenByParent: Map<String, List<String>>
+    private val classesWithMemberCache = BoundedLruCache<String, Set<String>>(MAX_CACHED_TYPE_GRAPHS)
+    private val descendantClassesCache = BoundedLruCache<String, Set<String>>(MAX_CACHED_TYPE_GRAPHS)
 
     init {
         val byQualifiedName = linkedMapOf<String, MutableList<SageApiEntry>>()
@@ -74,6 +83,33 @@ class SageApiIndexQuery(val index: SageApiIndex) {
         classesByShortName = freeze(classShortName)
         functionsByLookup = freeze(functionLookup)
         functionsByShortName = freeze(functionShortName)
+
+        // Derived after the lookup maps above exist: resolveParentClassNames
+        // reads classesByLookup. The declarer map comes from the owner map so
+        // module-owned functions/classes are never mistaken for members.
+        classFqns = index.entries.asSequence()
+            .filter { it.kind == SageApiSymbolKind.CLASS }
+            .map { it.qualifiedName }
+            .toSet()
+        val declarers = linkedMapOf<String, MutableList<String>>()
+        for ((owner, owned) in entriesByOwner) {
+            for (entry in owned) {
+                if (entry.kind in MEMBER_KINDS) {
+                    declarers.getOrPut(entry.qualifiedName.substringAfterLast('.')) { mutableListOf() }.add(owner)
+                }
+            }
+        }
+        memberDeclarersByShortName = declarers.mapValues { (_, owners) -> owners.distinct() }
+        val children = linkedMapOf<String, MutableList<String>>()
+        for (entry in index.entries) {
+            if (entry.kind != SageApiSymbolKind.CLASS) continue
+            for (parent in entry.parents) {
+                for (resolved in resolveParentClassNames(entry.qualifiedName, parent)) {
+                    children.getOrPut(resolved) { mutableListOf() }.add(entry.qualifiedName)
+                }
+            }
+        }
+        childrenByParent = children.mapValues { (_, names) -> names.distinct() }
     }
 
     fun find(qualifiedName: String, kind: SageApiSymbolKind? = null): SageApiEntry? =
@@ -201,6 +237,36 @@ class SageApiIndexQuery(val index: SageApiIndex) {
         members(ownerQualifiedName).filter { it.qualifiedName.substringAfterLast('.') == memberName }
 
     /**
+     * Class entries whose linearized member set (own or inherited) contains
+     * [memberName].  This is the inverted form of iterating every class and
+     * asking [members] — the exact candidate superset parameter inference
+     * needs, so the O(all classes) scan per unannotated parameter disappears.
+     * The result may over-approximate in degenerate parent graphs (C3 merge
+     * failures); callers still apply their exact per-owner member checks.
+     */
+    fun classesWithMember(memberName: String): Set<String> {
+        val declarers = memberDeclarersByShortName[memberName].orEmpty()
+        if (declarers.isEmpty()) return emptySet()
+        return classesWithMemberCache.getOrPut(memberName) {
+            declarers.flatMapTo(linkedSetOf()) { descendantClasses(it) }
+                .filterTo(linkedSetOf()) { it in classFqns }
+        }
+    }
+
+    /** [name] itself plus every indexed class whose MRO reaches it through resolved parent edges. */
+    private fun descendantClasses(name: String): Set<String> = descendantClassesCache.getOrPut(name) {
+        val seen = linkedSetOf(name)
+        val pending = ArrayDeque<String>()
+        pending.add(name)
+        while (pending.isNotEmpty()) {
+            for (child in childrenByParent[pending.removeFirst()].orEmpty()) {
+                if (seen.add(child)) pending.add(child)
+            }
+        }
+        seen
+    }
+
+    /**
      * Return references for a callable name, alias, or unambiguous method.
      * The result preserves UNKNOWN/DYNAMIC states; callers must use
      * [uniqueKnownReturnType] before assignment propagation.
@@ -317,8 +383,6 @@ class SageApiIndexQuery(val index: SageApiIndex) {
             }
             ranks
         }
-
-    fun isKnownClassName(name: String): Boolean = classEntries(name).isNotEmpty()
 
     private fun functionEntries(name: String): List<SageApiEntry> {
         val direct = functionsByLookup[name].orEmpty()
