@@ -320,9 +320,15 @@ class SageApiIndexService(
         private const val BUNDLED_INDEX_RESOURCE = "sage-api-index.json"
         private val SHA256 = Regex("[0-9a-f]{64}")
         /** Hard cap protects IDE startup from accidental multi-hundred-MB inputs. */
-        const val MAX_EXTERNAL_INDEX_BYTES: Long = 256L * 1024L * 1024L
-        /** Entry cap leaves headroom for future index growth without OOM risk. */
-        const val MAX_INDEX_ENTRIES: Int = 200_000
+        const val MAX_EXTERNAL_INDEX_BYTES: Long = 288L * 1024L * 1024L
+        /**
+         * Entry cap leaves headroom for future index growth without OOM risk.
+         * Measured on the sage-pycharm-stubgen 0.9.10 corpus (Sage 10.9,
+         * --include-py): 174,827 entries / ~165 MB compact JSON (~0.95 KB per
+         * entry, 77% of payload is METHOD entries).  The 250k entry cap pairs
+         * with the 288 MB byte cap at that density.
+         */
+        const val MAX_INDEX_ENTRIES: Int = 250_000
         private val LOG = Logger.getInstance(SageApiIndexService::class.java)
 
         fun getInstance(): SageApiIndexService =

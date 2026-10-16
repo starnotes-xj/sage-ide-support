@@ -2226,6 +2226,15 @@ def local(T):
             "reflected 5 * P should keep the Sage point type, got: $type",
             rendered.contains("EllipticCurvePoint_field") && !rendered.contains("__mul__"),
         )
+        // Hover (Ctrl+Q on the variable) resolves the TARGET's own type — a
+        // different path from the reference resolution completion uses.
+        val qTarget = PsiTreeUtil.collectElementsOfType(myFixture.file, PyTargetExpression::class.java)
+            .first { it.name == "Q" }
+        val targetType = context.getType(qTarget)
+        assertTrue(
+            "hover target type should keep the Sage point type, got: $targetType",
+            targetType?.toString().orEmpty().contains("EllipticCurvePoint_field"),
+        )
     }
 
     fun testDictionaryWriteProofTypifiesSubscriptReadsAndUnpackedTargets() {
