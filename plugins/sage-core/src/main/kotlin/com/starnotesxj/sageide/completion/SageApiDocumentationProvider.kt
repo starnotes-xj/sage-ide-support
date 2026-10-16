@@ -22,6 +22,9 @@ import com.jetbrains.python.psi.PyParameter
 import com.jetbrains.python.psi.PyQualifiedNameOwner
 import com.jetbrains.python.psi.PyReferenceExpression
 import com.jetbrains.python.psi.StringLiteralExpression
+import com.jetbrains.python.psi.PyTargetExpression
+import com.jetbrains.python.psi.types.PyType
+import com.jetbrains.python.psi.types.PyUnionType
 import com.jetbrains.python.psi.types.PyClassType
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.starnotesxj.sagemath.sageapi.SageApiEntry
@@ -46,9 +49,88 @@ class SageApiDocumentationProvider : DocumentationProvider {
         findEntry(element, originalElement)?.let(::renderSignatureHtml)
             ?: findNativeQuickNavigateInfo(element, originalElement)
 
-    override fun generateDoc(element: PsiElement, originalElement: PsiElement?): String? =
-        findEntry(element, originalElement)?.let { renderDocumentation(this, it, element.project) }
+    override fun generateDoc(element: PsiElement, originalElement: PsiElement?): String? {
+        val typeSection = variableInferredTypeSection(element, originalElement)
+        val body = findEntry(element, originalElement)?.let { renderDocumentation(this, it, element.project) }
             ?: renderNativeDocumentation(element, originalElement)
+        return when {
+            typeSection == null -> body
+            body == null -> typeSection
+            else -> "$typeSection\n$body"
+        }
+    }
+
+    /**
+     * Ctrl+Q on an assignment target normally documents the ASSIGNED call and
+     * drops the variable's inferred type line — the hover tooltip is the only
+     * stock surface that renders it.  For Sage variables the inferred type is
+     * the point of the feature, so splice it in front of whatever the assigned
+     * expression produces.
+     */
+    private fun variableInferredTypeSection(element: PsiElement, originalElement: PsiElement?): String? {
+        val target = documentationTarget(element, originalElement) ?: return null
+        val contextFile = runCatching { target.containingFile }.getOrNull() ?: return null
+        if (!SageFileUtils.isSageFile(contextFile)) return null
+        val context = runCatching {
+            TypeEvalContext.userInitiated(target.project, contextFile)
+        }.getOrNull() ?: return null
+        val type = runCatching { context.getType(target) }.getOrNull() ?: return null
+        val rendered = renderTypePresentation(type) ?: return null
+        val name = target.name ?: return null
+        return buildString {
+            append(DocumentationMarkup.DEFINITION_START)
+            append("<pre>")
+            append(StringUtil.escapeXmlEntities(name))
+            append("</pre></div>")
+            append(DocumentationMarkup.CONTENT_START)
+            append("推断类型: <code>")
+            append(StringUtil.escapeXmlEntities(rendered))
+            append("</code>")
+            append(DocumentationMarkup.CONTENT_END)
+        }
+    }
+
+    private fun documentationTarget(element: PsiElement, originalElement: PsiElement?): PyTargetExpression? {
+        for (candidate in sequenceOf(element, originalElement, element.parent, originalElement?.parent)) {
+            when (candidate) {
+                is PyTargetExpression -> return candidate
+                is PyReferenceExpression -> {
+                    if (candidate.qualifier == null) {
+                        val resolved = runCatching { candidate.reference?.resolve() }.getOrNull()
+                        if (resolved is PyTargetExpression) return resolved
+                    }
+                }
+                is PsiNamedElement -> {
+                    val parent = candidate.parent
+                    if (parent is PyTargetExpression && parent.nameIdentifier === candidate) return parent
+                }
+            }
+        }
+        return null
+    }
+
+    private fun renderTypePresentation(type: PyType?): String? {
+        when (type) {
+            is PyClassType -> return type.pyClass.name ?: type.pyClass.qualifiedName
+            is PyUnionType -> {
+                val rendered = type.members
+                    .mapNotNull { renderTypePresentation(it) }
+                    .distinct()
+                    .filterNot { it == "Any" || it.equals("unknown", ignoreCase = true) }
+                return when {
+                    rendered.isEmpty() -> "Any"
+                    else -> rendered.joinToString(" | ")
+                }
+            }
+        }
+        // PyUnsafeUnionType (PyCharm-side) does not extend PyUnionType in this
+        // SDK; its rendered form is ``X | Y`` after a diagnostic prefix.
+        val text = type.toString().substringAfterLast(": ", type.toString())
+        val parts = text.split(" | ")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != "Any" && !it.equals("unknown", ignoreCase = true) }
+        return if (parts.isEmpty()) text else parts.joinToString(" | ")
+    }
 
     /**
      * A rich offline result must not be decorated with Python's remote-SDK

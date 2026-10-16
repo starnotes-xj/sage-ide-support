@@ -21,6 +21,11 @@
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.8.29 — Quick Documentation (Ctrl+Q) on Sage assignment targets now
+        leads with the variable's inferred type (推断类型: …), which stock
+        PyCharm only renders in the hover tooltip. Pairs with 1.8.28's
+        reflected operator typing, so `Q = 5 * P` documents both the assigned
+        call and the point type.</li>
     <li>1.8.28 — Sage-coercion operator reflection: `5 * P` no longer falls
         through to Python's native `int.__mul__ -> int`. When the resolved
         binary operator belongs to int/float and the other operand carries a

@@ -41,6 +41,27 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
         assertTrue("<script>" !in signatureHtml, signatureHtml)
     }
 
+    fun testInferredTypeSectionPrependedForAssignmentTargets() {
+        myFixture.addFileToProject(
+            "sage/schemes/elliptic_curves/ell_point.pyi",
+            "class EllipticCurvePoint_field:\n" +
+                "    def __rmul__(self, n) -> EllipticCurvePoint_field: ...\n" +
+                "    def order(self) -> int: ...\n",
+        )
+        myFixture.configureByText(
+            "points.sage",
+            "P = EllipticCurvePoint_field()\n" +
+                "Q = 5 * P\n",
+        )
+        val provider = SageApiDocumentationProvider()
+        val qTarget = PsiTreeUtil.collectElementsOfType(myFixture.file, com.jetbrains.python.psi.PyTargetExpression::class.java)
+            .first { it.name == "Q" }
+        val doc = provider.generateDoc(qTarget, qTarget.nameIdentifier)
+
+        assertTrue("推断类型" in (doc ?: "null"), doc ?: "null")
+        assertTrue("EllipticCurvePoint_field" in (doc ?: "null"), doc ?: "null")
+    }
+
     fun testSageIndexedDocumentationWinsWithoutLocalPythonSdk() {
         val indexResource = javaClass.classLoader.getResourceAsStream("sage-api-index.json")!!
         SageApiIndexService.getInstance().install(
