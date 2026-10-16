@@ -11,6 +11,19 @@ permissions:
   contents: read
 
 jobs:
+  sage-api-index-tools:
+    # tools/sage-api-index 的 stdlib-only 单测(索引生成契约/导入器审计)。
+    # 不在 CI 里跑就会像 overload-merge 回归那样悄悄腐化。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run sage-api-index tool tests
+        working-directory: tools/sage-api-index
+        run: python -m unittest test_generate test_import_wsl_artifact -v
+
   core:
     runs-on: ubuntu-latest
     steps:

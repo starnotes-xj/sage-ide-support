@@ -154,27 +154,33 @@ class AstExtractor:
         qualified = f"{module}.{node.name}"
         result = [RawSymbol(qualified, "CLASS", source_at(source, node.lineno), parents=[annotation_text(base, imports) for base in node.bases if annotation_text(base, imports)], documentation=doc(node), confidence="HIGH")]
         roles = declaration_roles(node.body, imports)
-        declared_members = {
-            member.name: self.function_symbol(
-                member,
-                module,
-                node.name,
-                imports,
-                source,
-                "PROPERTY" if any(isinstance(item, ast.Name) and item.id == "property" for item in member.decorator_list) else "METHOD",
-                roles.get(id(member)),
-                type_parameters or {},
-            )
-            for member in node.body
-            if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
+        # Key symbols by STATEMENT IDENTITY, not by name: an overload group
+        # (``@overload def f`` + plain ``def f``) collapses under a name-keyed
+        # dict, replacing the overloads' precise returns with the (often
+        # unannotated) implementation's signature.
+        member_symbols: dict[int, RawSymbol] = {}
+        name_to_member_id: dict[str, int] = {}
         for member in node.body:
             if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                result.append(declared_members[member.name])
+                symbol = self.function_symbol(
+                    member,
+                    module,
+                    node.name,
+                    imports,
+                    source,
+                    "PROPERTY" if any(isinstance(item, ast.Name) and item.id == "property" for item in member.decorator_list) else "METHOD",
+                    roles.get(id(member)),
+                    type_parameters or {},
+                )
+                member_symbols[id(member)] = symbol
+                name_to_member_id[member.name] = id(member)
+        for member in node.body:
+            if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                result.append(member_symbols[id(member)])
             elif isinstance(member, ast.AnnAssign) and isinstance(member.target, ast.Name):
                 result.append(RawSymbol(f"{qualified}.{member.target.id}", "PROPERTY", source_at(source, member.lineno), value_type=type_ref(member.annotation, imports), documentation=doc(member), confidence="MEDIUM"))
             elif isinstance(member, ast.Assign) and isinstance(member.value, ast.Name):
-                target = declared_members.get(member.value.id)
+                target = member_symbols.get(name_to_member_id.get(member.value.id))
                 if target is None:
                     continue
                 for assigned in member.targets:
@@ -903,7 +909,9 @@ def build(args: argparse.Namespace) -> int:
     validate_index(index)
     validate_inventory(inventory)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # Compact form: the index ships into IDE sidecars behind a hard byte cap
+    # that protects startup; pretty-printing alone added ~39% over payload.
+    args.output.write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
     if args.inventory_output:
         args.inventory_output.parent.mkdir(parents=True, exist_ok=True)
         args.inventory_output.write_text(json.dumps(inventory, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
