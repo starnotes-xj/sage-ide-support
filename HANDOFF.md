@@ -1,74 +1,51 @@
-# SageMath CTF IDE 交接
+# SageMath CTF IDE — HANDOFF
 
-> 工作区：`G:\Projects\sage-math-ctf-ide`　更新：2026-09-22
->
-> 当前产物：SageMath Core `1.8.20` 本地安装包已构建；真实 PyCharm 人工 smoke、提交和远程发布尚未进行。
+> 更新：2026-10-16。1.8.29 已发布（反射算符 + Ctrl+Q 推断类型节）；运行前置条件：桩由 sage-pycharm-stubgen ≥0.9.12 `--install --runtime-audit` 生成并自动安装 sage-api/10.9 sidecar。
 
-## 1. 硬边界
+## 工作区与构建约束
 
-- 只修改本工作区与 `G:\sage-build\staging-build6`；不得修改 `G:\Projects\sage-ide-support`、`G:\Projects\intellij-community-sage-pr` 或官方 checkout `G:\Projects\intellij-community-sage-ide`。
-- 官方 checkout 必须保持基线 `b0001cd6c53979b384def7a1e3febe061e2ef687`；不得触碰其中的 `hashcat_sessions.db`、`jupyter/.gitignore`、`notebooks/.gitignore`。
-- 不覆盖、重置、提交或 stage 既有未提交改动；尤其禁止 `git add .`。当前工作树本来就有其他功能的未提交改动。
-- 具体返回类型必须由函数合同、调用参数、active Sage stub、源码或可重复运行证据证明。公共基类只用于成员查找；动态、条件或多实现不确定结果保持 `UNKNOWN`/`DYNAMIC`，禁止以 `Any` 或白名单猜测替代。
-- 使用 `D:\Java\jdk-25`；构建时把 `USERPROFILE`、`HOME`、`APPDATA`、`LOCALAPPDATA`、`TEMP`、`TMP` 指向 `G:\sage-build` 下 ASCII 路径。
+- 仓库：`G:\Projects\sage-math-ctf-ide`。工作树已有大量用户修改；保留无关改动和未跟踪文件（包括 `hashcat_sessions.db`），不要 reset/clean、不要 `git add .`，没有必要不提交。
+- 允许产品/staging 改动仅限本仓库与 `G:\sage-build\staging-build6`。不要修改 `G:\Projects\sage-ide-support`、`G:\Projects\intellij-community-sage-pr` 或官方 checkout `G:\Projects\intellij-community-sage-ide`。
+- 官方基线 SHA：`b0001cd6c53979b384def7a1e3febe061e2ef687`。若执行 FinalCheck，报告官方 checkout 中 `hashcat_sessions.db`、`jupyter/.gitignore`、`notebooks/.gitignore` 的实际状态。
+- 使用 `D:\Java\jdk-25`。`USERPROFILE`、`HOME`、`APPDATA`、`LOCALAPPDATA`、`TEMP`、`TMP` 与构建输出目录使用 `G:\sage-build` 下 ASCII 路径。
+- 不要在 `run_code` 中启动长时间嵌套后台任务；构建用前台 shell 并确认真实 exit code。新错误先简要写入本 HANDOFF 再重试。
 
-## 2. 代码入口
+## 架构边界与归档
 
-- `core/sage-api`：索引 schema、类型表达式、继承成员查询、签名与文档。
-- `plugins/sage-core`：`.sage` 方言、类型 provider/lowering、completion、Quick Documentation、运行入口、内联预测器。
-- `tools/sage-api-index`：stub/source/runtime 合同提取、审计、发布索引消毒与验证；`apply_method_aliases.py` 用于给历史完整索引补充源码证明的类内方法别名。
-- Sage 仍是 Python dialect：保留 Python PSI/语言能力，不要在没有完整迁移方案和回归的情况下改成完全独立语言。
+- `core/sage-api` 管索引模型/查询；`plugins/sage-core` 提供 Sage/Python dialect、类型、补全、文档、运行与调试；`tools/sage-api-index` 负责生成索引。
+- native Sage `.pyi` 是权威类型来源，外部索引只作补充；`UNKNOWN`、`DYNAMIC` 和歧义结果必须保守处理。不要把 Sage Core 插件描述成完整 IDE。
+- 逐次验证日志已归档到 `G:\sage-build\HANDOFF-20261005-history.md`；本文件仅保留当前状态与行动所需信息。
 
-## 3. 当前已验证能力
+## 当前目标
 
-- Sage 10.9 WSL 的完整索引已补为 `87,082` 条合同。`apply_method_aliases.py` 从同一 WSL stub 树发现 `838` 个 `alias = method`，安全加入 `743` 个；`94` 个歧义目标与 `1` 个冲突保持不变。
-- `EllipticCurve_finite_field.order = cardinality` 已按真实 stub、源码和运行时补入 `Integer` 合同。
-- PEP 673 的 `Self`、`typing.Self`、`typing_extensions.Self` 在签名作用域内统一为同一类型变量；Cython `ModuleElement._rmul_ -> Self` 可返回右侧的具体点类。
-- 普通 `Q.` 补全仅注册一次，并把 active Sage stub 已由 Python 成员管线提供的索引成员让给该管线；`is_zero`、`order` 不再以“可导航 stub 项 + 索引备用项”重复显示，缺少 stub 时仍走索引兜底。
-- `Ctrl+Shift+Space` 通过 Python 与 Sage 两条 SMART 兼容入口提供候选；BASIC 仅有 Python 入口，因此恢复当前 PyCharm 的智能补全不会重新产生普通补全重复项。
-- 对裸 `Q.` 保持索引兜底，即使 active stub 已安装；只有已经输入成员前缀时才把同名候选让给 Python stub 管线，因此显式 BASIC/SMART 不能再因不完整 PSI 而出现空列表。
-- 未运行时，以下代码的 `Q.` 已由完整索引的真实插件回归证明出现 `is_zero`、`order`：
+1. **Qodana Sage 审查与修复**：配置 `.qodana/sage/qodana.yaml`，CI 为 `.github/workflows/qodana-sage.yml`。已有检查覆盖 Sage XOR、有限域阶、CRT 参数、不可逆模逆元、奇异椭圆曲线。插件提供当前文件/选中文件的预览、确认和批量应用；自动批量修复目前只覆盖语义安全的 `SageXor`。Community 可报告问题但不提供 Qodana Quick-Fix；Ultimate 试用在隔离 fixture 上验证过 1 项 XOR 修复。勿对真实源码自动修复，除非范围已授权且有备份。
+2. **Sage 专属调试器**：复用 PyCharm 原生 Python debugger，经 Sage launcher 执行并保留 `.sage` 源文件/行号映射；WSL 需激活配置的 Conda 环境。launcher smoke 与 `SageDebugCommandLineStateTest`（16 项）通过；PyCharm 实际断点、单步和变量窗口尚未人工验收。
+3. **排队目标**：前两项完成后，再做 SageMath 专用代码智能框架。基于 Sage API 索引与 Python PSI，不替代 Python 插件/LSP。
 
-  ```python
-  bad_curve = EllipticCurve(GF(11), [1, 1])
-  curve_order = bad_curve.order()
-  R = ZZ(2)
-  Q = (curve_order // R) * bad_curve.random_point()
-  ```
+## 最近验证与下一步
 
-- 编辑热路径已避免每次输入扫描全文件、启动 WSL worker 或在 worker 回调重启 daemon；字符串/注释中不注入 Sage root 候选。此项仍需要人工 PyCharm 延迟 A/B 验收。
+- 2026-10-16 发布 **v1.8.29**（tag `v1.8.29`，GitHub Release 含 `sage-core-1.8.29.zip` 4,812,752 bytes，SHA-256 `A27DA320241A0CE0D0B68B5D0F28E1232F25151249462D70C613B9DE0773FB3B`）：反射算符推断（`5 * P` 经右操作数类 `__rmul__`/`_rmul__` 保持点类型，不再落入 `int.__mul__ -> int`）+ Ctrl+Q 对 Sage 赋值目标前置"推断类型"节。用户 GUI 验收通过（`Q.` 补全 xy/order/is_zero，P/Q 悬停与 Ctrl+Q 类型正确）。**运行前置**：桩需 sage-pycharm-stubgen ≥0.9.12 以 `--install --runtime-audit` 生成（自动构建并安装 `sage-api/10.9` sidecar 三件套到 PyCharm 配置目录；无 sidecar 时插件退回 45 条内置 fixture，新桩 curated 条目查不到）。注意 PyCharm 升级换配置目录后 sidecar 需重装。
+- 2026-10-16 **v1.8.28**（内部构建，未打 tag，内容并入 1.8.29）：反射算符分支首版 + 单测（引用路径与目标路径均断言点类型存活）。同日排障确认三层失配：0.9.9 桩重写 + sidecar 缺失 + 旧 fixture——排查时先核对三层（桩 AST 成员 → sidecar 索引条目 → 插件分支）再改代码。
+- 2026-10-15 发布 **v1.8.27**（tag `v1.8.27`）：移植智能框架工作树能力——`R.<x> = GF(2)[]` 生成器糖 RHS 空下标解析、字典写入证明经下标读取/元组解包传播（局部遮蔽 fail-closed）、for 循环字面量元素类型（commit `837945e`）。
+- 2026-10-15 发布 **v1.8.26**（tag `v1.8.26`）：消除 Sage 编辑卡顿三处热点——成员名倒排索引替代全类扫描、原生评分进程首次补全惰性预热、已保存文件摘要后台计算（commit `76932c8`）。
 
-## 4. 当前可安装包与索引
-
-- 安装包：`G:\sage-build\release-assets\sage-core-1.8.20-bare-member-fallback.zip`
-  - SHA-256：`A324BC2AD31DF4D0FC0CE56CE5E1B5301D3D8303656DDE52C15C9DDD2963E206`
-  - `com.starnotesxj.sageide` / `SageMath Core` / `1.8.20`；安装或替换后须完全重启 PyCharm。
-  - 主合同 `87,082` 条、64 个文档桶、Windows x64 native inline scorer、Full Line optional descriptor 均在包内。
-- 完整索引副本：`G:\sage-build\q-contract-index\sage-api-index-with-method-aliases.json`
-  - SHA-256：`86db703666894f0615cb571c910d521d8ca5a5f6b32823cbe0ba8107f3760112`
-  - 构建会拆出文档正文，主 JAR 的 `sage-api-index.json` 不含 documentation 字段。
-- ZIP 已用 `sanitize_release_index.find_host_path` 复核为无主机路径。普通正则把 `https://` 中的 `s:/` 当路径是误报。
-
-## 5. 已执行验证
-
-- Python：类方法别名生成/后处理及发布索引工具回归 `5` 项通过；`compileall` 与 `git diff --check` 通过。
-- Kotlin：PEP 673 与相对父类成员查询回归通过。
-- 完整索引插件回归通过（`SageCompletionTest.testConfiguredFullIndexCompletesTheUsersQBeforeRun`，1 test、0 failures）：
-
-  ```powershell
-  .\gradlew.bat :plugins:sage-core:test `
-    --tests com.starnotesxj.sageide.completion.SageCompletionTest.testConfiguredFullIndexCompletesTheUsersQBeforeRun `
-    --rerun-tasks --no-daemon -PrunSageCoreTests=true `
-    -Psage.external.fullIndex=G:\sage-build\q-contract-index\sage-api-index-with-method-aliases.json
-  ```
-
-- `verifyReleaseFullIndex`、`buildPlugin`、`verifyPluginStructure` 均已通过；目标 PyCharm plugin verifier 为 `Compatible`。弃用/实验 API 报告是既有风险，未在本轮扩大。
-- 1.8.20 的静态索引兜底和完整索引回归均通过；二者断言 `is_zero` 与 `order` 在 BASIC completion 中各只出现一次，完整索引回归也断言 SMART completion 能给出二者。
-
-## 6. 已知限制与下一步
-
-- 用户应从磁盘安装 1.8.20 ZIP，并完全重启 PyCharm；对第 3 节的 `Q.` 分别按 `Ctrl+Space` 与 `Ctrl+Shift+Space` 做人工确认。还需测试字符串输入、连续删除/换行的真实延迟。
-- 不能把自动化 fixture 或索引回归宣称为真实 IDE UI、运行配置或性能 smoke；若仍卡顿，应采集对应 `idea.log`、CPU/线程快照，并与 JetBrains Full Line Code Completion 做 A/B。
-- 未提交、未推送、未发布 Marketplace/PyPI。只有用户明确要求时才提交/推送，并用中文 Lore 提交信息。
-- `verify-upstream-staging.ps1 -FinalCheck` 已运行但在首个 SHA 门停止：官方 checkout 实际为 `3b652e714c12009bb69f0a2d2416dad02259fe5d`，不是受控基线。不得为通过该检查而修改、reset 或 checkout 官方仓库。
-- 官方 checkout 的 `hashcat_sessions.db`、`jupyter/.gitignore`、`notebooks/.gitignore` 仍是未跟踪既有文件，未触碰。
+- 2026-10-06 Ultimate CLI 修复验证：`--apply-fixes` 与 `--cleanup` 在隔离 `.sage` 样例中各自将字节 XOR 的 `^` 改为 `^^`，并保留 Sage 幂 `2^8` / `2^10`。两个 Cloud 报告均为刻意构造的 canary，不是项目缺陷：[apply-fixes](https://qodana.cloud/projects/RvMJl/reports/GrYnZX)、[cleanup](https://qodana.cloud/projects/RvMJl/reports/Ng4qdb)。临时文件已清理。
+- 2026-10-05 全仓扫描明确选用 `qodana-python-community`（180 个目标文件，255 条常规 Python 检查，未产生 Sage 规则结果）；SARIF 确认 `com.starnotesxj.sageide` 扩展已加载且 5 条 Sage 检查启用。结果已上传到 [Qodana Cloud 报告](https://qodana.cloud/projects/RvMJl/reports/r7BBqm)。Community plan 是该 linter 的预期结果，不能据此判断 Ultimate token。
+- 2026-10-06 隔离 `.sage` canary 通过：5 条 Sage 规则各命中 1 次（XOR、非素数幂 GF(6)、不可逆模逆、矛盾 CRT、奇异椭圆曲线），正常 `2^8` 未误报。SARIF：`G:\sage-build\qodana-canary-20261006\isolated-results\qodana.sarif.json`；执行时清空 `QODANA_TOKEN`，仅保存本地报告。临时 canary 已清理。
+- 2026-10-06 Ultimate 验证：使用现有 `QODANA_TOKEN` 运行 `qodana-python`，CLI 确认 plan 为 Ultimate、订阅有效至 2026-10-26；同样 5 条 Sage 规则各命中 1 次。刻意构造的 canary 报告已上传到 [Qodana Cloud](https://qodana.cloud/projects/RvMJl/reports/Ng4JVD)，不可当作真实项目缺陷。`TRIAL_ULTIMATE` 的 global configuration 提示是另一项不支持功能，不代表 token 或扫描授权失败。SARIF：`G:\sage-build\qodana-ultimate-canary-20261006\results\qodana.sarif.json`。
+- 全仓扫描的 `--only-directory` 不阻止 IDE 为整个项目建索引；canary 改为隔离项目根后约 32 秒完成。避免对大型仓库用 `--only-directory` 当作索引隔离。
+- Sage Core 全套：22 suites / 169 tests，0 failures、errors、skips；`buildPlugin` 与 `verifyPluginStructure` 成功。
+- 本地包：`plugins/sage-core/build/distributions/sage-core-1.8.21.zip`，4,780,688 bytes，SHA-256 `F7095E114C96C0F48027B9B4996FBC2520FF6F4A6CA9F99A95B871C56DAD4AD2`。Marketplace 稳定版仍为 1.8.20；本包未推送/发布。
+- 1.8.21 本轮新鲜 Plugin Verifier 三点矩阵全部 Compatible，均无 compatibility/internal API 问题：PyCharm 2026.1.5 `PY-261.27258.51`（1 deprecated、84 experimental）；当前 PyCharm 2026.2.3 `PY-262.10968.92`（1 deprecated、84 experimental）；IDEA 2026.3 EAP `IU-263.6259.32`（1 scheduled-for-removal、79 experimental，union API 的普通 deprecated 告警已消除）。三份最新报告分别归档在 `G:\sage-build\plugin-verifier-ides-20261005\reports\pycharm-2026.1.5-reflective-union-factory`、`pycharm-2026.2.3-current-reflective-union-factory`、`idea-2026.3-eap5-reflective-union-factory`。
+- EAP Maven 元数据下载失败绕过方式：经本机代理 `127.0.0.1:7897` 下载官方 IDE ZIP，校验 JetBrains SHA-256 后用 `sage.verifier.localIdePath` 逐个本地验证；无需手动下载。首次 EAP 验证约 10 分钟，主要耗时为下载约 1.40 GB 的插件依赖。
+- 告警收敛已完成：`SageTypeLowering.unionTypes` 缓存反射优先调用 EAP 的 `unionOrNever(Collection)`，旧 IDE 回退 `union(Collection)`，并统一处理 `SageTypeProvider` 的 union 调用。`SageTypeProviderTest` 新鲜运行 45 项，0 failures/errors/skips。暂保留 `SdkType.suggestHomePath()` 兼容覆盖（唯一 deprecated/scheduled-for-removal 告警）；剩余主要是 Python PSI/调试 API 的 experimental 标注，不等同于 verifier 兼容性失败。
+- 仍需 PyCharm GUI 验收安全修复预览/多文件确认和 Sage 调试断点。单测、Qodana、Plugin Verifier 都不能替代 GUI/运行时验收。
+- 2026-10-06 GUI 验收新增问题：用户截图显示 `.sage` 编辑器 gutter 只有行号、没有可点击的断点红点；同一 IDE 的 `.py` gutter 有红点，说明 Sage 调试验收目前被 `.sage` 断点标记集成阻塞。需检查 Python breakpoint 对 Sage file type/language 的覆盖，补测试并重打包；不要把此项误判为 WSL runtime/Conda 启动失败。
+- 2026-10-07 GUI/debug 验收新增：用户报告 `.sage` gutter 仍没有可见/可点击的红色断点点；点击 Debug 调试 `test1.sage` 后，WSL Sage 的 `pydevd.py` 启动参数为 `--client localhost --port 36071`，尝试连接失败并抛出 `ConnectionRefusedError: [Errno 111] Connection refused`，退出码 1。需分别核实断点 provider 是否实际出现在 gutter，以及 WSL debug client 的 IDE 主机地址/端口映射与 pydevd 连接方向；该日志显示的是连接失败，不足以先验断定仅是 localhost 转换。
+- 2026-10-07 local PyCharm `idea.log` root cause for invisible `.sage` breakpoint markers: at 13:14:04 `PassExecutorService` logs `ClassCastException` because `SageBreakpointGutterRenderer` cannot be cast to `LineMarkerInfo$LineMarkerGutterIconRenderer`; the same exception repeats at least 20 times. The provider must keep the platform-owned `LineMarkerInfo` renderer and handle click via its supported navigation/click callback. This is separate from the WSL `pydevd --client localhost` connection refusal.
+- 2026-10-07 fresh validation for `.sage` breakpoint gutter fix: package version `1.8.23`; `SageBreakpointLineMarkerProviderTest` 3/3 passed, `buildPlugin`, `verifyPluginStructure`, and local PyCharm 2026.2.3 Plugin Verifier all succeeded. The prior custom renderer was removed; the platform-owned `LineMarkerInfo` renderer is now paired with the supported click callback. Candidate ZIP: `plugins/sage-core/build/distributions/sage-core-1.8.23.zip` (4,787,064 bytes, SHA-256 `F888FDC9CB925428912C6F11977BE3C2FF377DADE644A2E0CC231DDA3C29992C`). Not yet verified in the user's installed IDE or published to Marketplace.
+- 2026-10-07 WSL debugger transport probe: from the configured WSL Ubuntu environment, a temporary Windows TCP listener bound to `127.0.0.1` was reachable through WSL `localhost` (connect succeeded). This rules out a blanket WSL localhost-routing failure in the current machine, but does not prove PyCharm opened its debugger listener for port `36071` or that the Target API supplied the correct port binding. Keep the debug connection failure open; do not change the debugger host to a gateway without capturing the IDE-side listener/binding evidence.
+- 2026-10-07 hover-only breakpoint prototype rejected by verifier: inheriting `PyLineBreakpointType` introduced 4 internal API usages (the class, custom constructor, and `isSuitableFileType` override), and `verifyPlugin` failed with `INTERNAL_API_USAGES`. Do not ship this prototype; retain the hover/type-handler design but implement the type directly on the public `XLineBreakpointTypeBase` API.
+- 2026-10-07 hover-only Sage breakpoint candidate 1.8.24: replaced the per-line gutter marker with public `XLineBreakpointTypeBase.canPutAt`, so XDebugger owns the normal hover affordance; `.sage` code lines only are eligible, while comments, blank lines, and `.py` are rejected. `SageBreakpointHandlerFactory` routes enabled line breakpoints through Python's `AbstractLineBreakpointHandler`/pydevd integration. Focused tests passed: `SageLineBreakpointTypeTest` 3/3 and `SageDebugCommandLineStateTest` 16/16; `buildPlugin`, `verifyPluginStructure`, and Plugin Verifier against local PyCharm 2026.2.3 `PY-262.10968.92` passed (Compatible, no internal API findings; 1 pre-existing deprecated and 84 experimental usages remain). ZIP `plugins/sage-core/build/distributions/sage-core-1.8.24.zip`, 4,784,829 bytes, SHA-256 `96C8C034BCF98EA7D5D8257B83B3F8C6CF4292A1353A6F3A554BDFC1A253FA9F`. Hover appearance still needs installed-IDE GUI confirmation. The WSL pydevd connection refusal (latest screenshot port 46175) remains unresolved: no matching port event exists in current `idea.log`, so listener-vs-target-port mapping is not yet distinguished; do not claim debugger runtime success.
+- 2026-10-07 repeated GUI debugger failure after the hover breakpoint type became visible: `.sage` gutter now accepts breakpoints, but WSL `pydevd.py --client localhost --port 33351` still gets `ConnectionRefusedError`; this is a new dynamic port, so the failure is not specific to port 46175. The current PyCharm `idea.log` has no `33351`/matching Sage debugger event. Keep investigating Python Target API port binding/listener lifecycle; do not alter `localhost` based only on this error, and do not claim runtime debugging works.
+- 2026-10-07 local PyCharm 2026.2 debugger backend diagnosis: `PythonDebugProgramRunner` tries the `debugpy` backend when selected and applicable, then falls back to `pydevd`. The bundled `PythonRunConfigProvider` is a `TypedDebugpyConfigProvider<PythonRunConfiguration>`, while SageRunConfiguration previously extended only `AbstractPythonRunConfiguration`, so Sage silently failed provider matching and used pydevd even when debugpy was selected. `DebugpyConfigProvider` itself is annotated `ApiStatus.Internal`; do not implement against it. A public-path candidate is to make SageRunConfiguration a PythonRunConfiguration subclass and expose Sage's generated preparser launcher/source arguments through the inherited run-config accessors; verify pydevd fallback remains intact. Local DAP target code recognizes WSL and maps it as `native`, but the plugin descriptor still says local-only, so the user's actual WSL debugpy session must be verified in the GUI before claiming the connection issue fixed.
