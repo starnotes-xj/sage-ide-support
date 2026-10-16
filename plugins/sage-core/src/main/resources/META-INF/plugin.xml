@@ -21,6 +21,14 @@
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.8.28 — Sage-coercion operator reflection: `5 * P` no longer falls
+        through to Python's native `int.__mul__ -> int`. When the resolved
+        binary operator belongs to int/float and the other operand carries a
+        Sage stub class type, the provider answers the reflected `__rmul__`
+        (or Cython `_rmul_`) declared return, so `Q = 5 * P` types as the
+        elliptic-curve point and `Q.xy()/order()/is_zero()` complete. Pairs
+        with stubgen 0.9.6's runtime audit (193k+ members added to the stubs
+        with real inspect signatures).</li>
     <li>1.8.27 — Sage grammar and inference ported from the intelligence
         framework worktree: `R.<x> = GF(2)[]` generator-sugar RHS now parses
         (the empty subscript stays a subscription PSI, ordinary Python

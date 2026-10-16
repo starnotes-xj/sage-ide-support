@@ -369,7 +369,15 @@ class SageTypeProvider : PyTypeProviderBase() {
             return Ref.create(type)
         }
         val qualifiedName = sageQualifiedName(function)
-        if (qualifiedName == null) return liveCallType()
+        if (qualifiedName == null) {
+            // `5 * P`: Python answers int.__mul__(point) -> int, but under Sage
+            // coercion the reflected `__rmul__` on the Sage operand wins at
+            // runtime.  When the resolved operator belongs to a builtin and the
+            // other operand is a Sage stub class, answer the reflected
+            // operator's declared return instead of the native builtin result.
+            nativeOperandReflectedType(function, callSite, context)?.let { return Ref.create(it) }
+            return liveCallType()
+        }
         val query = SageApiIndexService.getInstance().query() ?: return liveCallType()
         receiverSpecificMemberReturn(callSite, context, query, function)?.let { return Ref.create(it) }
         val signatures = query.signatures(qualifiedName)
@@ -379,6 +387,47 @@ class SageTypeProvider : PyTypeProviderBase() {
                 ?.let { SageTypeLowering.lower(it.returnType, callSite, context, query) }
             ?: return liveCallType()
         return Ref.create(lowered)
+    }
+
+    private fun nativeOperandReflectedType(
+        function: PyFunction,
+        callSite: PyCallSiteExpression,
+        context: TypeEvalContext,
+    ): PyType? {
+        val operator = function.name ?: return null
+        if (operator !in BUILTIN_OPERAND_OPERATORS) return null
+        val declaringClass = function.containingClass?.qualifiedName ?: return null
+        if (declaringClass != "int" && declaringClass != "float") return null
+        val binary = callSite as? PyBinaryExpression ?: return null
+        if (binary.referencedName != operator) return null
+        val right = binary.rightExpression ?: return null
+        val query = SageApiIndexService.getInstance().query() ?: return null
+        val rightType = indexedExpressionType(right, context, query)
+            ?: context.getType(right)
+            ?: return null
+        val owner = sageClassOwner(rightType) ?: return null
+        val reflected = reflectedOperator(operator) ?: return null
+        for (effectiveName in listOfNotNull(reflected, cythonReflectedOperatorImplementation(reflected)).distinct()) {
+            val members = query.members(owner, effectiveName)
+                .filter { it.kind == SageApiSymbolKind.METHOD && it.signatures.isNotEmpty() }
+            val owned = members.filter { it.qualifiedName.substringBeforeLast('.') == owner }
+            val candidates = if (owned.isNotEmpty()) owned else members
+            if (candidates.size != 1) continue
+            val member = candidates.single()
+            SageTypeLowering.lowerCallReturnType(
+                member.signatures,
+                binary,
+                context,
+                query,
+                member.qualifiedName,
+                null,
+                rightType,
+            )?.let { return it }
+            if (member.signatures.size == 1) {
+                SageTypeLowering.lowerKnownReturn(member.signatures.single(), binary, context, query)?.let { return it }
+            }
+        }
+        return null
     }
 
     private fun receiverSpecificMemberReturn(
@@ -967,5 +1016,9 @@ class SageTypeProvider : PyTypeProviderBase() {
 
     companion object {
         private val FACTORY_TYPE_KEY = Key.create<PyType>("sageide.sugar.factoryType")
+
+        /** Native dunders whose reflected Sage counterpart decides the runtime result. */
+        private val BUILTIN_OPERAND_OPERATORS =
+            setOf("__mul__", "__add__", "__sub__", "__truediv__", "__floordiv__", "__mod__", "__pow__")
     }
 }

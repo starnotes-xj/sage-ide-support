@@ -2,9 +2,11 @@ package com.starnotesxj.sageide.type
 
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiNamedElement
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.util.ProcessingContext
 import com.starnotesxj.sageide.SagePluginTestBase
+import com.jetbrains.python.psi.PyBinaryExpression
 import com.jetbrains.python.psi.PyCallExpression
 import com.jetbrains.python.psi.PyFunction
 import com.jetbrains.python.psi.PyNamedParameter
@@ -2193,6 +2195,37 @@ def local(T):
             settings.wslDistribution = originalDistribution
             settings.wslSageExecutable = originalExecutable
         }
+    }
+
+    fun testNativeIntTimesSagePointReflectsToRmulResult() {
+        myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+        myFixture.addFileToProject("site-packages/sage/schemes/__init__.pyi", "")
+        myFixture.addFileToProject("site-packages/sage/schemes/elliptic_curves/__init__.pyi", "")
+        myFixture.addFileToProject(
+            "site-packages/sage/schemes/elliptic_curves/ell_point.pyi",
+            "class EllipticCurvePoint_field:\n" +
+                "    def __rmul__(self, n) -> EllipticCurvePoint_field: ...\n" +
+                "    def order(self) -> int: ...\n",
+        )
+        myFixture.configureByText(
+            "mul.sage",
+            "P = EllipticCurvePoint_field()\n" +
+                "Q = 5 * P\n" +
+                "use = Q\n",
+        )
+        val context = defaultContext()
+        val qReference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+            .last { it.referencedName == "Q" }
+        val type = context.getType(qReference)
+        // PyUnsafeUnionType does not extend PyUnionType in this SDK, so the
+        // point type is asserted through the rendered type: before the fix the
+        // binary `5 * P` was plain `int` from int.__mul__; now the reflected
+        // EllipticCurvePoint_field result must survive in the answer.
+        val rendered = type?.toString().orEmpty()
+        assertTrue(
+            "reflected 5 * P should keep the Sage point type, got: $type",
+            rendered.contains("EllipticCurvePoint_field") && !rendered.contains("__mul__"),
+        )
     }
 
     fun testDictionaryWriteProofTypifiesSubscriptReadsAndUnpackedTargets() {
