@@ -97,6 +97,47 @@ class SageParserParsingTest : SagePluginTestBase() {
         })
     }
 
+    fun testSugarInsideFunctionBodyParsesAsMultiTargetAssignment() {
+        // The reported Boneh-Durfee shape: the generator statement lives
+        // inside a function body, where the old root-only interception
+        // never ran and the editor showed three red parser errors.
+        myFixture.configureByText(
+            "boneh.sage",
+            "def boneh_durfee(delta, beta):\n" +
+                "    PR.<u, x, y> = PolynomialRing(ZZ)\n" +
+                "    g = u * x + 1\n" +
+                "    return g\n",
+        )
+
+        val errors = PsiTreeUtil.collectElementsOfType(myFixture.file, PsiErrorElement::class.java)
+        assertTrue("parser errors found: ${errors.joinToString { it.errorDescription }}", errors.isEmpty())
+        val statements = PsiTreeUtil.collectElementsOfType(myFixture.file, PyAssignmentStatement::class.java)
+        val sugar = statements.single { SageSugarAnalyzer.shapePredicate(it) }
+        assertEquals(listOf("PR", "u", "x", "y"), sugar.targets.map { it.name })
+        assertEquals("PolynomialRing", (sugar.assignedValue as? PyCallExpression)?.callee?.text)
+        assertTrue(statements.any { it.targets.firstOrNull()?.name == "g" })
+    }
+
+    fun testSugarInsideClassBodyAndNestedBlocks() {
+        myFixture.configureByText(
+            "nested.sage",
+            "class Solver:\n" +
+                "    def setup(self):\n" +
+                "        R.<a, b> = ZZ[]\n" +
+                "        if True:\n" +
+                "            F.<t> = GF(2)[]\n" +
+                "        return R, F\n",
+        )
+
+        val errors = PsiTreeUtil.collectElementsOfType(myFixture.file, PsiErrorElement::class.java)
+        assertTrue("parser errors found: ${errors.joinToString { it.errorDescription }}", errors.isEmpty())
+        val sugar = PsiTreeUtil.collectElementsOfType(myFixture.file, PyAssignmentStatement::class.java)
+            .filter { SageSugarAnalyzer.shapePredicate(it) }
+        assertEquals(2, sugar.size)
+        assertEquals(listOf("R", "a", "b"), sugar[0].targets.map { it.name })
+        assertEquals(listOf("F", "t"), sugar[1].targets.map { it.name })
+    }
+
     companion object {
 
         private val AES_EXERCISE = """

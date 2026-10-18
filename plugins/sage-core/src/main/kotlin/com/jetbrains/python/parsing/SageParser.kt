@@ -36,40 +36,42 @@ class SageParser : PythonParser(), PsiParser {
         val context = SageParsingContext(builder, myLanguageLevel)
         val statementParser = context.statementParser
         builder.setTokenTypeRemapper(statementParser) // must be done before touching the caching lexer
-        var lastAfterSemicolon = false
         while (!builder.eof()) {
             context.pushScope(context.emptyParsingScope())
-            // NOTE: parseStatement() (public) instead of parseSimpleStatement()
-            // (protected): with the 2026.2 split plugin layout the Python
-            // classes live in the python-ce plugin's own class loader, so a
-            // protected call from SageParser (our loader) crosses loaders and
-            // JVM access control rejects it (IllegalAccessError).  parseStatement
-            // is the public superset (it falls through to parseSimpleStatement
-            // for non-compound statements), so the post-semicolon branch keeps
-            // identical behaviour.
-            if (lastAfterSemicolon) {
-                statementParser.parseStatement()
-            }
-            else if (looksLikeSugarStatement(builder)) {
-                // An editor reparses incomplete input after every keystroke.
-                // `R.<` (or any other incomplete generator statement) has the
-                // sugar prefix but cannot be completed yet.  The sugar parser
-                // rolls its marker back in that case; always hand the token
-                // back to Python's parser so the outer loop still advances.
-                // Ignoring the Boolean result here used to spin forever on the
-                // EDT, which made the editor appear frozen and could trigger
-                // the IDE freeze watchdog.
-                if (!parseSugarStatement(context, builder)) {
-                    statementParser.parseStatement()
-                }
-            }
-            else {
-                statementParser.parseStatement()
-            }
-            lastAfterSemicolon = context.scope.isAfterSemicolon
+            // SageStatementParsing.parseStatement() intercepts generator
+            // statements here AND inside every suite body, so the stock
+            // after-semicolon/sugar/plain branching collapses into it.
+            statementParser.parseStatement()
             context.popScope()
         }
         rootMarker.done(root)
+    }
+
+}
+
+/**
+ * Python's statement parser with one extra statement form: the Sage
+ * generator declaration `X.<a, b> = rhs`.  parseStatement() is the
+ * public dispatch point reached from the root loop AND from every
+ * suite body (function/class bodies, if/for arms) — the suite loops
+ * call it virtually — so intercepting here makes the sugar legal
+ * wherever Sage allows it, not only at file top level.
+ */
+private class SageStatementParsing(
+    private val sageContext: SageParsingContext,
+) : StatementParsing(sageContext) {
+
+    override fun parseStatement() {
+        val builder = sageContext.builder
+        // An editor reparses incomplete input after every keystroke.
+        // `R.<` (or any other incomplete generator statement) rolls
+        // its marker back and falls through to Python's parser so
+        // parsing always advances; ignoring the fallback used to
+        // spin forever on the EDT (frozen editor / freeze watchdog).
+        if (looksLikeSugarStatement(builder) && parseSugarStatement(sageContext, builder)) {
+            return
+        }
+        super.parseStatement()
     }
 
     private fun looksLikeSugarStatement(builder: SyntaxTreeBuilder): Boolean {
@@ -174,6 +176,10 @@ private class SageParsingContext(builder: SyntaxTreeBuilder, level: LanguageLeve
             super.parseSubscriptionIndexArgumentList()
         }
     }
+
+    private val sageStatementParser = SageStatementParsing(this)
+
+    override fun getStatementParser(): StatementParsing = sageStatementParser
 
     override fun getExpressionParser(): ExpressionParsing = sageExpressionParser
 }
