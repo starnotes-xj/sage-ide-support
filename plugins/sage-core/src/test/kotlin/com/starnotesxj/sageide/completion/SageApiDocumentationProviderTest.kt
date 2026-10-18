@@ -360,4 +360,65 @@ class SageApiDocumentationProviderTest : SagePluginTestBase() {
         assertTrue("<pre><code>P.log(G)\nG.log(P)</code></pre>" in html, html)
         assertTrue("```" !in html, html)
     }
+
+    fun testIndexedChinesePitfallSectionsRenderHighlighted() {
+        val entry = SageApiEntry(
+            qualifiedName = "sage.demo.crt",
+            kind = SageApiSymbolKind.METHOD,
+            signatures = listOf(
+                SageApiSignature(
+                    parameters = listOf(SageApiParameter("a", SageTypeRef.known("Integer"))),
+                    returnType = SageTypeRef.known("Integer"),
+                ),
+            ),
+            documentation = SageApiDocumentation(
+                summary = "中国剩余定理：联立同余式的解。",
+                body = """
+                    参数（两种形式）:
+                    - ``values`` -- 剩余列表。
+
+                    陷阱:
+                    - 模数不要求互素，但必须有解，否则抛 ValueError。
+                    - 参数是值、模交替排列，不是先值后模。
+
+                    示例::
+
+                        sage: crt(2, 3, 3, 5)
+                        8
+                """.trimIndent(),
+            ),
+        )
+        val html = invokeRenderDocumentation(entry)
+
+        // The paren-qualified heading lands in the whitelist via bare-title
+        // normalization, pitfalls become a highlighted section, and the
+        // Chinese doctest example renders as an indented code block.
+        assertTrue("<table class='sections'>" in html, html)
+        assertTrue("参数（两种形式）" in html, html)
+        assertTrue("⚠ 陷阱" in html, html)
+        assertTrue("<li>模数不要求互素，但必须有解，否则抛 ValueError。</li>" in html, html)
+        assertTrue("<pre><code>sage: crt(2, 3, 3, 5)\n8</code></pre>" in html, html)
+    }
+
+    /** Mirrors the reflection-based render used by the indexed-docs test above. */
+    private fun invokeRenderDocumentation(entry: SageApiEntry): String {
+        val providerClass = SageApiDocumentationProvider::class.java
+        val companion = providerClass.getDeclaredField("Companion")
+            .apply { isAccessible = true }
+            .get(null)
+        val renderDocumentation = companion.javaClass
+            .getDeclaredMethod(
+                "renderDocumentation",
+                SageApiDocumentationProvider::class.java,
+                SageApiEntry::class.java,
+                com.intellij.openapi.project.Project::class.java,
+            )
+            .apply { isAccessible = true }
+        return renderDocumentation.invoke(
+            companion,
+            SageApiDocumentationProvider(),
+            entry,
+            null,
+        ) as String
+    }
 }

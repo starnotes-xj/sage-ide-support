@@ -521,6 +521,7 @@ class SageApiDocumentationProvider : DocumentationProvider {
         append(DocumentationMarkup.SECTIONS_START)
         sections.forEach { section ->
             append(DocumentationMarkup.SECTION_HEADER_START)
+            if (section.isPitfall) append("⚠ ")
             append(renderInline(section.title))
             append("</p>")
             append(DocumentationMarkup.SECTION_SEPARATOR)
@@ -538,7 +539,10 @@ class SageApiDocumentationProvider : DocumentationProvider {
 
         fun flushSection() {
             val title = currentTitle ?: return
-            val body = currentBody.joinToString("\n").trim()
+            // Keep the body's leading indentation: doctest-style example
+            // sections rely on the first line's indent to be recognized as
+            // code by the indented-code renderer.
+            val body = currentBody.joinToString("\n").trimEnd()
             sections += RichSection(title, body)
             currentTitle = null
             currentBody = mutableListOf()
@@ -687,7 +691,7 @@ class SageApiDocumentationProvider : DocumentationProvider {
     }
 
     private fun isSectionTitle(title: String): Boolean =
-        title.trim().lowercase() in SECTION_TITLES
+        normalizedTitle(title) in SECTION_TITLES
 
     private data class ParsedDocumentation(
         val prose: String,
@@ -699,7 +703,10 @@ class SageApiDocumentationProvider : DocumentationProvider {
         val body: String,
     ) {
         val isExample: Boolean
-            get() = title.trim().lowercase() in EXAMPLE_TITLES
+            get() = normalizedTitle(title) in EXAMPLE_TITLES
+
+        val isPitfall: Boolean
+            get() = normalizedTitle(title) in PITFALL_TITLES
     }
 
     private fun renderSignatureHtml(entry: SageApiEntry): String = buildString {
@@ -755,8 +762,18 @@ class SageApiDocumentationProvider : DocumentationProvider {
     private fun escapeCode(text: String): String = StringUtil.escapeXmlEntities(text)
 
     private companion object {
+        /**
+         * Section titles may carry a parenthetical qualifier (``参数（两种形式）``)
+         * that the corpus uses to disambiguate calling forms.  Membership checks
+         * compare against the bare title.
+         */
+        fun normalizedTitle(title: String): String =
+            title.substringBefore("（").substringBefore("(").trim().lowercase()
+
         val IDENTIFIER = Regex("[A-Za-z_][A-Za-z0-9_]*")
-        val SECTION_HEADER = Regex("^\\s*([\\p{L}][\\p{L}\\d _/-]{0,48})(:{1,2})\\s*$")
+        // Section titles may carry full-width parenthetical qualifiers as in
+        // ``参数（两种形式）:``; the corpus uses both ASCII and full-width parens.
+        val SECTION_HEADER = Regex("^\\s*([\\p{L}][\\p{L}\\d _/()（）-]{0,48})(:{1,2})\\s*$")
         val FENCE_START = Regex("^\\s*```([A-Za-z0-9_+.-]*)\\s*$")
         val FENCE_END = Regex("^\\s*```\\s*$")
         val DOUBLE_INLINE_CODE = Regex("``([^`\\n]+)``")
@@ -771,10 +788,21 @@ class SageApiDocumentationProvider : DocumentationProvider {
             "author", "attributes", "attribute", "warnings", "warning", "algorithm", "algorithms",
             "options", "option", "variables", "variable", "constraints", "constraint", "implementation",
             "definition", "signature", "kwds", "kwargs",
+            "usage", "pitfalls", "pitfall", "caveats", "caveat", "conventions", "construction",
+            "members", "member functions", "operations",
             "参数", "参数列表", "关键字参数", "返回", "返回值", "产出", "异常", "示例",
             "测试", "注意", "备注", "另见", "参考", "属性", "警告", "算法", "实现", "定义",
+            // Chinese section headings shipped by the curated docs layer
+            // (docs_zh.json): pitfall blocks, calling conventions and the
+            // constructor/member digests used by class-level entries.
+            "陷阱", "用法与陷阱", "调用约定", "构造", "常用成员", "常用操作",
+            "常用调用", "配套",
         )
         val EXAMPLE_TITLES = setOf("examples", "example", "示例")
+        val PITFALL_TITLES = setOf(
+            "pitfalls", "pitfall", "caveats", "caveat", "warnings", "warning",
+            "陷阱", "用法与陷阱", "警告",
+        )
         private fun renderDocumentation(
             sageApiDocumentationProvider: SageApiDocumentationProvider,
             entry: SageApiEntry,
