@@ -21,6 +21,15 @@
 
   <change-notes><![CDATA[
   <ul>
+    <li>1.8.30 — False "expected Integer, got Literal[…]" assignments in
+        .sage files are suppressed: the Sage preparser converts a bare
+        numeric literal RHS to the same class the provider typed the target
+        with (`s = 0` runs as `s = Integer(0)`), so the mismatch can never
+        occur. Also, an implicit sage.all name that resolves to an import
+        ELEMENT inside the sage stub tree keeps its index-derived type
+        instead of degrading to untyped (the native engine cannot type
+        import elements), and ALIAS index entries now lower the alias
+        target's valueType.</li>
     <li>1.8.29 — Quick Documentation (Ctrl+Q) on Sage assignment targets now
         leads with the variable's inferred type (推断类型: …), which stock
         PyCharm only renders in the hover tooltip. Pairs with 1.8.28's

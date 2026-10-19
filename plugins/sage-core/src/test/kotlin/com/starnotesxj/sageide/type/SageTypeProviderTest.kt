@@ -2314,6 +2314,72 @@ def local(T):
         )
     }
 
+
+    fun testSingletonImportElementResolutionKeepsIndexType() {
+        // all.pyi in re-export form (`from sage.rings.integer_ring import ZZ
+        // as ZZ`) resolves an implicit ZZ to the import ELEMENT — the one
+        // target the native engine cannot type.  The provider must not bail
+        // on that resolution and must lower the sidecar alias-chain type.
+        val source = SageApiSourceRef(SageApiSourceKind.STUB, "zz.pyi")
+        val integerRing = "sage.rings.integer_ring.IntegerRing_class"
+        val integer = "sage.rings.integer.Integer"
+        val index = SageApiIndexQuery(
+            SageApiIndex(
+                "10.9",
+                "3.13",
+                listOf(
+                    SageApiEntry("sage.all.ZZ", SageApiSymbolKind.ALIAS, aliases = listOf("sage.rings.integer_ring.ZZ"), sources = listOf(source)),
+                    SageApiEntry(
+                        "sage.rings.integer_ring.ZZ",
+                        SageApiSymbolKind.CONSTANT,
+                        valueType = SageTypeRef.known(integerRing),
+                        sources = listOf(source),
+                    ),
+                    SageApiEntry(integerRing, SageApiSymbolKind.CLASS, sources = listOf(source)),
+                    SageApiEntry(integer, SageApiSymbolKind.CLASS, sources = listOf(source)),
+                ),
+            ),
+        )
+        SageApiIndexService.getInstance().install(index)
+        try {
+            myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/rings/__init__.pyi", "")
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/integer.pyi",
+                "class Integer:\n    pass\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/rings/integer_ring.pyi",
+                "from sage.rings.integer import Integer\n" +
+                    "class IntegerRing_class:\n" +
+                    "    def __call__(self, x=None) -> Integer: ...\n" +
+                    "ZZ: IntegerRing_class = IntegerRing_class()\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/all.pyi",
+                "def GF(*args, **kwargs): ...\n" +
+                    "from sage.rings.integer_ring import ZZ as ZZ\n",
+            )
+            myFixture.configureByText("zz-import-form.sage", "n = ZZ(35)\nn<caret>")
+            myFixture.doHighlighting()
+            val reference = PsiTreeUtil.collectElementsOfType(myFixture.file, PyReferenceExpression::class.java)
+                .single { it.referencedName == "ZZ" }
+            val resolved = reference.reference.resolve()
+            assertTrue(
+                "fixture precondition: ZZ must resolve to the import element",
+                resolved is com.jetbrains.python.psi.PyImportElement,
+            )
+            val type = provider.getReferenceExpressionType(reference, defaultContext())
+            assertTrue("import-element resolution must keep the index type", type != null)
+            assertEquals(
+                integerRing,
+                (type as? PyClassType)?.pyClass?.let(SageStubIndex::canonicalQualifiedName),
+            )
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
     private fun defaultContext() = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(
         myFixture.file.project,
         myFixture.file,

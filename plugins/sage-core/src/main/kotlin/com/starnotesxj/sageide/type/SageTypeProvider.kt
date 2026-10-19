@@ -156,11 +156,31 @@ class SageTypeProvider : PyTypeProviderBase() {
         val entry = query.namespaceEntry("sage.all", name) ?: return null
         // Native PSI/stub declarations and explicit imports remain authoritative.
         // The index fallback is only for an unresolved implicit sage.all root.
-        if (referenceExpression.reference.resolve() != null) return null
+        // EXCEPTION: an import ELEMENT inside the sage stub tree is the one
+        // resolved target the native engine cannot type at all
+        // (PyReferenceExpressionImpl.getTypeFromTarget only types
+        // PyFunction/PyClass/PyTypedElement — plugin v1.7.6 note).  Bailing
+        // there would leave the name untyped, so keep the index path alive.
+        val nativeResolution = referenceExpression.reference.resolve()
+        if (nativeResolution != null) {
+            if (nativeResolution !is PyImportElement || !SageStubIndex.isSageStubFile(nativeResolution.containingFile)) return null
+        }
         val facade = SageApiIntelligenceFacade.getInstance()
         val signatures = facade.signatures(entry.qualifiedName)
         if (signatures.isNotEmpty()) {
             return SageTypeLowering.lowerSignatures(signatures, referenceExpression, context, query)
+        }
+        // Singleton re-exports (`from sage.rings.integer_ring import ZZ as
+        // ZZ`) are ALIAS entries; their type lives on the alias TARGET's
+        // entry (the home module's annotated assignment).  The resolve
+        // provider can only follow import aliases to functions and classes
+        // (PyFunctionNameIndex/PyClassNameIndex), so without this lookup
+        // the import element reaches the native engine untyped and every
+        // `ZZ(35) / ZZ(3)`-style chain degrades to the namespace fallback.
+        entry.aliases.firstNotNullOfOrNull { aliasName ->
+            query.find(aliasName)?.valueType
+        }?.let { valueType ->
+            return SageTypeLowering.lower(valueType, referenceExpression, context, query)
         }
         val valueType = entry.valueType ?: return null
         return SageTypeLowering.lower(valueType, referenceExpression, context, query)
