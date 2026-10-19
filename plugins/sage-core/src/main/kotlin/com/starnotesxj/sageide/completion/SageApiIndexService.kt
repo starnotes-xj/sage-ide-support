@@ -149,14 +149,31 @@ class SageApiIndexService(
         return reloadBundled(generation)
     }
 
-    private fun productIndexPath(): Path? {
-        val path = runCatching {
-            PathManager.getHomeDir().resolve(PRODUCT_INDEX_RELATIVE_PATH)
-        }.getOrNull() ?: return null
-        val directory = path.parent ?: return null
-        val declared = listOf(path, directory.resolve(PRODUCT_ENVELOPE_FILE), directory.resolve(PRODUCT_RECEIPT_FILE))
-            .any { Files.exists(it) }
-        return path.takeIf { declared }
+    private fun productIndexPath(): Path? = findProductIndexPath(
+        runCatching { PathManager.getHomeDir() }.getOrNull(),
+        runCatching { PathManager.getConfigDir() }.getOrNull(),
+    )
+
+    /**
+     * The bundled product stages the sidecar into the IDE home, while
+     * sage-pycharm-stubgen installs it into the user-level config directory
+     * (APPDATA JetBrains PyCharm config dir, sage-api/<version>/) —
+     * reachable in a stock IDE only through this lookup.  Without the
+     * config fallback the sidecar sits unread and the plugin quietly runs
+     * on the small bundled fixture, leaving completion to PyCharm's native
+     * WSL stub index, whose IJent backend is exactly the unreliable layer
+     * this pipeline exists to bypass.
+     */
+    private fun findProductIndexPath(homeDir: Path?, configDir: Path?): Path? {
+        val relative = java.nio.file.Paths.get(PRODUCT_INDEX_RELATIVE_PATH)
+        for (root in listOfNotNull(homeDir, configDir)) {
+            val path = runCatching { root.resolve(relative) }.getOrNull() ?: continue
+            val directory = path.parent ?: continue
+            val declared = listOf(path, directory.resolve(PRODUCT_ENVELOPE_FILE), directory.resolve(PRODUCT_RECEIPT_FILE))
+                .any { Files.exists(it) }
+            if (declared) return path
+        }
+        return null
     }
 
     private fun reloadProductSidecar(path: Path, generation: Long): Boolean {
