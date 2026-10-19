@@ -598,21 +598,98 @@ class ImportWslArtifactTest(unittest.TestCase):
             self.assertNotIn("digest", envelope["artifactReceipt"])
             self.assertEqual(receipt["envelope"]["digest"], importer.sha256(envelope_path))
 
+    def write_contract_index(self, directory) -> Path:
+        """Synthesize a minimal index that satisfies the quality contract.
+
+        These tests originally read the local ``build/sage-api-real`` WSL
+        integration artifact, which exists only on the dev machine — on CI
+        (and any fresh clone) the path is absent and both tests errored with
+        FileNotFoundError, leaving main red since 2026-10-16.  Inverting the
+        contract exercises the same ``read_index`` validation and
+        ``validate_index_quality`` code paths without the local artifact.
+        """
+        contract_path = Path(__file__).resolve().parent / 'expected-sage-10.9.json'
+        contract = json.loads(contract_path.read_text(encoding='utf-8'))
+        entries = []
+        source_digests = {}
+        for item in contract['quality']:
+            locator = item['source']['locatorPrefix'] + '1'
+            source_digests[importer.source_locator_key(locator)] = item['source']['digest']
+            documentation = {
+                field: 'synthetic documentation'
+                for field in item['documentation']['required']
+            }
+            for field in item['documentation'].get('nonEmptyArrays', []):
+                documentation[field] = ['synthetic']
+            signatures = []
+            for signature in item['signatures']:
+                parameters = []
+                for parameter in signature['parameters']:
+                    state = parameter['typeState']
+                    expression = parameter.get('typeExpression')
+                    if state == 'KNOWN' and expression is None:
+                        expression = 'sage.synthetic.Type'
+                    parameters.append({
+                        'name': parameter['name'],
+                        'optional': parameter.get('optional', False),
+                        'keywordOnly': parameter.get('keywordOnly', False),
+                        'variadic': parameter.get('variadic', False),
+                        'defaultValue': parameter.get('defaultValue'),
+                        'type': {'state': state, 'expression': expression},
+                    })
+                return_state = signature['returnType']['state']
+                return_expression = signature['returnType'].get('expression')
+                if return_state == 'KNOWN' and return_expression is None:
+                    return_expression = 'sage.synthetic.Type'
+                signatures.append({
+                    'parameters': parameters,
+                    'returnType': {'state': return_state, 'expression': return_expression},
+                })
+            entries.append({
+                'qualifiedName': item['qualifiedName'],
+                'kind': item['kind'],
+                'dynamicity': 'STATIC',
+                'confidence': 'HIGH',
+                'parents': [],
+                'protocols': [],
+                'aliases': [],
+                'sources': [{
+                    'kind': item['source']['kind'],
+                    'locator': locator,
+                    'digest': item['source']['digest'],
+                }],
+                'signatures': signatures,
+                'documentation': documentation,
+            })
+        index = {
+            'schemaVersion': 1,
+            'sageVersion': contract.get('sageVersion', '10.9'),
+            'pythonVersion': contract.get('pythonVersion', '3.13'),
+            'generatorVersion': 'synthetic-quality-fixture/1',
+            'sourceDigests': source_digests,
+            'entries': entries,
+        }
+        path = Path(directory) / 'index.json'
+        path.write_text(json.dumps(index), encoding='utf-8')
+        return path
+
     def test_quality_contract_checks_selected_index_fields_and_sidecar(self):
         contract_path = Path(__file__).resolve().parent / 'expected-sage-10.9.json'
-        index_path = Path(__file__).resolve().parents[2] / 'build' / 'sage-api-real' / 'integration-recheck-1' / 'index.json'
         contract = json.loads(contract_path.read_text(encoding='utf-8'))
-        index = importer.read_index(index_path)
-        quality = importer.validate_index_quality(index, contract)
+        with tempfile.TemporaryDirectory() as temp:
+            index_path = self.write_contract_index(temp)
+            index = importer.read_index(index_path)
+            quality = importer.validate_index_quality(index, contract)
         self.assertEqual(quality['checkedCount'], 6)
         self.assertEqual(quality['contractVersion'], 1)
         self.assertEqual([item['qualifiedName'] for item in quality['checked']], sorted(item['qualifiedName'] for item in contract['quality']))
 
     def test_quality_contract_rejects_source_digest_drift(self):
         contract_path = Path(__file__).resolve().parent / 'expected-sage-10.9.json'
-        index_path = Path(__file__).resolve().parents[2] / 'build' / 'sage-api-real' / 'integration-recheck-1' / 'index.json'
         contract = json.loads(contract_path.read_text(encoding='utf-8'))
-        index = importer.read_index(index_path)
+        with tempfile.TemporaryDirectory() as temp:
+            index_path = self.write_contract_index(temp)
+            index = importer.read_index(index_path)
         contract['quality'][0]['source']['digest'] = '0' * 64
         with self.assertRaisesRegex(ValueError, 'quality source mismatch'):
             importer.validate_index_quality(index, contract)
