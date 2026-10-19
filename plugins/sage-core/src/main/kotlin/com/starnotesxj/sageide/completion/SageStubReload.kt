@@ -71,6 +71,7 @@ class SageStubReloadService {
      * records the epoch as processed.
      */
     fun apply(epoch: SageStubInstallEpoch, project: Project?) {
+        LOG.info("Sage stub epoch applying: epoch=${epoch.epoch} url=${epoch.stubRootUrl}")
         val url = epoch.stubRootUrl
         if (url != null) {
             runCatching {

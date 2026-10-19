@@ -27,7 +27,12 @@ class SageApiClassMembersProvider : PyClassMembersProviderBase() {
         val query = SageApiIndexService.getInstance().query() ?: return emptyList()
         if (!isSageContext(location, clazz.pyClass)) return emptyList()
         val owner = SageStubIndex.canonicalQualifiedName(clazz.pyClass) ?: return emptyList()
-        return query.members(owner)
+        val members = query.members(owner)
+        com.intellij.openapi.diagnostic.Logger.getInstance(SageApiClassMembersProvider::class.java).info(
+            "Sage members probe: owner=$owner count=${members.size} " +
+                "origin=${SageApiIndexService.getInstance().loadState().origin}",
+        )
+        return members
             .asSequence()
             .map { entry ->
                 val memberName = entry.qualifiedName.substringAfterLast('.')
