@@ -391,9 +391,21 @@ class SageApiIndexService(
             // the PSI parse is project-agnostic for library files.
             com.intellij.openapi.project.ProjectManager.getInstance().openProjects.firstOrNull()
         } ?: return
+        // Resolve + refresh the mirror OUTSIDE the read action: a synchronous
+        // VFS refresh under a read lock is a platform error, and the factory
+        // itself refreshes recursively once inside.  refreshAndFindFileByNioFile
+        // without events is read-action safe for the initial resolve.
+        // Recursive tree refresh outside any lock; children become visible
+        // to the walk below.
+        com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(false, true, true, mirror)
+        val fileSystem = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        val mirrorRoot = com.intellij.openapi.application.ReadAction.compute<com.intellij.openapi.vfs.VirtualFile?, Exception> {
+            fileSystem.refreshAndFindFileByNioFile(mirror)
+        } ?: run {
+            LOG.warn("Sage PSI index: mirror not found in VFS: " + mirror)
+            return
+        }
         val index = com.intellij.openapi.application.ReadAction.compute<com.starnotesxj.sagemath.sageapi.SageApiIndex?, Exception> {
-            val fileSystem = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-            val mirrorRoot = fileSystem.refreshAndFindFileByNioFile(mirror) ?: return@compute null
             SagePsiApiIndexFactory.build(project, mirrorRoot, metadataSageVersion(directory), "3.13")
         }
         if (index == null || !isCurrent(generation)) return

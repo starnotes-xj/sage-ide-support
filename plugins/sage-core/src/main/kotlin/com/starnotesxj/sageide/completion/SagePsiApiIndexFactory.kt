@@ -39,10 +39,10 @@ object SagePsiApiIndexFactory {
      */
     fun build(project: Project, mirror: VirtualFile, sageVersion: String, pythonVersion: String): SageApiIndex? {
         val started = System.currentTimeMillis()
+        // A freshly installed mirror is not in the VFS yet.  The caller
+        // refreshes the tree OUTSIDE the read action (a synchronous refresh
+        // under a read lock is a platform error); here we only walk.
         val manager = PsiManager.getInstance(project)
-        // A freshly installed mirror is not in the VFS yet; a synchronous
-        // recursive refresh makes every .pyi discoverable before the walk.
-        com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(false, true, true, mirror)
         val entries = mutableListOf<SageApiEntry>()
         val queue = ArrayDeque<VirtualFile>()
         queue.add(mirror)
