@@ -67,16 +67,52 @@ object SagePsiApiIndexFactory {
         // The same class can be visible through both the mirror and other
         // library roots; keep one entry per (qualifiedName, kind).
         val deduplicated = entries.distinctBy { it.qualifiedName to it.kind }
+        val expanded = expandFactoryReturnAliases(deduplicated)
         LOG.info(
-            "Sage PSI index built: ${deduplicated.size} entries from $stubFiles files " +
+            "Sage PSI index built: ${expanded.size} entries from $stubFiles files " +
                 "in ${System.currentTimeMillis() - started} ms",
         )
         return SageApiIndex(
             sageVersion = sageVersion,
             pythonVersion = pythonVersion,
-            entries = deduplicated,
+            entries = expanded,
             generatorVersion = "sage-psi-index/1.0",
         )
+    }
+
+    /**
+     * ``all.pyi`` declares the Sage factories as
+     * ``def EllipticCurve(...) -> _FactoryReturn_EllipticCurve`` — a return
+     * alias that only becomes concrete through the call arguments.  The
+     * owner-resolution chains (random_point -> point class) cannot walk
+     * through such an alias, so expand every factory function's return into
+     * the union of the indexed classes of that name family (``EllipticCurve*``
+     * for ``_FactoryReturn_EllipticCurve``).  Over-approximation is safe:
+     * consumers filter members per concrete class, and classes without the
+     * requested member simply contribute nothing.
+     */
+    private fun expandFactoryReturnAliases(entries: List<SageApiEntry>): List<SageApiEntry> {
+        val classFqnsBySimpleName = linkedMapOf<String, MutableList<String>>()
+        for (entry in entries) {
+            if (entry.kind != SageApiSymbolKind.CLASS) continue
+            val simpleName = entry.qualifiedName.substringAfterLast('.')
+            classFqnsBySimpleName.getOrPut(simpleName) { mutableListOf() }.add(entry.qualifiedName)
+        }
+        val factoryRegex = Regex("^_FactoryReturn_(\\w+)$")
+        return entries.map { entry ->
+            if (entry.kind != SageApiSymbolKind.FUNCTION || entry.signatures.isEmpty()) return@map entry
+            val returnType = entry.signatures.first().returnType
+            val match = factoryRegex.find(returnType.expression.orEmpty()) ?: return@map entry
+            val baseName = match.groupValues[1]
+            val family = classFqnsBySimpleName.entries
+                .filter { it.key == baseName || it.key.startsWith(baseName) }
+                .flatMap { it.value }
+                .distinct()
+                .sorted()
+            if (family.isEmpty()) return@map entry
+            val union = SageTypeRef.known(family.joinToString(" | "))
+            entry.copy(signatures = entry.signatures.map { it.copy(returnType = union) })
+        }
     }
 
     private fun collectFile(file: PyFile, entries: MutableList<SageApiEntry>) {

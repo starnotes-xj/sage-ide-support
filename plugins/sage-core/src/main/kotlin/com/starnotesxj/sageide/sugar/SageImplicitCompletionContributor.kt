@@ -180,6 +180,10 @@ open class SageImplicitCompletionContributor protected constructor(
                             resolvedTarget?.let { addAll(SageIndexedTypeResolver.ownersForTarget(it)) }
                             if (isEmpty()) addAll(SageIndexedTypeResolver.ownersForExpression(qualifier))
                         }
+                        com.intellij.openapi.diagnostic.Logger.getInstance(SageImplicitCompletionContributor::class.java).info(
+                            "owners-chain: resolvedTarget=" + (resolvedTarget?.qualifiedName ?: resolvedTarget?.text ?: "null") +
+                                " qualifier=" + qualifier.text + " owners=" + indexedOwners,
+                        )
                         val memberPrefix = if (completionReference?.qualifier != null) {
                             val referenceRange = completionReference.reference.rangeInElement
                             val offsetInElement =
@@ -189,6 +193,9 @@ open class SageImplicitCompletionContributor protected constructor(
                         } else {
                             ""
                         }
+                        com.intellij.openapi.diagnostic.Logger.getInstance(SageImplicitCompletionContributor::class.java).info(
+                            "typed-member: owners=$indexedOwners prefix='$memberPrefix' auto=${parameters.invocationCount == 0}",
+                        )
                         if (indexedOwners.isNotEmpty()) {
                             // Once a member prefix exists (`Q.ord`), Python's
                             // PyClassMembersProvider can supply the real Sage
