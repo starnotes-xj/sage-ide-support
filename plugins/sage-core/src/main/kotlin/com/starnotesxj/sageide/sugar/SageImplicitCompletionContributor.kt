@@ -434,13 +434,23 @@ open class SageImplicitCompletionContributor protected constructor(
         project: com.intellij.openapi.project.Project,
     ): Set<String> {
         val query = SageApiIndexService.getInstance().query() ?: return emptySet()
+        // Delegate only OWN declarations: the native completion path on a
+        // WSL/IJent backend resolves the receiver's own stub members but has
+        // been observed dropping INHERITED ones (P.xy via
+        // EllipticCurvePoint_field while the receiver is
+        // EllipticCurvePoint_finite_field reported no suggestions).  Inherited
+        // members are therefore always contributed by this plugin instead of
+        // being trusted to Python's variant walk.
         return owners.asSequence()
             .filter { owner ->
                 (SageStubIndex.findClassByCanonicalName(project, owner)
                     ?.takeIf { it.isValid && SageStubIndex.isSageStubFile(it.containingFile) }
                     != null)
             }
-            .flatMap { owner -> query.members(owner).asSequence() }
+            .flatMap { owner ->
+                query.members(owner).asSequence()
+                    .filter { it.qualifiedName.substringBeforeLast('.') == owner }
+            }
             .map { entry -> entry.qualifiedName.substringAfterLast('.') }
             .toSet()
     }

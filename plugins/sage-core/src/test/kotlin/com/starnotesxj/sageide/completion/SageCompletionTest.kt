@@ -303,6 +303,17 @@ class SageCompletionTest : SagePluginTestBase() {
                         "P = E.random_point()\n" +
                         "P.$prefix<caret>",
                 )
+                val caretElement = myFixture.file.findElementAt(myFixture.caretOffset)
+                val ref = caretElement?.parent as? com.jetbrains.python.psi.PyReferenceExpression
+                System.out.println(
+                    "DIAG-REF prefix='$prefix' caretElement=" + (caretElement?.text ?: "null") +
+                        " ref=" + (ref?.text ?: "null") +
+                        " qualifier=" + (ref?.qualifier?.text ?: "null") +
+                        " refType=" + (ref?.let {
+                            val ctx = com.jetbrains.python.psi.types.TypeEvalContext.codeInsightFallback(myFixture.project)
+                            ctx.getType(it)?.toString()
+                        } ?: "null"),
+                )
                 results[prefix] = myFixture.complete(CompletionType.BASIC, 0)?.map { it.lookupString }.orEmpty()
             }
             System.out.println("DIAG-GRADIENT " + results.entries.joinToString(" | ") { "'" + it.key + "'->" + it.value + "}" })
