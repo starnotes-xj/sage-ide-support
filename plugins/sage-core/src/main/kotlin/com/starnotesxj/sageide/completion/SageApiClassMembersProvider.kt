@@ -24,9 +24,20 @@ import com.starnotesxj.sageide.type.SageTypeLowering
  */
 class SageApiClassMembersProvider : PyClassMembersProviderBase() {
     override fun getMembers(clazz: PyClassType, location: PsiElement?, context: TypeEvalContext): Collection<PyCustomMember> {
-        val query = SageApiIndexService.getInstance().query() ?: return emptyList()
-        if (!isSageContext(location, clazz.pyClass)) return emptyList()
-        val owner = SageStubIndex.canonicalQualifiedName(clazz.pyClass) ?: return emptyList()
+        val query = SageApiIndexService.getInstance().query()
+        if (query == null) {
+            com.intellij.openapi.diagnostic.Logger.getInstance(SageApiClassMembersProvider::class.java).debug("members? class=${clazz.pyClass.qualifiedName} -> query unavailable")
+            return emptyList()
+        }
+        if (!isSageContext(location, clazz.pyClass)) {
+            com.intellij.openapi.diagnostic.Logger.getInstance(SageApiClassMembersProvider::class.java).debug("members? class=${clazz.pyClass.qualifiedName} -> not sage context")
+            return emptyList()
+        }
+        val owner = SageStubIndex.canonicalQualifiedName(clazz.pyClass)
+        if (owner == null) {
+            com.intellij.openapi.diagnostic.Logger.getInstance(SageApiClassMembersProvider::class.java).debug("members? class=${clazz.pyClass.qualifiedName} -> no canonical owner")
+            return emptyList()
+        }
         val members = query.members(owner)
         com.intellij.openapi.diagnostic.Logger.getInstance(SageApiClassMembersProvider::class.java).info(
             "Sage members probe: owner=$owner count=${members.size} " +
