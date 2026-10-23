@@ -231,6 +231,9 @@
          triggers a VFS refresh of the stub tree without Invalidate Caches
          (IJent never reports out-of-band WSL writes). -->
     <notificationGroup id="Sage" displayType="BALLOON"/>
+    <!-- Goal C: the local stub-tree mirror beside the API sidecar becomes a
+         synthetic library so the platform StubIndex serves the Sage corpus. -->
+    <additionalLibraryRootsProvider implementation="com.starnotesxj.sageide.completion.SageStubLibraryRootsProvider"/>
     <postStartupActivity implementation="com.starnotesxj.sageide.completion.SageStubReloadStartupActivity"/>
     <!-- Dedicated Sage file type with its own dialect language: the Sage parser
          understands generator sugar statements, everything else is Python. -->

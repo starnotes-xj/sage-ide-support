@@ -34,6 +34,7 @@ data class SageApiIndexLoadState(
     val verifiedSha256: String? = null,
     val artifactId: String? = null,
     val error: String? = null,
+    val psiOnly: Boolean = false,
 )
 
 /**
@@ -181,6 +182,23 @@ class SageApiIndexService(
         if (directory == null) return unavailable(generation, path, "Product Sage API index has no parent directory")
         val metadata = readProductMetadata(directory)
             ?: return unavailable(generation, path, "Product Sage API index sidecar metadata is missing or invalid")
+        if (metadata.receiptOnly) {
+            // PSI mode: no JSON index is loaded on purpose.  The stub-tree
+            // mirror is indexed by the platform (SageStubLibraryRootsProvider)
+            // and every consumer's native resolution path carries the load.
+            val psiState = SageApiIndexLoadState(
+                SageApiIndexOrigin.PRODUCT,
+                path = path,
+                schemaVersion = 1,
+                entryCount = metadata.entryCount ?: 0,
+                artifactId = metadata.artifactId,
+                psiOnly = true,
+            )
+            if (publish(generation, null, psiState)) {
+                LOG.info("Sage API receipt-only sidecar active (PSI mode): " + path)
+            }
+            return true
+        }
         return reload(
             path,
             generation,
@@ -196,7 +214,13 @@ class SageApiIndexService(
         val receiptPath = directory.resolve(PRODUCT_RECEIPT_FILE)
         if (!Files.isRegularFile(envelopePath) || !Files.isRegularFile(receiptPath)) return null
         val envelope = runCatching { Files.readString(envelopePath) }.getOrNull() ?: return null
-        val indexObject = jsonObject(envelope, "index") ?: return null
+        val indexObject = jsonObject(envelope, "index")
+        if (indexObject == null) {
+            // Receipt-only sidecar (goal C): the stubTree section replaces the
+            // index; the platform StubIndex over the local mirror serves the
+            // queries this service used to answer from the JSON index.
+            return receiptOnlyMetadata(directory, envelope, artifactIdOf(envelope))
+        }
         val digest = jsonString(indexObject, "sha256")?.lowercase()?.takeIf { SHA256.matches(it) } ?: return null
         if (jsonString(indexObject, "path") != PRODUCT_INDEX_FILE) return null
         if (jsonNumber(envelope, "schemaVersion") != 1) return null
@@ -215,6 +239,26 @@ class SageApiIndexService(
         val receiptEntryCount = jsonNumber(receiptIndex, "entryCount") ?: return null
         if (receiptEntryCount != envelopeEntryCount) return null
         return ProductSidecarMetadata(digest, artifactId, envelopeEntryCount)
+    }
+
+    private fun artifactIdOf(envelope: String): String? =
+        jsonString(envelope, "artifactId")?.takeIf { it.isNotBlank() }
+
+    /** Validates the goal-C receipt shape: coverage + stub tree, no index. */
+    private fun receiptOnlyMetadata(directory: Path, envelope: String, artifactId: String?): ProductSidecarMetadata? {
+        val receipt = runCatching { Files.readString(directory.resolve(PRODUCT_RECEIPT_FILE)) }.getOrNull() ?: return null
+        if (jsonNumber(envelope, "schemaVersion") != 1) return null
+        val coverage = jsonObject(envelope, "apiCoverage") ?: return null
+        if (jsonString(coverage, "scope") != "FULL" || !jsonBoolean(coverage, "isComplete")) return null
+        val covered = jsonNumber(coverage, "coveredCount") ?: return null
+        if (covered != jsonNumber(coverage, "expectedCount")) return null
+        if (artifactId == null) return null
+        if (jsonString(receipt, "artifactId") != artifactId) return null
+        val stubTree = jsonObject(envelope, "stubTree") ?: return null
+        val fileCount = jsonNumber(stubTree, "fileCount") ?: return null
+        if (fileCount != covered || fileCount <= 0) return null
+        val digest = jsonString(stubTree, "sha256")?.lowercase()?.takeIf { SHA256.matches(it) } ?: return null
+        return ProductSidecarMetadata(sha256 = digest, artifactId = artifactId, entryCount = fileCount, receiptOnly = true)
     }
 
     private fun jsonObject(json: String, key: String): String? =
@@ -313,6 +357,10 @@ class SageApiIndexService(
             return false
         }
         val query = SageApiIndexQuery(index)
+        LOG.info(
+            "Sage API index loaded: origin=$origin entries=${index.entries.size} " +
+                "bytes=$sizeBytes path=$path generator=${index.generatorVersion}",
+        )
         return publish(
             generation,
             query,

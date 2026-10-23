@@ -87,6 +87,38 @@ class SageApiIndexServiceTest : SagePluginTestBase() {
         }
     }
 
+    fun testReceiptOnlySidecarActivatesPsiMode() {
+        // Goal C: an envelope+receipt pair over the stub-tree mirror (no JSON
+        // index, no doc buckets) must load as a PRODUCT psiOnly state, not
+        // fail closed - the platform StubIndex serves the queries.
+        val directory = Files.createTempDirectory("sage-api-receipt-only-")
+        try {
+            Files.writeString(directory.resolve("sage-api-index-envelope.json"), "{\"schemaVersion\": 1, \"artifactId\": \"local-sage-10.9-stubgen-0.9.21\", \"apiCoverage\": {\"scope\": \"FULL\", \"isComplete\": true, \"coveredCount\": 42, \"expectedCount\": 42}, \"stubTree\": {\"directory\": \"stub-tree\", \"fileCount\": 42, \"totalBytes\": 70000000, \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}")
+            Files.writeString(directory.resolve("artifact-receipt.json"), "{\"artifactId\": \"local-sage-10.9-stubgen-0.9.21\", \"stubTree\": {\"directory\": \"stub-tree\", \"fileCount\": 42, \"totalBytes\": 70000000, \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}")
+            val service = SageApiIndexService.getInstance()
+            val previous = System.getProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+            try {
+                System.setProperty(
+                    SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY,
+                    directory.resolve("sage-api-index.json").toString(),
+                )
+                assertTrue(service.reloadConfigured())
+                val state = service.loadState()
+                assertEquals(SageApiIndexOrigin.PRODUCT, state.origin)
+                assertTrue(state.psiOnly)
+                assertEquals(42, state.entryCount)
+                assertEquals("local-sage-10.9-stubgen-0.9.21", state.artifactId)
+                assertNull(service.query())
+            } finally {
+                if (previous == null) System.clearProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY)
+                else System.setProperty(SageApiIndexService.PRODUCT_INDEX_PATH_PROPERTY, previous)
+                service.install(null)
+            }
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
     fun testExplicitExternalIndexTakesPrecedenceOverProductSidecar() {
         val fixture = javaClass.classLoader.getResourceAsStream("sage-api-index.json")
             ?: error("bundled sage-api-index.json is missing")

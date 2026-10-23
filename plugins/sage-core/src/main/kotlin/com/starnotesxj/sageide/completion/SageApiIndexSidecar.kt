@@ -5,9 +5,10 @@ import java.nio.file.Path
 import java.security.MessageDigest
 
 internal data class ProductSidecarMetadata(
-    val sha256: String,
+    val sha256: String?,
     val artifactId: String,
-    val entryCount: Int,
+    val entryCount: Int?,
+    val receiptOnly: Boolean = false,
 )
 
 internal fun sha256(path: Path): String {
