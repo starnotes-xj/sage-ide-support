@@ -183,9 +183,11 @@ class SageApiIndexService(
         val metadata = readProductMetadata(directory)
             ?: return unavailable(generation, path, "Product Sage API index sidecar metadata is missing or invalid")
         if (metadata.receiptOnly) {
-            // PSI mode: no JSON index is loaded on purpose.  The stub-tree
-            // mirror is indexed by the platform (SageStubLibraryRootsProvider)
-            // and every consumer's native resolution path carries the load.
+            // PSI mode: the JSON index is replaced by an index built from the
+            // local stub-tree mirror via SagePsiApiIndexFactory, so every rich
+            // consumer keeps its SageApiIndexQuery with zero changes.  The
+            // loadState first flips to psiOnly (available immediately), then
+            // the background build publishes the query.
             val psiState = SageApiIndexLoadState(
                 SageApiIndexOrigin.PRODUCT,
                 path = path,
@@ -194,9 +196,10 @@ class SageApiIndexService(
                 artifactId = metadata.artifactId,
                 psiOnly = true,
             )
-            if (publish(generation, null, psiState)) {
-                LOG.info("Sage API receipt-only sidecar active (PSI mode): " + path)
-            }
+            if (!publish(generation, null, psiState)) return false
+            LOG.info("Sage API receipt-only sidecar active (PSI mode): " + path)
+            val sidecarDirectory = path.parent
+            enqueueInitialLoad(Runnable { buildPsiIndex(generation, sidecarDirectory, metadata) })
             return true
         }
         return reload(
@@ -374,6 +377,38 @@ class SageApiIndexService(
         )
     }
 
+    /** Builds the PSI-backed index from the stub-tree mirror and publishes it. */
+    private fun buildPsiIndex(generation: Long, sidecarDirectory: Path?, metadata: ProductSidecarMetadata) {
+        if (!isCurrent(generation)) return
+        val directory = sidecarDirectory ?: return
+        val mirror = directory.resolve(STUB_TREE_DIRECTORY)
+        if (!Files.isDirectory(mirror)) {
+            LOG.warn("Sage PSI index: no stub-tree mirror beside the sidecar: " + mirror)
+            return
+        }
+        val project = com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction<com.intellij.openapi.project.Project?> {
+            // Any open project works: the mirror is application-level data and
+            // the PSI parse is project-agnostic for library files.
+            com.intellij.openapi.project.ProjectManager.getInstance().openProjects.firstOrNull()
+        } ?: return
+        val index = com.intellij.openapi.application.ReadAction.compute<com.starnotesxj.sagemath.sageapi.SageApiIndex?, Exception> {
+            val fileSystem = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+            val mirrorRoot = fileSystem.refreshAndFindFileByNioFile(mirror) ?: return@compute null
+            SagePsiApiIndexFactory.build(project, mirrorRoot, metadataSageVersion(directory), "3.13")
+        }
+        if (index == null || !isCurrent(generation)) return
+        val query = SageApiIndexQuery(index)
+        publish(
+            generation,
+            query,
+            query.toLoadState(SageApiIndexOrigin.PRODUCT, path = directory.resolve(PRODUCT_INDEX_FILE), psiOnly = true),
+        )
+        LOG.info("Sage PSI index active: ${index.entries.size} entries")
+    }
+
+    private fun metadataSageVersion(sidecarDirectory: Path): String =
+        sidecarDirectory.fileName?.toString()?.takeIf { it.isNotEmpty() } ?: "10.9"
+
     companion object {
         const val INDEX_PATH_PROPERTY = "sage.api.index"
         const val INDEX_PATH_ENV = "SAGE_API_INDEX"
@@ -383,6 +418,7 @@ class SageApiIndexService(
         private const val PRODUCT_ENVELOPE_FILE = "sage-api-index-envelope.json"
         private const val PRODUCT_RECEIPT_FILE = "artifact-receipt.json"
         private const val BUNDLED_INDEX_RESOURCE = "sage-api-index.json"
+        private const val STUB_TREE_DIRECTORY = "stub-tree"
         private val SHA256 = Regex("[0-9a-f]{64}")
         /** Hard cap protects IDE startup from accidental multi-hundred-MB inputs. */
         const val MAX_EXTERNAL_INDEX_BYTES: Long = 288L * 1024L * 1024L
@@ -408,6 +444,7 @@ private fun SageApiIndexQuery.toLoadState(
     verifiedSha256: String? = null,
     artifactId: String? = null,
     error: String? = null,
+    psiOnly: Boolean = false,
 ): SageApiIndexLoadState = SageApiIndexLoadState(
     origin = origin,
     path = path,
@@ -422,4 +459,5 @@ private fun SageApiIndexQuery.toLoadState(
     verifiedSha256 = verifiedSha256,
     artifactId = artifactId,
     error = error,
+    psiOnly = psiOnly,
 )
