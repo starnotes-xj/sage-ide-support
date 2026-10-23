@@ -145,6 +145,14 @@ open class SageImplicitCompletionContributor protected constructor(
                     val memberCompletion = completionReference?.qualifier != null ||
                         incompleteMemberQualifier != null
                     if (memberCompletion) {
+                        // Member completion cannot rely on the platform's live
+                        // filtering of the dot-invocation result: inherited
+                        // index members are only contributed when this
+                        // contributor actually re-runs.  Register the restart
+                        // so every typed prefix change re-invokes the full
+                        // chain (the reported P.xy case: 'x' showed xy, 'xy'
+                        // never re-invoked and the popup emptied).
+                        result.restartCompletionOnPrefixChange(StandardPatterns.string().longerThan(0))
                         val qualifier = completionReference?.qualifier ?: incompleteMemberQualifier ?: return
                         val memberLocation = completionReference ?: qualifier
                         // Dynamic Sage calls are sampled only because the user
@@ -424,6 +432,11 @@ open class SageImplicitCompletionContributor protected constructor(
                 if (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD) {
                     builder = builder.withInsertHandler(SageParensInsertHandler)
                 }
+                com.intellij.openapi.diagnostic.Logger.getInstance(SageImplicitCompletionContributor::class.java).info(
+                    "addIndexed: prefix='" + memberPrefix + "' name='" + name +
+                        "' lookup=" + builder.lookupString + " caseSensitive=" +
+                        result.prefixMatcher.prefixMatches(name),
+                )
                 result.addElement(builder)
             }
     }
