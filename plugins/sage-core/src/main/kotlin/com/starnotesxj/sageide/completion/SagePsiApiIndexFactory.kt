@@ -47,6 +47,7 @@ object SagePsiApiIndexFactory {
         val queue = ArrayDeque<VirtualFile>()
         queue.add(mirror)
         var stubFiles = 0
+        val collectedFiles = mutableListOf<Pair<PyFile, List<SageApiEntry>>>()
         while (queue.isNotEmpty()) {
             val children = queue.removeFirst().children
             for (child in children) {
@@ -55,7 +56,10 @@ object SagePsiApiIndexFactory {
                     child.name.endsWith(".pyi") || child.name.endsWith(".py") -> {
                         val file = manager.findFile(child) as? PyFile ?: continue
                         stubFiles += 1
-                        collectFile(file, entries)
+                        val fileEntries = mutableListOf<SageApiEntry>()
+                        collectFile(file, fileEntries)
+                        collectedFiles += file to fileEntries
+                        entries += fileEntries
                     }
                 }
             }
@@ -64,54 +68,70 @@ object SagePsiApiIndexFactory {
             LOG.warn("Sage PSI index: mirror produced no entries under " + mirror.url)
             return null
         }
+        // Factory-return import aliases resolve to the real class BEFORE
+        // dedup so alias- and class-declared entries unify.
+        val aliasResolved = resolveSignatureAliases(collectedFiles)
+        entries.clear()
+        entries += aliasResolved
         // The same class can be visible through both the mirror and other
         // library roots; keep one entry per (qualifiedName, kind).
         val deduplicated = entries.distinctBy { it.qualifiedName to it.kind }
-        val expanded = expandFactoryReturnAliases(deduplicated)
         LOG.info(
-            "Sage PSI index built: ${expanded.size} entries from $stubFiles files " +
+            "Sage PSI index built: ${deduplicated.size} entries from $stubFiles files " +
                 "in ${System.currentTimeMillis() - started} ms",
         )
         return SageApiIndex(
             sageVersion = sageVersion,
             pythonVersion = pythonVersion,
-            entries = expanded,
+            entries = deduplicated,
             generatorVersion = "sage-psi-index/1.0",
         )
     }
 
     /**
-     * ``all.pyi`` declares the Sage factories as
-     * ``def EllipticCurve(...) -> _FactoryReturn_EllipticCurve`` — a return
-     * alias that only becomes concrete through the call arguments.  The
-     * owner-resolution chains (random_point -> point class) cannot walk
-     * through such an alias, so expand every factory function's return into
-     * the union of the indexed classes of that name family (``EllipticCurve*``
-     * for ``_FactoryReturn_EllipticCurve``).  Over-approximation is safe:
-     * consumers filter members per concrete class, and classes without the
-     * requested member simply contribute nothing.
+     * ``all.pyi`` declares the Sage factories through import aliases:
+     * ``from ...ell_finite_field import EllipticCurve_finite_field as
+     * _FactoryReturn_EllipticCurve`` followed by
+     * ``def EllipticCurve(...) -> _FactoryReturn_EllipticCurve``.  The alias
+     * IS a concrete class reference — resolve it through the file's import
+     * list so the index (and every native inference chain consuming it)
+     * sees the real class name from the first hop: EllipticCurve(...) ->
+     * EllipticCurve_finite_field -> E.random_point() ->
+     * EllipticCurvePoint_finite_field, all native from there on.
      */
-    private fun expandFactoryReturnAliases(entries: List<SageApiEntry>): List<SageApiEntry> {
-        val classFqnsBySimpleName = linkedMapOf<String, MutableList<String>>()
-        for (entry in entries) {
-            if (entry.kind != SageApiSymbolKind.CLASS) continue
-            val simpleName = entry.qualifiedName.substringAfterLast('.')
-            classFqnsBySimpleName.getOrPut(simpleName) { mutableListOf() }.add(entry.qualifiedName)
+    private fun resolveImportAlias(file: PyFile, aliasName: String): String? {
+        for (statement in file.importBlock) {
+            for (element in statement.importElements) {
+                val imported = com.starnotesxj.sageide.sugar.SageStubIndex.visibleImportName(element) ?: continue
+                if (imported == aliasName) {
+                    val qualified = com.starnotesxj.sageide.sugar.SageStubIndex.importedName(element) ?: continue
+                    // PyImportElement text for `from a.b import C as X` is the
+                    // resolved reference `a.b.C` when PSI resolved it, else the
+                    // plain `C`; both are more concrete than the alias itself.
+                    return qualified
+                }
+            }
         }
-        val factoryRegex = Regex("^_FactoryReturn_(\\w+)$")
-        return entries.map { entry ->
-            if (entry.kind != SageApiSymbolKind.FUNCTION || entry.signatures.isEmpty()) return@map entry
-            val returnType = entry.signatures.first().returnType
-            val match = factoryRegex.find(returnType.expression.orEmpty()) ?: return@map entry
-            val baseName = match.groupValues[1]
-            val family = classFqnsBySimpleName.entries
-                .filter { it.key == baseName || it.key.startsWith(baseName) }
-                .flatMap { it.value }
-                .distinct()
-                .sorted()
-            if (family.isEmpty()) return@map entry
-            val union = SageTypeRef.known(family.joinToString(" | "))
-            entry.copy(signatures = entry.signatures.map { it.copy(returnType = union) })
+        return null
+    }
+
+    /**
+     * Rewrites signature return types that reference an import alias in the
+     * SAME file into the aliased fully-qualified class name.
+     */
+    private fun resolveSignatureAliases(collected: List<Pair<PyFile, List<SageApiEntry>>>): List<SageApiEntry> {
+        return collected.flatMap { (file, entries) ->
+            val aliasCache = mutableMapOf<String, String?>()
+            entries.map { entry ->
+                if (entry.signatures.isEmpty()) return@map entry
+                val rewritten = entry.signatures.map { signature ->
+                    val raw = signature.returnType.expression ?: return@map signature
+                    val resolved = aliasCache.getOrPut(raw) { resolveImportAlias(file, raw) }
+                    if (resolved == null) signature
+                    else signature.copy(returnType = SageTypeRef.known(resolved))
+                }
+                entry.copy(signatures = rewritten)
+            }
         }
     }
 
@@ -120,14 +140,14 @@ object SagePsiApiIndexFactory {
         val started = System.currentTimeMillis()
         val deduplicated = collectedEntries.flatten()
             .distinctBy { it.qualifiedName to it.kind }
-        val expanded = expandFactoryReturnAliases(deduplicated)
+        // (factory-return aliases are resolved during collection)
         LOG.info(
-            "Sage PSI index assembled: ${expanded.size} entries in ${System.currentTimeMillis() - started} ms",
+            "Sage PSI index assembled: ${deduplicated.size} entries in ${System.currentTimeMillis() - started} ms",
         )
         return SageApiIndex(
             sageVersion = sageVersion,
             pythonVersion = pythonVersion,
-            entries = expanded,
+            entries = deduplicated,
             generatorVersion = "sage-psi-index/1.0",
         )
     }
@@ -157,7 +177,11 @@ object SagePsiApiIndexFactory {
         val entries = mutableListOf<SageApiEntry>()
         collectFile(psiFile, entries)
         val module = moduleQualifiedName(psiFile) ?: return null
-        return module to entries
+        // Resolve factory-return import aliases (`from a.b import C as
+        // _FactoryReturn_X` + `def f() -> _FactoryReturn_X`) to the aliased
+        // real class right here, file-at-hand.
+        val aliasResolved = resolveSignatureAliases(listOf(psiFile to entries))
+        return module to aliasResolved
     }
 
     private fun collectFile(file: PyFile, entries: MutableList<SageApiEntry>) {
