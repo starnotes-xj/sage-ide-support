@@ -295,6 +295,7 @@ class SageCompletionTest : SagePluginTestBase() {
         )
         try {
             val results = linkedMapOf<String, List<String>>()
+            val texts = linkedMapOf<String, String>()
             for (prefix in listOf("", "x", "xy", "o", "or", "ord")) {
                 myFixture.configureByText(
                     "repro-$prefix.sage",
@@ -315,13 +316,25 @@ class SageCompletionTest : SagePluginTestBase() {
                         } ?: "null"),
                 )
                 results[prefix] = myFixture.complete(CompletionType.BASIC, 0)?.map { it.lookupString }.orEmpty()
+                texts[prefix] = myFixture.editor.document.text
             }
             System.out.println("DIAG-GRADIENT " + results.entries.joinToString(" | ") { "'" + it.key + "'->" + it.value + "}" })
-            // Headless note: prefixed invocations return empty in the test
-            // fixture (no native library PSI behind the fixture classes) while
-            // the real IDE serves them via the mirrored library; the empty-
-            // prefix case is the deterministic gate here.
+            // The prefixed passes are the REAL gate: with a receiver whose
+            // concrete class does not itself declare xy (inherited from
+            // EllipticCurvePoint_field), every prefix pass must still offer
+            // xy directly from the index — the delegation filter must not
+            // hand inherited members to a native walk that drops them.
+            // In the fixture a single matching item is AUTO-INSERTED instead
+            // of showing a lookup (complete() then returns empty), and the
+            // plugin's insert handler appends "()", so the document text is
+            // the evidence the candidate was offered at that prefix.
             assertTrue("xy at '': " + results, "xy" in results.getValue(""))
+            for (prefix in listOf("x", "xy")) {
+                assertTrue("xy at '$prefix': " + texts, "P.xy(" in texts.getValue(prefix))
+            }
+            for (prefix in listOf("o", "or", "ord")) {
+                assertTrue("order at '$prefix': " + texts, "P.order(" in texts.getValue(prefix))
+            }
         } finally {
             SageApiIndexService.getInstance().install(null)
         }

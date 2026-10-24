@@ -561,7 +561,16 @@ open class SageImplicitCompletionContributor protected constructor(
                             entry.qualifiedName.substringBeforeLast('.')
                     }
                     .filter { (name, declaringOwner) ->
-                        declaringOwner != owner || name in ownNames
+                        // Delegate ONLY members the PSI class declares ITSELF
+                        // (index declaringOwner == this owner AND present in
+                        // the class's own method names).  Everything else is
+                        // an inherited member from the index's parents view —
+                        // the WSL/IJent native walk drops exactly those, so
+                        // they are contributed directly by this contributor.
+                        // (The previous `!=` here delegated EVERY inherited
+                        // member and left every prefixed pass empty — the
+                        // P.xy killer.)
+                        declaringOwner == owner && name in ownNames
                     }
                     .map { (name, _) -> name }
             }
