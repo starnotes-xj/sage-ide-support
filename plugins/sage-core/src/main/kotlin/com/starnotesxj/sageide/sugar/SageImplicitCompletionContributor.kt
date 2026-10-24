@@ -209,6 +209,7 @@ open class SageImplicitCompletionContributor protected constructor(
                         // capture the ACTIVE lookup's final item list — the
                         // authoritative answer to "what does the user see".
                         val typedEditor = parameters.editor
+                        val positionProjectForRestore = position.project
                         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
                             for (delayMs in longArrayOf(400, 1500)) {
                                 Thread.sleep(delayMs)
@@ -220,6 +221,26 @@ open class SageImplicitCompletionContributor protected constructor(
                                             .getInstance(SageImplicitCompletionContributor::class.java).info(
                                                 "post-typed prefix='$memberPrefix' activeLookup=null (popup canceled or never shown)",
                                             )
+                                        // Restore: a member popup that died without the user's
+                                        // intent (PSI cache drops / focus churn) leaves a typed
+                                        // prefix with no candidates — the reported P.xy case.
+                                        // Cooldown keeps an explicit Esc in charge.
+                                        if (memberPrefix.isNotEmpty() && delayMs == 400L) {
+                                            val lastRestore = popupRestoreCooldown.get(typedEditor) ?: 0L
+                                            val now = System.currentTimeMillis()
+                                            if (now - lastRestore > POPUP_RESTORE_COOLDOWN_MS) {
+                                                popupRestoreCooldown[typedEditor] = now
+                                                val restoreEditor = typedEditor
+                                                com.intellij.openapi.application.ApplicationManager.getApplication()
+                                                    .invokeLater {
+                                                        runCatching {
+                                                            com.intellij.codeInsight.AutoPopupController
+                                                                .getInstance(positionProjectForRestore ?: return@invokeLater)
+                                                                .autoPopupMemberLookup(restoreEditor, null as com.intellij.openapi.util.Condition<com.intellij.psi.PsiFile>?)
+                                                        }
+                                                    }
+                                            }
+                                        }
                                         return@compute
                                     }
                                     val items = lookup.items.map { it.lookupString }
@@ -230,6 +251,15 @@ open class SageImplicitCompletionContributor protected constructor(
                                         )
                                 }
                             }
+                        }
+                        // Re-invoke the FULL chain on every member-prefix
+                        // keystroke, but register the hook only ONCE — at the
+                        // dot invocation (empty prefix), exactly the platform's
+                        // own root-namespace pattern. Registering from prefixed
+                        // passes re-arms the hook on every keystroke and the
+                        // platform cancels the restarted popup outright.
+                        if (memberPrefix.isEmpty()) {
+                            result.restartCompletionOnPrefixChange(StandardPatterns.string().longerThan(0))
                         }
                         if (indexedOwners.isNotEmpty()) {
                             // Once a member prefix exists (`Q.ord`), Python's
@@ -247,7 +277,7 @@ open class SageImplicitCompletionContributor protected constructor(
                             } else {
                                 emptySet()
                             }
-                            addIndexedMemberCompletions(result, indexedOwners, memberPrefix, delegatedMemberNames)
+                            addIndexedMemberCompletions(result, indexedOwners, memberPrefix, delegatedMemberNames, position.project)
                             return
                         }
                         val resolvedTargetType = resolvedTarget
@@ -434,6 +464,7 @@ open class SageImplicitCompletionContributor protected constructor(
         owners: Set<String>,
         memberPrefix: String,
         delegatedMemberNames: Set<String> = emptySet(),
+        project: com.intellij.openapi.project.Project? = null,
     ) {
         val query = SageApiIndexService.getInstance().query() ?: return
         // Some PyCharm 2026 PSI completion boundaries report the whole
@@ -454,7 +485,24 @@ open class SageImplicitCompletionContributor protected constructor(
                 val name = entry.qualifiedName.substringAfterLast('.')
                 if (name in delegatedMemberNames) return@forEach
                 if (!emittedNames.add(name)) return@forEach
-                var builder = LookupElementBuilder.create(name).withTypeText(owner)
+                // Prefer a smart-pointer element bound to the real mirror
+                // declaration: plain name-only builders live-filter poorly on
+                // some prefix matchers (the P.xy case: item present at 'x',
+                // dropped by live filtering at 'xy' while native-built items
+                // survived).  A smart pointer gives the item the same
+                // presentation, icon, and matcher behaviour as the native
+                // member items the user sees for receivers whose class the
+                // platform resolved natively (the Q.xy path).
+                val resolveProject = project ?: runCatching { com.intellij.openapi.project.ProjectManager.getInstance().openProjects.firstOrNull() }.getOrNull()
+                val declaration = resolveProject?.let { proj ->
+                    SageStubIndex.findClassByCanonicalName(proj, owner)
+                        ?.findMethodByName(name, true, com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(proj, null))
+                }
+                var builder = if (declaration != null) {
+                    LookupElementBuilder.createWithSmartPointer(name, declaration)
+                } else {
+                    LookupElementBuilder.create(name)
+                }.withTypeText(owner)
                 indexedEntryIcon(entry.kind)?.let { builder = builder.withIcon(it) }
                 if (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD) {
                     builder = builder.withInsertHandler(SageParensInsertHandler)
@@ -598,6 +646,9 @@ open class SageImplicitCompletionContributor protected constructor(
  * extension must expose a no-argument constructor; the shared implementation
  * keeps its completion-type configuration protected.
  */
+private val popupRestoreCooldown = java.util.concurrent.ConcurrentHashMap<com.intellij.openapi.editor.Editor, Long>()
+private const val POPUP_RESTORE_COOLDOWN_MS = 3000L
+
 class SageBasicCompletionContributor : SageImplicitCompletionContributor(setOf(CompletionType.BASIC))
 
 /**
