@@ -371,35 +371,79 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
         cancelStaleSnapshots(request.key)
         if (!inFlight.add(request.key)) return
         cancelWorkerIdleClose()
-        scheduled[request.key] = debounceExecutor.schedule({
-            scheduled.remove(request.key)
-            if (!inFlight.contains(request.key) || project.isDisposed) return@schedule
-            val handle = SageRuntimeService.getInstance()
-                .submit(LIVE_TYPE_PROBE_DEADLINE) { control ->
-                    workerFor(request.runtime).probe(
-                        SageLiveTypeWorkerQuery(
-                            request.source,
-                            request.requestedNames,
-                            request.fileName,
-                            control = control,
-                        ),
-                    )
-                }
-            active[request.key] = handle
-            handle.future.whenComplete { result, error ->
-                active.remove(request.key)
-                inFlight.remove(request.key)
-                if (error == null && result?.status == RuntimeExecutionStatus.SUCCESS) {
-                    evidence.recordSuccess(request.key, result.observedTypes)
-                } else if (result?.status != RuntimeExecutionStatus.CANCELLED) {
-                    // A deterministic source error or an unavailable runtime must
-                    // not cause an endless daemon -> worker -> daemon loop.  The
-                    // backoff is keyed by this exact source and runtime only.
-                    evidence.recordFailure(request.key)
-                }
-                scheduleWorkerCloseWhenIdle()
+        armProbe(request)
+    }
+
+    /**
+     * Fires (or re-arms) the debounced WSL probe.  The re-arm branch is the
+     * P.xy fix: this service schedules a probe from every member completion
+     * whose receiver was assigned a dynamic call (`P = E.random_point()` —
+     * `Q = 5 * P` never schedules, which is exactly the reported P/Q
+     * asymmetry).  Spawning wsl.exe 650 ms into an open completion popup
+     * stirs the WSL FS/VFS subsystem and the platform silently cancels the
+     * live lookup — the popup showed xy and died ~1 s later with no log
+     * line.  While a lookup is active, keep re-arming; the probe runs once
+     * the popup is gone (Esc, selection, or focus loss), so the feature
+     * still delivers its evidence without ever killing completion.
+     */
+    private fun armProbe(request: SnapshotRequest) {
+        val lookupActive = runCatching {
+            com.intellij.openapi.application.ReadAction.compute<Boolean, RuntimeException> {
+                com.intellij.codeInsight.lookup.LookupManager
+                    .getInstance(project)
+                    .activeLookup != null
             }
-        }, DEBOUNCE_MILLIS, TimeUnit.MILLISECONDS)
+        }.getOrDefault(false)
+        if (lookupActive) {
+            scheduled[request.key] = debounceExecutor.schedule(
+                { fireProbe(request) },
+                DEBOUNCE_MILLIS,
+                TimeUnit.MILLISECONDS,
+            )
+            return
+        }
+        fireProbe(request)
+    }
+
+    private fun fireProbe(request: SnapshotRequest) {
+        scheduled.remove(request.key)
+        if (!inFlight.contains(request.key) || project.isDisposed) return
+        val lookupStillActive = runCatching {
+            com.intellij.openapi.application.ReadAction.compute<Boolean, RuntimeException> {
+                com.intellij.codeInsight.lookup.LookupManager
+                    .getInstance(project)
+                    .activeLookup != null
+            }
+        }.getOrDefault(false)
+        if (lookupStillActive) {
+            armProbe(request)
+            return
+        }
+        val handle = SageRuntimeService.getInstance()
+            .submit(LIVE_TYPE_PROBE_DEADLINE) { control ->
+                workerFor(request.runtime).probe(
+                    SageLiveTypeWorkerQuery(
+                        request.source,
+                        request.requestedNames,
+                        request.fileName,
+                        control = control,
+                    ),
+                )
+            }
+        active[request.key] = handle
+        handle.future.whenComplete { result, error ->
+            active.remove(request.key)
+            inFlight.remove(request.key)
+            if (error == null && result?.status == RuntimeExecutionStatus.SUCCESS) {
+                evidence.recordSuccess(request.key, result.observedTypes)
+            } else if (result?.status != RuntimeExecutionStatus.CANCELLED) {
+                // A deterministic source error or an unavailable runtime must
+                // not cause an endless daemon -> worker -> daemon loop.  The
+                // backoff is keyed by this exact source and runtime only.
+                evidence.recordFailure(request.key)
+            }
+            scheduleWorkerCloseWhenIdle()
+        }
     }
 
     private fun cancelStaleSnapshots(current: SnapshotKey) {
