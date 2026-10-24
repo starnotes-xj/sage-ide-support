@@ -204,6 +204,23 @@ open class SageImplicitCompletionContributor protected constructor(
                         com.intellij.openapi.diagnostic.Logger.getInstance(SageImplicitCompletionContributor::class.java).info(
                             "typed-member: owners=$indexedOwners prefix='$memberPrefix' auto=${parameters.invocationCount == 0}",
                         )
+                        // Post-typed popup dump: 400 ms after contributing,
+                        // capture the ACTIVE lookup's final item list — the
+                        // authoritative answer to "what does the user see".
+                        val typedEditor = parameters.editor
+                        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+                            Thread.sleep(400)
+                            com.intellij.openapi.application.ReadAction.compute<Unit, Exception> {
+                                val lookup = com.intellij.codeInsight.lookup.LookupManager
+                                    .getActiveLookup(typedEditor) ?: return@compute
+                                val items = lookup.items.map { it.lookupString }
+                                com.intellij.openapi.diagnostic.Logger
+                                    .getInstance(SageImplicitCompletionContributor::class.java).info(
+                                        "post-typed prefix='$memberPrefix' items=${items.size} " +
+                                            "hasXY=${"xy" in items} first=${items.take(8)}",
+                                    )
+                            }
+                        }
                         if (indexedOwners.isNotEmpty()) {
                             // Once a member prefix exists (`Q.ord`), Python's
                             // PyClassMembersProvider can supply the real Sage
