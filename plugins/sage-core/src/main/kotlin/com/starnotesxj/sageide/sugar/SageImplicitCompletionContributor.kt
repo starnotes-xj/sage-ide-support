@@ -250,7 +250,7 @@ open class SageImplicitCompletionContributor protected constructor(
                                             "post-typed prefix='$memberPrefix' items=${items.size} " +
                                                 "hasXY=${"xy" in items} first=${items.take(8)}",
                                         )
-                                    attachCancelListener(lookup)
+                                    attachCancelListener(lookup, position.project)
                                 }
                             }
                         }
@@ -476,7 +476,7 @@ open class SageImplicitCompletionContributor protected constructor(
     }
 
     /** Attach once per live lookup: log every cancellation with its reason. */
-    private fun attachCancelListener(lookup: com.intellij.codeInsight.lookup.Lookup) {
+    private fun attachCancelListener(lookup: com.intellij.codeInsight.lookup.Lookup, project: com.intellij.openapi.project.Project?) {
         val log = com.intellij.openapi.diagnostic.Logger.getInstance(SageImplicitCompletionContributor::class.java)
         val already = synchronized(forensicAttachedLookups) {
             forensicAttachedLookups.put(lookup, true) != null
@@ -485,7 +485,29 @@ open class SageImplicitCompletionContributor protected constructor(
         lookup.addLookupListener(object : com.intellij.codeInsight.lookup.LookupListener {
             override fun lookupCanceled(event: com.intellij.codeInsight.lookup.LookupEvent) {
                 val explicit = runCatching { event.isCanceledExplicitly }.getOrDefault(false)
-                log.info("FORENSIC lookupCanceled explicit=$explicit item=${event.item?.lookupString}")
+                // The listener runs synchronously inside LookupImpl.hideLookup:
+                // the frames BELOW us are the killer's own call chain.
+                val chain = Throwable().stackTrace
+                    .take(24)
+                    .joinToString(" <- ") { it.className.substringAfterLast('.') + "." + it.methodName }
+                val docLine = runCatching {
+                    val lookupNow = project?.let {
+                        com.intellij.codeInsight.lookup.LookupManager.getInstance(it).activeLookup
+                    }
+                    val doc = lookupNow?.editor?.document
+                    if (doc != null) {
+                        val editor = lookupNow.editor
+                        val line = doc.getLineNumber(editor.caretModel.offset)
+                        doc.getText(com.intellij.openapi.util.TextRange.create(
+                            doc.getLineStartOffset(line),
+                            doc.getLineEndOffset(line),
+                        ))
+                    } else "editor-gone"
+                }.getOrDefault("doc-error")
+                log.info(
+                    "FORENSIC lookupCanceled explicit=$explicit item=${event.item?.lookupString} " +
+                        "docLine='$docLine' chain=$chain",
+                )
             }
         })
         log.info("FORENSIC listener attached (${lookup.items.size} items)")
