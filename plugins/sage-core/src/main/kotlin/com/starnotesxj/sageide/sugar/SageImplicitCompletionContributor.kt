@@ -145,14 +145,15 @@ open class SageImplicitCompletionContributor protected constructor(
                     val memberCompletion = completionReference?.qualifier != null ||
                         incompleteMemberQualifier != null
                     if (memberCompletion) {
-                        // Member completion cannot rely on the platform's live
-                        // filtering of the dot-invocation result: inherited
-                        // index members are only contributed when this
-                        // contributor actually re-runs.  Register the restart
-                        // so every typed prefix change re-invokes the full
-                        // chain (the reported P.xy case: 'x' showed xy, 'xy'
-                        // never re-invoked and the popup emptied).
-                        result.restartCompletionOnPrefixChange(StandardPatterns.string().longerThan(0))
+                        // No prefix-change restart here.  A restart hook
+                        // registered from a member completion re-arms on every
+                        // keystroke and the platform cancels the popup after
+                        // the second character (the reported P.xy case: 'x'
+                        // showed xy, 'y' canceled the lookup entirely — even
+                        // backspace no longer re-showed it while the hook
+                        // accumulated).  The full member set is contributed at
+                        // the dot invocation; the platform's live filtering
+                        // narrows it per keystroke from there.
                         val qualifier = completionReference?.qualifier ?: incompleteMemberQualifier ?: return
                         val memberLocation = completionReference ?: qualifier
                         // Dynamic Sage calls are sampled only because the user
@@ -494,10 +495,28 @@ open class SageImplicitCompletionContributor protected constructor(
                     != null)
             }
             .flatMap { owner ->
+                // OWN members only, resolved through the PSI class hierarchy
+                // (findMethodByName(inherited=false)) — NOT the index's own
+                // view.  The mirror library makes every indexed class look
+                // "present in the SDK", so presence alone proves nothing: the
+                // native variant walk has been observed dropping members the
+                // index attributes to the class, and once a name is delegated
+                // this contributor skips it.  A member the PSI class does not
+                // declare itself is inherited and must be contributed here.
+                val psiClass = SageStubIndex.findClassByCanonicalName(project, owner)
+                val ownNames = psiClass?.methods.orEmpty()
+                    .mapNotNull { method -> method.name }
+                    .toSet()
                 query.members(owner).asSequence()
-                    .filter { it.qualifiedName.substringBeforeLast('.') == owner }
+                    .map { entry ->
+                        entry.qualifiedName.substringAfterLast('.') to
+                            entry.qualifiedName.substringBeforeLast('.')
+                    }
+                    .filter { (name, declaringOwner) ->
+                        declaringOwner != owner || name in ownNames
+                    }
+                    .map { (name, _) -> name }
             }
-            .map { entry -> entry.qualifiedName.substringAfterLast('.') }
             .toSet()
     }
 
