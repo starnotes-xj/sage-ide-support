@@ -115,6 +115,51 @@ object SagePsiApiIndexFactory {
         }
     }
 
+    /** Deduplicates parsed entries and expands factory-return aliases. */
+    fun assemble(collectedEntries: List<List<SageApiEntry>>, sageVersion: String, pythonVersion: String): SageApiIndex {
+        val started = System.currentTimeMillis()
+        val deduplicated = collectedEntries.flatten()
+            .distinctBy { it.qualifiedName to it.kind }
+        val expanded = expandFactoryReturnAliases(deduplicated)
+        LOG.info(
+            "Sage PSI index assembled: ${expanded.size} entries in ${System.currentTimeMillis() - started} ms",
+        )
+        return SageApiIndex(
+            sageVersion = sageVersion,
+            pythonVersion = pythonVersion,
+            entries = expanded,
+            generatorVersion = "sage-psi-index/1.0",
+        )
+    }
+
+    /** Lists the mirror's stub files; short read action, caller re-checks validity. */
+    fun listMirrorStubFiles(project: Project, mirror: VirtualFile): List<VirtualFile> {
+        val manager = PsiManager.getInstance(project)
+        val files = mutableListOf<VirtualFile>()
+        val queue = ArrayDeque<VirtualFile>()
+        queue.add(mirror)
+        while (queue.isNotEmpty()) {
+            val children = queue.removeFirst().children
+            for (child in children) {
+                when {
+                    child.isDirectory -> queue.add(child)
+                    child.name.endsWith(".pyi") || child.name.endsWith(".py") -> files.add(child)
+                }
+            }
+        }
+        return files
+    }
+
+    /** Parses ONE stub file into (moduleQualifiedName, entries); short read action. */
+    fun parseMirrorFile(project: Project, file: VirtualFile): Pair<String, List<SageApiEntry>>? {
+        val manager = PsiManager.getInstance(project)
+        val psiFile = manager.findFile(file) as? PyFile ?: return null
+        val entries = mutableListOf<SageApiEntry>()
+        collectFile(psiFile, entries)
+        val module = moduleQualifiedName(psiFile) ?: return null
+        return module to entries
+    }
+
     private fun collectFile(file: PyFile, entries: MutableList<SageApiEntry>) {
         val module = moduleQualifiedName(file) ?: return
         for (klass in file.topLevelClasses) {

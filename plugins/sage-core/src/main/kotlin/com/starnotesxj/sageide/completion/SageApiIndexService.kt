@@ -405,8 +405,28 @@ class SageApiIndexService(
             LOG.warn("Sage PSI index: mirror not found in VFS: " + mirror)
             return
         }
+        // Chunked parsing: one SHORT read action per stub file.  The previous
+        // single 13-second ReadAction held the read lock across the whole walk,
+        // and any write action in that window (the startup TypeScript service
+        // restart is one) froze the EDT for the full duration.
+        val stubFiles = com.intellij.openapi.application.ReadAction.compute<List<com.intellij.openapi.vfs.VirtualFile>, Exception> {
+            SagePsiApiIndexFactory.listMirrorStubFiles(project, mirrorRoot)
+        }
+        val collected = mutableListOf<Pair<String, List<com.starnotesxj.sagemath.sageapi.SageApiEntry>>>()
+        var processed = 0
+        for (file in stubFiles) {
+            if (!isCurrent(generation)) return
+            val parsed = com.intellij.openapi.application.ReadAction.compute<Pair<String, List<com.starnotesxj.sagemath.sageapi.SageApiEntry>>?, Exception> {
+                SagePsiApiIndexFactory.parseMirrorFile(project, file)
+            } ?: continue
+            collected += parsed
+            processed++
+            if (processed % 200 == 0) {
+                LOG.info("Sage PSI index progress: $processed/${stubFiles.size} files")
+            }
+        }
         val index = com.intellij.openapi.application.ReadAction.compute<com.starnotesxj.sagemath.sageapi.SageApiIndex?, Exception> {
-            SagePsiApiIndexFactory.build(project, mirrorRoot, metadataSageVersion(directory), "3.13")
+            SagePsiApiIndexFactory.assemble(collected.map { it.second }, metadataSageVersion(directory), "3.13")
         }
         if (index == null || !isCurrent(generation)) return
         val query = SageApiIndexQuery(index)
