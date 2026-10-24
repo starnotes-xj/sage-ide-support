@@ -209,16 +209,25 @@ open class SageImplicitCompletionContributor protected constructor(
                         // authoritative answer to "what does the user see".
                         val typedEditor = parameters.editor
                         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
-                            Thread.sleep(400)
-                            com.intellij.openapi.application.ReadAction.compute<Unit, Exception> {
-                                val lookup = com.intellij.codeInsight.lookup.LookupManager
-                                    .getActiveLookup(typedEditor) ?: return@compute
-                                val items = lookup.items.map { it.lookupString }
-                                com.intellij.openapi.diagnostic.Logger
-                                    .getInstance(SageImplicitCompletionContributor::class.java).info(
-                                        "post-typed prefix='$memberPrefix' items=${items.size} " +
-                                            "hasXY=${"xy" in items} first=${items.take(8)}",
-                                    )
+                            for (delayMs in longArrayOf(400, 1500)) {
+                                Thread.sleep(delayMs)
+                                com.intellij.openapi.application.ReadAction.compute<Unit, Exception> {
+                                    val lookup = com.intellij.codeInsight.lookup.LookupManager
+                                        .getActiveLookup(typedEditor)
+                                    if (lookup == null) {
+                                        com.intellij.openapi.diagnostic.Logger
+                                            .getInstance(SageImplicitCompletionContributor::class.java).info(
+                                                "post-typed prefix='$memberPrefix' activeLookup=null (popup canceled or never shown)",
+                                            )
+                                        return@compute
+                                    }
+                                    val items = lookup.items.map { it.lookupString }
+                                    com.intellij.openapi.diagnostic.Logger
+                                        .getInstance(SageImplicitCompletionContributor::class.java).info(
+                                            "post-typed prefix='$memberPrefix' items=${items.size} " +
+                                                "hasXY=${"xy" in items} first=${items.take(8)}",
+                                        )
+                                }
                             }
                         }
                         if (indexedOwners.isNotEmpty()) {
