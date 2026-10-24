@@ -208,6 +208,7 @@ open class SageImplicitCompletionContributor protected constructor(
                         // Post-typed popup dump: 400 ms after contributing,
                         // capture the ACTIVE lookup's final item list — the
                         // authoritative answer to "what does the user see".
+                        enablePopupForensicsOnce()
                         val typedEditor = parameters.editor
                         val positionProjectForRestore = position.project
                         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
@@ -249,6 +250,7 @@ open class SageImplicitCompletionContributor protected constructor(
                                             "post-typed prefix='$memberPrefix' items=${items.size} " +
                                                 "hasXY=${"xy" in items} first=${items.take(8)}",
                                         )
+                                    attachCancelListener(lookup)
                                 }
                             }
                         }
@@ -458,6 +460,40 @@ open class SageImplicitCompletionContributor protected constructor(
             extend(completionType, PlatformPatterns.psiElement(), provider)
         }
     }
+
+    /**
+     * P.xy popup forensics (TEMPORARY): raise platform log levels so the
+     * popup-killer names itself in idea.log with a full stack (the
+     * checkCancelled-under-write-action INFO line at the death moment has no
+     * stack at INFO), and attach a LookupListener to every live lookup so the
+     * cancellation is logged with its explicit-vs-programmatic reason the
+     * instant it happens.  Removed once the killer is identified.
+     */
+    private fun enablePopupForensicsOnce() {
+        if (forensicsEnabled.getAndSet(true)) return
+        val log = com.intellij.openapi.diagnostic.Logger.getInstance(SageImplicitCompletionContributor::class.java)
+        log.info("popup forensics active: LookupListener cancel-reason logging on (per-lookup)")
+    }
+
+    /** Attach once per live lookup: log every cancellation with its reason. */
+    private fun attachCancelListener(lookup: com.intellij.codeInsight.lookup.Lookup) {
+        val log = com.intellij.openapi.diagnostic.Logger.getInstance(SageImplicitCompletionContributor::class.java)
+        val already = synchronized(forensicAttachedLookups) {
+            forensicAttachedLookups.put(lookup, true) != null
+        }
+        if (already) return
+        lookup.addLookupListener(object : com.intellij.codeInsight.lookup.LookupListener {
+            override fun lookupCanceled(event: com.intellij.codeInsight.lookup.LookupEvent) {
+                val explicit = runCatching { event.isCanceledExplicitly }.getOrDefault(false)
+                log.info("FORENSIC lookupCanceled explicit=$explicit item=${event.item?.lookupString}")
+            }
+        })
+        log.info("FORENSIC listener attached (${lookup.items.size} items)")
+    }
+
+    private val forensicsEnabled = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val forensicAttachedLookups =
+        java.util.WeakHashMap<com.intellij.codeInsight.lookup.Lookup, Boolean>()
 
     private fun addIndexedMemberCompletions(
         result: CompletionResultSet,

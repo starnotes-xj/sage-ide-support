@@ -395,6 +395,8 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
             }
         }.getOrDefault(false)
         if (lookupActive) {
+            com.intellij.openapi.diagnostic.Logger.getInstance(SageLiveTypeSnapshotService::class.java)
+                .info("live-probe deferred (lookup active) key=" + request.key)
             scheduled[request.key] = debounceExecutor.schedule(
                 { fireProbe(request) },
                 DEBOUNCE_MILLIS,
@@ -408,6 +410,8 @@ class SageLiveTypeSnapshotService(private val project: Project) : Disposable {
     private fun fireProbe(request: SnapshotRequest) {
         scheduled.remove(request.key)
         if (!inFlight.contains(request.key) || project.isDisposed) return
+        com.intellij.openapi.diagnostic.Logger.getInstance(SageLiveTypeSnapshotService::class.java)
+            .info("live-probe firing key=" + request.key)
         val lookupStillActive = runCatching {
             com.intellij.openapi.application.ReadAction.compute<Boolean, RuntimeException> {
                 com.intellij.codeInsight.lookup.LookupManager
