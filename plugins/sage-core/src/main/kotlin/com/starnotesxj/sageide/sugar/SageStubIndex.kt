@@ -2,6 +2,8 @@ package com.starnotesxj.sageide.sugar
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.project.DumbService
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -82,8 +84,8 @@ object SageStubIndex {
         //    functions declared as `def` in all.pyi).  Prefer candidates
         //    declared in all.pyi itself, then any sage stub file.
         val candidates = mutableListOf<PsiElement>()
-        PyFunctionNameIndex.find(name, project, GlobalSearchScope.allScope(project)).forEach { candidates += it }
-        PyClassNameIndex.find(name, project, GlobalSearchScope.allScope(project)).forEach { candidates += it }
+        findFunctions(name, project, GlobalSearchScope.allScope(project)).forEach { candidates += it }
+        findClasses(name, project, GlobalSearchScope.allScope(project)).forEach { candidates += it }
         val result = candidates.firstOrNull { isSageAllFile(safeContainingFile(it)) }
             ?: candidates.firstOrNull { isSageStubDeclaration(it) }
         if (result != null) {
@@ -173,9 +175,9 @@ object SageStubIndex {
      */
     private fun followImportAlias(project: Project, moduleQName: String?, importedName: String): PsiElement? {
         val candidates = ArrayList<PsiElement>()
-        PyFunctionNameIndex.find(importedName, project, GlobalSearchScope.allScope(project))
+        findFunctions(importedName, project, GlobalSearchScope.allScope(project))
             .forEach { candidates += it }
-        PyClassNameIndex.find(importedName, project, GlobalSearchScope.allScope(project))
+        findClasses(importedName, project, GlobalSearchScope.allScope(project))
             .forEach { candidates += it }
         val exact = candidates.firstOrNull { candidate ->
             val file = safeContainingFile(candidate) ?: return@firstOrNull false
@@ -191,9 +193,9 @@ object SageStubIndex {
         if (importedName.endsWith("_with_category")) {
             val stripped = importedName.removeSuffix("_with_category")
             val strippedCandidates = ArrayList<PsiElement>()
-            PyFunctionNameIndex.find(stripped, project, GlobalSearchScope.allScope(project))
+            findFunctions(stripped, project, GlobalSearchScope.allScope(project))
                 .forEach { strippedCandidates += it }
-            PyClassNameIndex.find(stripped, project, GlobalSearchScope.allScope(project))
+            findClasses(stripped, project, GlobalSearchScope.allScope(project))
                 .forEach { strippedCandidates += it }
             return strippedCandidates.firstOrNull { candidate ->
                 val file = safeContainingFile(candidate) ?: return@firstOrNull false
@@ -315,9 +317,24 @@ object SageStubIndex {
         else -> false
     }
 
+    private fun findFunctions(name: String, project: Project, scope: GlobalSearchScope): Collection<PyFunction> =
+        queryIndex(project) { PyFunctionNameIndex.find(name, project, scope) }
+
+    private fun findClasses(name: String, project: Project, scope: GlobalSearchScope): Collection<PyClass> =
+        queryIndex(project) { PyClassNameIndex.find(name, project, scope) }
+
+    private inline fun <T> queryIndex(project: Project, query: () -> Collection<T>): Collection<T> {
+        if (DumbService.isDumb(project)) return emptyList()
+        return try {
+            query()
+        } catch (_: IndexNotReadyException) {
+            emptyList()
+        }
+    }
+
     /** The `sage/all.pyi` stub module, located through the GF function-index anchor. */
     private fun sageAllFile(project: Project): PyFile? {
-        val anchor = PyFunctionNameIndex.find(SAGE_ALL_ANCHOR_NAME, project, GlobalSearchScope.allScope(project))
+        val anchor = findFunctions(SAGE_ALL_ANCHOR_NAME, project, GlobalSearchScope.allScope(project))
             .firstOrNull { isSageStubDeclaration(it) }
         return anchor?.let { safeContainingFile(it) } as? PyFile
     }
@@ -465,7 +482,7 @@ object SageStubIndex {
             if (it.isValid) return it
             classCache.remove(name)
         }
-        val candidates = PyClassNameIndex.find(name, project, GlobalSearchScope.allScope(project))
+        val candidates = findClasses(name, project, GlobalSearchScope.allScope(project))
         val sageCandidates = candidates.filter { isSageStubFile(safeContainingFile(it)) }
         val result = sageCandidates.singleOrNull()
         if (result != null) {
@@ -493,7 +510,7 @@ object SageStubIndex {
     fun findClassByCanonicalName(project: Project, qualifiedName: String): PyClass? {
         if (!qualifiedName.startsWith("sage.") || qualifiedName.count { it == '.' } < 2) return null
         val simpleName = qualifiedName.substringAfterLast('.').takeIf { it.isNotBlank() } ?: return null
-        val matches = PyClassNameIndex.find(simpleName, project, GlobalSearchScope.allScope(project))
+        val matches = findClasses(simpleName, project, GlobalSearchScope.allScope(project))
             .asSequence()
             .filter { it.isValid && isSageStubFile(safeContainingFile(it)) }
             .filter { candidate ->

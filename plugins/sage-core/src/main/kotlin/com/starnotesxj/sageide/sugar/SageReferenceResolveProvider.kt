@@ -1,6 +1,7 @@
 package com.starnotesxj.sageide.sugar
 
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.psi.PyAssignmentStatement
@@ -43,6 +44,7 @@ import com.jetbrains.python.psi.types.TypeEvalContext
 class SageReferenceResolveProvider : PyReferenceResolveProvider {
 
     override fun resolveName(element: PyQualifiedExpression, context: TypeEvalContext): List<RatedResolveResult> {
+        if (DumbService.isDumb(element.project)) return emptyList()
         val reference = element as? PyReferenceExpression ?: return emptyList()
         if (reference.qualifier != null) return emptyList()
         val file = reference.containingFile ?: return emptyList()

@@ -2,6 +2,7 @@ package com.starnotesxj.sageide.inline
 
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiDocumentManager
@@ -51,9 +52,10 @@ class SageInlinePredictionService(private val project: Project) {
      * This must run under a read action, but scoring deliberately must not. A
      * future native backend can therefore wait for a bounded response without
      * holding a PSI read lock or retaining editor objects across a document
-     * edit.
+     * edit. Index-backed preparation is skipped while the project is dumb.
      */
     internal fun prepareScoringRequest(file: PsiFile, offset: Int): SageInlineScoringRequest? {
+        if (DumbService.isDumb(file.project)) return null
         if (!SageFileUtils.isSageFile(file)) return null
         if (offset <= 0 || file.textLength == 0) return null
 

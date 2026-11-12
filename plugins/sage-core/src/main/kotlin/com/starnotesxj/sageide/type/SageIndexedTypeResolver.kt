@@ -1,5 +1,6 @@
 package com.starnotesxj.sageide.type
 
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiElement
 import com.jetbrains.python.psi.PyCallExpression
 import com.jetbrains.python.psi.PyBinaryExpression
@@ -28,11 +29,13 @@ import com.starnotesxj.sagemath.sageapi.SageTypeRefExpressionParser
  */
 object SageIndexedTypeResolver {
     fun ownersForTarget(target: PyTargetExpression, query: SageApiIndexQuery? = currentQuery()): Set<String> {
+        if (DumbService.isDumb(target.project)) return emptySet()
         val index = query ?: return emptySet()
         return Resolver(index).ownersForTarget(target)
     }
 
     fun ownersForExpression(expression: PyExpression, query: SageApiIndexQuery? = currentQuery()): Set<String> {
+        if (DumbService.isDumb(expression.project)) return emptySet()
         val index = query ?: return emptySet()
         return Resolver(index).ownersForExpression(expression)
     }

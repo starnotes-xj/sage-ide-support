@@ -10,6 +10,7 @@ import com.intellij.codeInsight.inline.completion.elements.InlineCompletionGrayT
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.UserDataHolderBase
 import com.starnotesxj.sageide.sugar.SageFileType
 import kotlinx.coroutines.flow.flowOf
@@ -44,7 +45,11 @@ class SageInlineCompletionProvider : DebouncedInlineCompletionProvider() {
     override suspend fun getSuggestionDebounced(request: InlineCompletionRequest): InlineCompletionSuggestion {
         val service = SageInlinePredictionService.getInstance(request.file.project)
         val scoringRequest = readAction {
-            service.prepareScoringRequest(request.file, request.endOffset)
+            if (DumbService.isDumb(request.file.project)) {
+                null
+            } else {
+                service.prepareScoringRequest(request.file, request.endOffset)
+            }
         } ?: return InlineCompletionSuggestion.Empty
         val prediction = SageInlineNativeRuntime.getInstance(request.file.project).score(scoringRequest)
             ?: return InlineCompletionSuggestion.Empty
