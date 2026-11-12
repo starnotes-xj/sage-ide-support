@@ -9,6 +9,8 @@ import com.intellij.codeInsight.completion.InsertHandler
 import com.intellij.codeInsight.completion.InsertionContext
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
+import com.intellij.codeInsight.lookup.LookupElementDecorator
+import com.intellij.codeInsight.lookup.LookupElementPresentation
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbService
@@ -250,7 +252,7 @@ open class SageImplicitCompletionContributor protected constructor(
                                             "post-typed prefix='$memberPrefix' items=${items.size} " +
                                                 "hasXY=${"xy" in items} first=${items.take(8)}",
                                         )
-                                    attachCancelListener(lookup, position.project)
+                                    attachCancelListener(lookup, positionProjectForRestore)
                                 }
                             }
                         }
@@ -264,22 +266,24 @@ open class SageImplicitCompletionContributor protected constructor(
                             result.restartCompletionOnPrefixChange(StandardPatterns.string().longerThan(0))
                         }
                         if (indexedOwners.isNotEmpty()) {
-                            // Once a member prefix exists (`Q.ord`), Python's
-                            // PyClassMembersProvider can supply the real Sage
-                            // stub declaration, so suppress the duplicate
-                            // index-only presentation.  At a bare `Q.` the
-                            // PSI is intentionally incomplete: merely having
-                            // that class installed in the SDK does not mean
-                            // Python has produced a receiver type yet. Keep
-                            // the proven index fallback in that state, or an
-                            // explicit Ctrl+Space/Ctrl+Shift+Space would show
-                            // an empty popup.
-                            val delegatedMemberNames = if (memberPrefix.isNotEmpty()) {
-                                indexedMembersDelegatedToPython(indexedOwners, position.project)
-                            } else {
-                                emptySet()
+                            val remainingResults = result.runRemainingContributors(parameters, false)
+                            val methodTails = indexedMethodTails(indexedOwners)
+                            val nativeMemberNames = linkedSetOf<String>()
+                            val exactMemberPrefix = memberPrefix.substringAfterLast('.')
+                            for (completionResult in remainingResults) {
+                                val resultWithTail = withIndexedSignatureTail(completionResult, methodTails)
+                                val element = resultWithTail.lookupElement
+                                if (!element.isValid) continue
+                                if (parameters.invocationCount == 0 &&
+                                    element.lookupString == exactMemberPrefix &&
+                                    !element.isWorthShowingInAutoPopup
+                                ) {
+                                    continue
+                                }
+                                nativeMemberNames += element.lookupString
+                                result.passResult(resultWithTail)
                             }
-                            addIndexedMemberCompletions(result, indexedOwners, memberPrefix, delegatedMemberNames, position.project)
+                            addIndexedMemberCompletions(result, indexedOwners, memberPrefix, nativeMemberNames, position.project)
                             return
                         }
                         val resolvedTargetType = resolvedTarget
@@ -517,6 +521,43 @@ open class SageImplicitCompletionContributor protected constructor(
     private val forensicAttachedLookups =
         java.util.WeakHashMap<com.intellij.codeInsight.lookup.Lookup, Boolean>()
 
+    private fun indexedMethodTails(owners: Set<String>): Map<String, String> {
+        val query = SageApiIndexService.getInstance().query() ?: return emptyMap()
+        return owners.asSequence()
+            .flatMap { owner -> query.members(owner).asSequence() }
+            .filter { it.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD }
+            .groupBy { it.qualifiedName.substringAfterLast('.') }
+            .mapValues { (_, entries) -> indexedMethodTail(entries.first()) }
+    }
+
+    internal fun withIndexedSignatureTail(
+        result: com.intellij.codeInsight.completion.CompletionResult,
+        methodTails: Map<String, String>,
+    ): com.intellij.codeInsight.completion.CompletionResult {
+        val tail = methodTails[result.lookupElement.lookupString] ?: return result
+        val decorated = try {
+            object : LookupElementDecorator<LookupElement>(result.lookupElement) {
+                override fun renderElement(presentation: LookupElementPresentation) {
+                    super.renderElement(presentation)
+                    if (presentation.tailFragments.isEmpty()) {
+                        presentation.appendTailText(tail, false)
+                    }
+                }
+
+                override fun isWorthShowingInAutoPopup(): Boolean = true
+            }
+        } catch (_: IllegalArgumentException) {
+            return result
+        }
+        return result.withLookupElement(decorated)
+    }
+
+    private fun indexedMethodTail(entry: com.starnotesxj.sagemath.sageapi.SageApiEntry): String =
+        entry.signatures.firstOrNull()
+            ?.parameters
+            ?.joinToString(prefix = "(", postfix = ")", separator = ", ") { it.name }
+            ?: "(...)"
+
     private fun addIndexedMemberCompletions(
         result: CompletionResultSet,
         owners: Set<String>,
@@ -543,14 +584,11 @@ open class SageImplicitCompletionContributor protected constructor(
                 val name = entry.qualifiedName.substringAfterLast('.')
                 if (name in delegatedMemberNames) return@forEach
                 if (!emittedNames.add(name)) return@forEach
-                // Prefer a smart-pointer element bound to the real mirror
-                // declaration: plain name-only builders live-filter poorly on
-                // some prefix matchers (the P.xy case: item present at 'x',
-                // dropped by live filtering at 'xy' while native-built items
-                // survived).  A smart pointer gives the item the same
-                // presentation, icon, and matcher behaviour as the native
-                // member items the user sees for receivers whose class the
-                // platform resolved natively (the Q.xy path).
+                // Bind navigation to the real mirror declaration when possible.
+                // A non-empty signature tail is also required: after the user
+                // types the full member name, the platform hides an auto-popup
+                // when every remaining item is already in the editor and has no
+                // tail fragments (isWorthShowingInAutoPopup=false).
                 val resolveProject = project ?: runCatching { com.intellij.openapi.project.ProjectManager.getInstance().openProjects.firstOrNull() }.getOrNull()
                 val declaration = resolveProject?.let { proj ->
                     SageStubIndex.findClassByCanonicalName(proj, owner)
@@ -563,6 +601,7 @@ open class SageImplicitCompletionContributor protected constructor(
                 }.withTypeText(owner)
                 indexedEntryIcon(entry.kind)?.let { builder = builder.withIcon(it) }
                 if (entry.kind == com.starnotesxj.sagemath.sageapi.SageApiSymbolKind.METHOD) {
+                    builder = builder.withTailText(indexedMethodTail(entry))
                     builder = builder.withInsertHandler(SageParensInsertHandler)
                 }
                 com.intellij.openapi.diagnostic.Logger.getInstance(SageImplicitCompletionContributor::class.java).info(
@@ -572,67 +611,6 @@ open class SageImplicitCompletionContributor protected constructor(
                 )
                 result.addElement(builder)
             }
-    }
-
-    /**
-     * Names that the ordinary Python member-completion pipeline will provide
-     * from a concrete, active Sage stub class.  It intentionally follows the
-     * same indexed-member source as [SageApiClassMembersProvider] rather than
-     * guessing from a member-name list.  If the class is not actually present
-     * in the project SDK, this returns no names and the direct index fallback
-     * above remains authoritative.
-     */
-    private fun indexedMembersDelegatedToPython(
-        owners: Set<String>,
-        project: com.intellij.openapi.project.Project,
-    ): Set<String> {
-        val query = SageApiIndexService.getInstance().query() ?: return emptySet()
-        // Delegate only OWN declarations: the native completion path on a
-        // WSL/IJent backend resolves the receiver's own stub members but has
-        // been observed dropping INHERITED ones (P.xy via
-        // EllipticCurvePoint_field while the receiver is
-        // EllipticCurvePoint_finite_field reported no suggestions).  Inherited
-        // members are therefore always contributed by this plugin instead of
-        // being trusted to Python's variant walk.
-        return owners.asSequence()
-            .filter { owner ->
-                (SageStubIndex.findClassByCanonicalName(project, owner)
-                    ?.takeIf { it.isValid && SageStubIndex.isSageStubFile(it.containingFile) }
-                    != null)
-            }
-            .flatMap { owner ->
-                // OWN members only, resolved through the PSI class hierarchy
-                // (findMethodByName(inherited=false)) — NOT the index's own
-                // view.  The mirror library makes every indexed class look
-                // "present in the SDK", so presence alone proves nothing: the
-                // native variant walk has been observed dropping members the
-                // index attributes to the class, and once a name is delegated
-                // this contributor skips it.  A member the PSI class does not
-                // declare itself is inherited and must be contributed here.
-                val psiClass = SageStubIndex.findClassByCanonicalName(project, owner)
-                val ownNames = psiClass?.methods.orEmpty()
-                    .mapNotNull { method -> method.name }
-                    .toSet()
-                query.members(owner).asSequence()
-                    .map { entry ->
-                        entry.qualifiedName.substringAfterLast('.') to
-                            entry.qualifiedName.substringBeforeLast('.')
-                    }
-                    .filter { (name, declaringOwner) ->
-                        // Delegate ONLY members the PSI class declares ITSELF
-                        // (index declaringOwner == this owner AND present in
-                        // the class's own method names).  Everything else is
-                        // an inherited member from the index's parents view —
-                        // the WSL/IJent native walk drops exactly those, so
-                        // they are contributed directly by this contributor.
-                        // (The previous `!=` here delegated EVERY inherited
-                        // member and left every prefixed pass empty — the
-                        // P.xy killer.)
-                        declaringOwner == owner && name in ownNames
-                    }
-                    .map { (name, _) -> name }
-            }
-            .toSet()
     }
 
     /**

@@ -26,6 +26,7 @@ import com.starnotesxj.sagemath.sageapi.SageApiIndexJsonReader
 import com.starnotesxj.sagemath.sageapi.SageApiIndexQuery
 import com.starnotesxj.sagemath.sageapi.SageApiEntry
 import com.starnotesxj.sagemath.sageapi.SageApiIndex
+import com.starnotesxj.sagemath.sageapi.SageApiParameter
 import com.starnotesxj.sagemath.sageapi.SageApiSymbolKind
 import com.starnotesxj.sagemath.sageapi.SageApiSignature
 import com.starnotesxj.sagemath.sageapi.SageTypeRef
@@ -295,6 +296,7 @@ class SageCompletionTest : SagePluginTestBase() {
         )
         try {
             val results = linkedMapOf<String, List<String>>()
+            val elementResults = linkedMapOf<String, List<com.intellij.codeInsight.lookup.LookupElement>>()
             val texts = linkedMapOf<String, String>()
             for (prefix in listOf("", "x", "xy", "o", "or", "ord")) {
                 myFixture.configureByText(
@@ -315,10 +317,24 @@ class SageCompletionTest : SagePluginTestBase() {
                             ctx.getType(it)?.toString()
                         } ?: "null"),
                 )
-                results[prefix] = myFixture.complete(CompletionType.BASIC, 0)?.map { it.lookupString }.orEmpty()
+                val elements = myFixture.complete(CompletionType.BASIC, 0)?.toList().orEmpty()
+                elementResults[prefix] = elements
+                results[prefix] = elements.map { it.lookupString }
                 texts[prefix] = myFixture.editor.document.text
             }
             System.out.println("DIAG-GRADIENT " + results.entries.joinToString(" | ") { "'" + it.key + "'->" + it.value + "}" })
+            val indexedXy = elementResults.getValue("").filter { it.lookupString == "xy" }
+            assertTrue("P. must contain the indexed xy candidate: $results", indexedXy.isNotEmpty())
+            assertFalse(
+                "platform control: an exact-match item without tail text is meaningless in an auto-popup",
+                com.intellij.codeInsight.lookup.LookupElementBuilder.create("xy")
+                    .withTypeText("sage.test.Owner")
+                    .isWorthShowingInAutoPopup,
+            )
+            assertTrue(
+                "xy must survive the platform's complete-prefix auto-popup check: $results",
+                indexedXy.all { it.isWorthShowingInAutoPopup },
+            )
             // The prefixed passes are the REAL gate: with a receiver whose
             // concrete class does not itself declare xy (inherited from
             // EllipticCurvePoint_field), every prefix pass must still offer
@@ -338,6 +354,134 @@ class SageCompletionTest : SagePluginTestBase() {
         } finally {
             SageApiIndexService.getInstance().install(null)
         }
+    }
+
+    fun testNativeAndIndexedXyAreDeduplicated() {
+        val curve = "sage.schemes.elliptic_curves.ell_generic.EllipticCurve_generic"
+        val pointField = "sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_field"
+        val pointFF = "sage.schemes.elliptic_curves.ell_point.EllipticCurvePoint_finite_field"
+        SageApiIndexService.getInstance().install(
+            SageApiIndexQuery(
+                SageApiIndex(
+                    "10.9",
+                    "3.13",
+                    listOf(
+                        SageApiEntry(curve, SageApiSymbolKind.CLASS),
+                        SageApiEntry(pointField, SageApiSymbolKind.CLASS),
+                        SageApiEntry(pointFF, SageApiSymbolKind.CLASS, parents = listOf(pointField)),
+                        SageApiEntry(
+                            "$curve.random_point",
+                            SageApiSymbolKind.METHOD,
+                            signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(pointFF))),
+                        ),
+                        SageApiEntry("$pointFF.order", SageApiSymbolKind.METHOD),
+                        SageApiEntry(
+                            "$pointField.xy",
+                            SageApiSymbolKind.METHOD,
+                            signatures = listOf(
+                                SageApiSignature(parameters = listOf(SageApiParameter("self"))),
+                            ),
+                        ),
+                        SageApiEntry(
+                            "sage.all.EllipticCurve_generic",
+                            SageApiSymbolKind.FUNCTION,
+                            signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(curve))),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        try {
+            myFixture.addFileToProject("site-packages/sage/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/schemes/__init__.pyi", "")
+            myFixture.addFileToProject("site-packages/sage/schemes/elliptic_curves/__init__.pyi", "")
+            myFixture.addFileToProject(
+                "site-packages/sage/schemes/elliptic_curves/ell_point.pyi",
+                "class EllipticCurvePoint_field:\n" +
+                    "    def xy(self) -> tuple[Any, ...]: ...\n\n" +
+                    "class EllipticCurvePoint_finite_field(EllipticCurvePoint_field):\n" +
+                    "    def order(self) -> int: ...\n",
+            )
+            myFixture.addFileToProject(
+                "site-packages/sage/schemes/elliptic_curves/ell_generic.pyi",
+                "from sage.schemes.elliptic_curves.ell_point import EllipticCurvePoint_finite_field\n\n" +
+                    "class EllipticCurve_generic:\n" +
+                    "    def random_point(self) -> EllipticCurvePoint_finite_field: ...\n",
+            )
+            myFixture.configureByText(
+                "native-index-duplicate.sage",
+                "from sage.schemes.elliptic_curves.ell_generic import EllipticCurve_generic\n" +
+                    "E = EllipticCurve_generic()\n" +
+                    "P = E.random_point()\n" +
+                    "P.<caret>",
+            )
+            val receiver = com.intellij.psi.util.PsiTreeUtil
+                .collectElementsOfType(myFixture.file, com.jetbrains.python.psi.PyReferenceExpression::class.java)
+                .last { it.referencedName == "P" && it.qualifier == null }
+            val receiverType = com.jetbrains.python.psi.types.TypeEvalContext.codeAnalysis(myFixture.project, myFixture.file)
+                .getType(receiver)
+            assertEquals(
+                "native fixture must type P as a finite-field point: $receiverType",
+                "EllipticCurvePoint_finite_field",
+                (receiverType as? com.jetbrains.python.psi.types.PyClassType)?.pyClass?.name,
+            )
+
+            val elements = myFixture.complete(CompletionType.BASIC, 0)?.toList().orEmpty()
+            assertTrue("both order and xy must remain available: ${elements.map { it.lookupString }}", "order" in elements.map { it.lookupString })
+            assertEquals("native and indexed xy must be deduplicated: ${elements.map { it.lookupString }}", 1, elements.count { it.lookupString == "xy" })
+            val xyPresentation = com.intellij.codeInsight.lookup.LookupElementPresentation()
+            elements.single { it.lookupString == "xy" }.renderElement(xyPresentation)
+            assertEquals("(self)", xyPresentation.tailFragments.joinToString("") { it.text })
+
+            myFixture.configureByText(
+                "native-index-duplicate-xy.sage",
+                "from sage.schemes.elliptic_curves.ell_generic import EllipticCurve_generic\n" +
+                    "E = EllipticCurve_generic()\n" +
+                    "P = E.random_point()\n" +
+                    "P.xy<caret>",
+            )
+            myFixture.complete(CompletionType.BASIC, 0)
+            assertTrue("the unique P.xy candidate must be inserted: ${myFixture.editor.document.text}", "P.xy(" in myFixture.editor.document.text)
+        } finally {
+            SageApiIndexService.getInstance().install(null)
+        }
+    }
+
+    fun testForwardedSageMethodTailsAreGenericAndNonDuplicating() {
+        val contributor = com.starnotesxj.sageide.sugar.SageBasicCompletionContributor()
+        val methodTails = mapOf("xy" to "(self)", "order" to "(self, other)")
+
+        fun completionResult(name: String, tail: String? = null): com.intellij.codeInsight.completion.CompletionResult {
+            var builder = com.intellij.codeInsight.lookup.LookupElementBuilder.create(name)
+                .withTypeText("sage.test.Owner")
+            if (tail != null) builder = builder.withTailText(tail)
+            return requireNotNull(
+                com.intellij.codeInsight.completion.CompletionResult.wrap(
+                    builder,
+                    com.intellij.codeInsight.completion.PrefixMatcher.ALWAYS_TRUE,
+                    com.intellij.codeInsight.completion.CompletionService.getCompletionService().emptySorter(),
+                ),
+            )
+        }
+
+        fun tailOf(result: com.intellij.codeInsight.completion.CompletionResult): String {
+            val presentation = com.intellij.codeInsight.lookup.LookupElementPresentation()
+            result.lookupElement.renderElement(presentation)
+            return presentation.tailFragments.joinToString("") { it.text }
+        }
+
+        val xy = contributor.withIndexedSignatureTail(completionResult("xy"), methodTails)
+        assertEquals("(self)", tailOf(xy))
+        assertTrue(xy.lookupElement.isWorthShowingInAutoPopup)
+
+        val order = contributor.withIndexedSignatureTail(completionResult("order"), methodTails)
+        assertEquals("(self, other)", tailOf(order))
+
+        val nativeXy = contributor.withIndexedSignatureTail(completionResult("xy", "(self)"), methodTails)
+        assertEquals("(self)", tailOf(nativeXy))
+
+        val unrelated = completionResult("unrelated")
+        assertSame(unrelated, contributor.withIndexedSignatureTail(unrelated, methodTails))
     }
 
     fun testConcreteIndexedQContractOverridesGenericPythonReceiverForCompletion() {
@@ -378,6 +522,13 @@ class SageCompletionTest : SagePluginTestBase() {
                         SageApiEntry("$point.is_zero", SageApiSymbolKind.METHOD),
                         SageApiEntry("$point.order", SageApiSymbolKind.METHOD),
                         SageApiEntry(
+                            "$point.xy",
+                            SageApiSymbolKind.METHOD,
+                            signatures = listOf(
+                                SageApiSignature(parameters = listOf(SageApiParameter("self"))),
+                            ),
+                        ),
+                        SageApiEntry(
                             "sage.all.EllipticCurve",
                             SageApiSymbolKind.FUNCTION,
                             signatures = listOf(SageApiSignature(returnType = SageTypeRef.known(curve))),
@@ -402,11 +553,19 @@ class SageCompletionTest : SagePluginTestBase() {
                     "Q.<caret>",
             )
 
-            val lookup = myFixture.complete(CompletionType.BASIC, 0)?.map { it.lookupString }.orEmpty()
+            val lookupElements = myFixture.complete(CompletionType.BASIC, 0)?.toList().orEmpty()
+            val lookup = lookupElements.map { it.lookupString }
             assertTrue("static Q completion=$lookup", "is_zero" in lookup)
             assertTrue("static Q completion=$lookup", "order" in lookup)
+            assertTrue("static Q completion=$lookup", "xy" in lookup)
             assertEquals("static Q completion must not duplicate the same member: $lookup", 1, lookup.count { it == "is_zero" })
             assertEquals("static Q completion must not duplicate the same member: $lookup", 1, lookup.count { it == "order" })
+            val indexedXy = lookupElements.filter { it.lookupString == "xy" }
+            assertEquals("static Q completion must not duplicate xy: $lookup", 1, indexedXy.size)
+            val presentation = com.intellij.codeInsight.lookup.LookupElementPresentation()
+            indexedXy.single().renderElement(presentation)
+            assertEquals("(self)", presentation.tailFragments.joinToString("") { it.text })
+            assertTrue(indexedXy.single().isWorthShowingInAutoPopup)
 
             myFixture.configureByText(
                 "q-contract-smart.sage",
@@ -422,6 +581,18 @@ class SageCompletionTest : SagePluginTestBase() {
             assertTrue("static Q smart completion=$smartLookup", "order" in smartLookup)
             assertEquals("static Q smart completion must not duplicate the same member: $smartLookup", 1, smartLookup.count { it == "is_zero" })
             assertEquals("static Q smart completion must not duplicate the same member: $smartLookup", 1, smartLookup.count { it == "order" })
+
+            myFixture.configureByText(
+                "q-contract-xy.sage",
+                "from sage.all import *\n\n" +
+                    "bad_curve = EllipticCurve()\n" +
+                    "curve_order = bad_curve.order()\n" +
+                    "R = ZZ(2)\n" +
+                    "Q = (curve_order // R) * bad_curve.random_point()\n" +
+                    "Q.xy<caret>",
+            )
+            myFixture.complete(CompletionType.BASIC, 0)
+            assertTrue("Q.xy must be offered and inserted: ${myFixture.editor.document.text}", "Q.xy(" in myFixture.editor.document.text)
         } finally {
             SageApiIndexService.getInstance().install(null)
         }
